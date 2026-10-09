@@ -128,3 +128,15 @@ export function parseFeatureJson(text: string): string | null {
     return null
   }
 }
+
+/** The separator `.specify/integration.json` records for the active integration: `-` for skills (`/speckit-plan`), `.` for commands. */
+export function invokeSeparator(text: string): string | null {
+  try {
+    const value = JSON.parse(text) as { integration?: unknown; integration_settings?: Record<string, { invoke_separator?: unknown }> }
+    const name = typeof value.integration === 'string' ? value.integration : null
+    const separator = name ? value.integration_settings?.[name]?.invoke_separator : undefined
+    return typeof separator === 'string' ? separator : null
+  } catch {
+    return null
+  }
+}

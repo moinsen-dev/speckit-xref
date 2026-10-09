@@ -11,4 +11,7 @@ cp "$root/LICENSE" "$root/CHANGELOG.md" "$stage/"
 mkdir -p "$root/dist"
 rm -f "$out"
 (cd "$stage" && zip -qr "$out" .)
+# The same archive under a name without a version: releases/latest/download/speckit-xref-extension.zip always resolves.
+cp "$out" "$root/dist/speckit-xref-extension.zip"
 echo "$out"
+echo "$root/dist/speckit-xref-extension.zip"

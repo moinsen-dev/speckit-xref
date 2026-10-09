@@ -1,0 +1,81 @@
+---
+name: speckit
+description: Set up and run GitHub Spec Kit in this repository with speckit-xref. Covers initialising Spec Kit for Claude Code, writing the constitution, starting or switching a feature, naming the next Spec Kit step, resolving drift between the user's intent, the spec and the code, choosing how strictly edits are held to the spec, and adding the speckit-xref Spec Kit extension and its CI drift check. Use when the user wants spec-driven development here, asks what comes next in a Spec Kit project, or asks how to handle Spec Kit.
+---
+
+# Spec Kit with speckit-xref
+
+The speckit-xref mod is loaded in this session. It reads Spec Kit's files, puts the active spec into your system prompt, attaches the current task to every prompt, books every edit against a task, and checks for drift after each turn. This skill gets a repository there and keeps the work on the spec.
+
+**Start with `mcp__speckit-xref__status`.** It reports:
+- whether Spec Kit is set up, and how its commands are invoked;
+- the constitution, the active feature and its artifacts;
+- coverage, drift, the current phase and the next command.
+
+Act on that report rather than on assumptions. Call it again after every step. If the tool is not available, read `.specify/` and `specs/` yourself, or ask the user to run `/xref`.
+
+Spell commands the way the status report does: `/speckit-plan` in the skills layout Claude Code gets by default, `/speckit.plan` in a commands layout.
+
+## Phase `setup`: Spec Kit is not set up yet
+
+1. **Find the CLI.** If `command -v specify` succeeds, use `specify` (`specify version` shows the release). Otherwise, if `command -v uvx` succeeds, run it without installing anything: `uvx --from 'specify-cli>=1.1,<2' specify …`. If neither exists, tell the user to install uv (<https://docs.astral.sh/uv/>) or run `pipx install specify-cli`, then stop.
+2. **Say what it writes, and get the user's go.**
+   - It writes `.specify/` (scripts, templates, `memory/constitution.md`, `integration.json`) and `.claude/skills/speckit-*/` (Spec Kit's commands as skills).
+   - It touches no source file, `CLAUDE.md` or `.claude/settings.json`, and it keeps an existing constitution.
+   - In a git repository, suggest committing first so the change can be reviewed.
+3. **Run** `specify init --here --force --non-interactive --integration claude`. `--force` only skips the "directory is not empty" question.
+4. If `/speckit-constitution` is not offered afterwards, the new skills load with the next session: ask the user to restart Claude Code in this folder and continue there.
+
+## The workflow, phase by phase
+
+| Phase | Command | What matters here |
+| --- | --- | --- |
+| `constitution` | `/speckit-constitution` | Ask the user for 3 to 7 principles, each a short, checkable MUST rule (tests, dependencies, privacy, …). The mod puts every MUST rule into every prompt, so few and sharp beats many. |
+| `specify` | `/speckit-specify <the user's idea>` | Pass the user's words **verbatim**. They become the spec's `Input` line, which every drift check compares the code against. Do not polish them. |
+| `clarify` | `/speckit-clarify` | Settles `[NEEDS CLARIFICATION]` markers before planning. |
+| `plan` | `/speckit-plan <technical choices>` | Stack, storage and structure, as the user decides them. |
+| `tasks` | `/speckit-tasks` | Each task should name the files it touches (`… in src/auth/token.ts`). The mod books edits by those paths, and a task without paths cannot be checked. |
+| `map` | `/speckit-xref-map` or `/xref map` | Records which task serves which requirement, once. Spec Kit does not keep this. |
+| `implement` | `/speckit-implement` | Call `mcp__speckit-xref__focus` before you start a task. Mark code that implements a requirement with `@spec <feature>/FR-###` at file or function level. Tick a task in `tasks.md` only once its requirements are met. |
+| `verify` | `/speckit-xref-check` or `/xref check`, then `/speckit-converge` | Checks the code against the user's words and the spec, then turns what is missing into new tasks. |
+
+## Handling
+
+- **Switch features.** Spec Kit tracks the active feature in `.specify/feature.json`. Write `{"feature_directory": "specs/NNN-name"}` there and the mod follows within seconds. `/speckit-specify` creates a new feature and points the file at it.
+- **The user asks for something the spec lacks or rules out.** The mod logs the request, and the intent check marks it `extends` or `contradicts`. Do not build it silently. Name the conflict, then offer:
+  - fold it into the spec with `/speckit-clarify`;
+  - start a new feature with `/speckit-specify`;
+  - or record a task.
+
+  Spec Kit leaves the choice to the team. Ask once whether they keep a *living spec* (amend `spec.md`) or work *flow-forward* (a new feature per change), and keep to the answer.
+- **An edit outside the plan.** If the file serves the spec, tie it with `mcp__speckit-xref__link` (a task `T###` or a requirement `FR-###`). Otherwise say so and offer to undo it.
+- **Drift.**
+  - `/xref` shows the status.
+  - `/xref check` runs the intent check now.
+  - `/xref ack` accepts the edits outside the plan.
+  - The pane's *To spec* and *As task* buttons resolve a request beyond the spec.
+- **Strictness.** The plugin option `mode` is `advisory` by default. Set to `strict`, the mod refuses edits outside the current task's planned or linked files. `driftCheck: off` skips the model-based intent check. The user sets both with `/config` (the speckit-xref rows) or under `pluginConfigs` in settings.
+
+## Other agents and CI (optional)
+
+The speckit-xref Spec Kit extension keeps the same record for any agent and for CI. Install it with:
+
+```bash
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/latest/download/speckit-xref-extension.zip
+```
+
+The CLI asks for confirmation before installing from a URL. Show the user the URL and let them confirm. After their yes you may pipe `y` into the command.
+
+It adds `/speckit-xref-map`, `/speckit-xref-check` and `/speckit-xref-report`, and hooks after `tasks` and `implement`. For a pull request check in GitHub Actions, check out with `fetch-depth: 0`, then:
+
+```yaml
+- name: Spec drift
+  run: python3 .specify/extensions/xref/scripts/python/xref.py check --base origin/${{ github.base_ref || 'main' }} --fail-on red
+```
+
+## Never
+
+- Run `specify init`, or install the extension, without the user's go.
+- Overwrite an existing `spec.md`, `plan.md` or constitution.
+- Tick a task you did not finish.
+- Paraphrase the user's idea into the spec's `Input` line.

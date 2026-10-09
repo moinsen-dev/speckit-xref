@@ -2,7 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
 import type { Ledger, Snapshot } from '../types'
-import { parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
+import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
+import { nextStep, stepLine } from './workflow'
 import {
   acknowledgeAll,
   anchorsIn,
@@ -15,6 +16,7 @@ import {
   editNote,
   emptyLedger,
   evaluate,
+  isSpecArtifact,
   forkPrompt,
   ledgerFromJson,
   ledgerToJson,
@@ -88,8 +90,28 @@ async function exists($: $, rel: string): Promise<boolean> {
   }
 }
 
+/** Every feature directory with a spec.md, and when its spec or tasks last changed. */
+async function listFeatures($: $): Promise<{ dir: string; time: number }[]> {
+  const found: { dir: string; time: number }[] = []
+  for (const base of ['specs', '.specify/specs']) {
+    let entries
+    try {
+      entries = await $.fs.list(at(base))
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.kind !== 'dir') continue
+      const dir = `${base}/${entry.name}`
+      const spec = await mtime($, `${dir}/spec.md`)
+      if (spec) found.push({ dir, time: Math.max(spec, await mtime($, `${dir}/tasks.md`)) })
+    }
+  }
+  return found.sort((a, b) => a.dir.localeCompare(b.dir))
+}
+
 /** The active feature: SPECIFY_FEATURE_DIRECTORY, .specify/feature.json, SPECIFY_FEATURE, else the spec written last. */
-async function resolveFeature($: $): Promise<string | null> {
+async function resolveFeature($: $, features?: { dir: string; time: number }[]): Promise<string | null> {
   const named = await $.env.get('SPECIFY_FEATURE')
   const pointers = [
     await $.env.get('SPECIFY_FEATURE_DIRECTORY'),
@@ -101,46 +123,42 @@ async function resolveFeature($: $): Promise<string | null> {
     const rel = relPath(pointer, root).replace(/\/$/, '')
     if (await exists($, `${rel}/spec.md`)) return rel
   }
-  let best: string | null = null
-  let bestTime = 0
-  for (const dir of ['specs', '.specify/specs']) {
-    let entries
-    try {
-      entries = await $.fs.list(at(dir))
-    } catch {
-      continue
-    }
-    for (const entry of entries) {
-      if (entry.kind !== 'dir') continue
-      const rel = `${dir}/${entry.name}`
-      const time = Math.max(await mtime($, `${rel}/tasks.md`), await mtime($, `${rel}/spec.md`))
-      if (time > bestTime) {
-        best = rel
-        bestTime = time
-      }
-    }
-  }
-  return best
+  const latest = [...(features ?? (await listFeatures($)))].sort((a, b) => b.time - a.time)[0]
+  return latest?.dir ?? null
 }
 
 async function currentSignature($: $, featureDir: string | null): Promise<string> {
-  const files = ['.specify/feature.json', '.specify/memory/constitution.md']
-  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`)
+  const files = ['.specify/feature.json', '.specify/memory/constitution.md', '.specify/integration.json', '.specify/extensions.yml']
+  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`)
   const times = await Promise.all(files.map(f => mtime($, f)))
   return [featureDir ?? '-', ...times].join('|')
 }
 
 /** Reads Spec Kit's files into the snapshot; a new feature brings its own ledger. */
 async function scan($: $): Promise<void> {
-  const featureDir = await resolveFeature($)
-  const [specMd, tasksMd, constitutionMd] = await Promise.all([
+  const features = await listFeatures($)
+  const featureDir = await resolveFeature($, features)
+  const [specMd, tasksMd, constitutionMd, integrationJson] = await Promise.all([
     featureDir ? readText($, `${featureDir}/spec.md`) : null,
     featureDir ? readText($, `${featureDir}/tasks.md`) : null,
     readText($, '.specify/memory/constitution.md'),
+    readText($, '.specify/integration.json'),
   ])
-  const commandsOnly = (await exists($, '.claude/commands/speckit.clarify.md')) && !(await exists($, '.claude/skills/speckit-clarify/SKILL.md'))
+  let extensions: string[] = []
+  try {
+    extensions = (await $.fs.list(at('.specify/extensions'))).filter(e => e.kind === 'dir' && !e.name.startsWith('.')).map(e => e.name)
+  } catch {
+    extensions = []
+  }
+  // integration.json says how commands are invoked; without it, a commands-only layout is the old one.
+  const separator = integrationJson ? invokeSeparator(integrationJson) : null
+  const commandsOnly = separator ? separator === '.' : (await exists($, '.claude/commands/speckit.clarify.md')) && !(await exists($, '.claude/skills/speckit-clarify/SKILL.md'))
   const snapshot: Snapshot = {
+    initialized: await exists($, '.specify'),
     featureDir,
+    features: features.map(f => f.dir),
+    hasPlan: featureDir ? await exists($, `${featureDir}/plan.md`) : false,
+    extensions,
     spec: specMd ? parseSpec(specMd) : null,
     tasks: tasksMd ? parseTasks(tasksMd) : [],
     constitution: constitutionMd ? parseConstitution(constitutionMd) : null,
@@ -224,29 +242,37 @@ async function afterWrite($: $, rel: string, c: Classified, newText: string): Pr
     const next = recordTouch(l, rel, c, when)
     return fresh ? { ...next, anchors: [...next.anchors.filter(a => a.file !== rel), ...fresh] } : next
   })
-  if (c.task && (c.verdict === 'in-scope' || c.verdict === 'other-task')) await update($, activeA, () => c.task)
+  // A file of a finished task is rework: it does not pull the focus back to that task.
+  const task = (await read($, snapshotA))?.tasks.find(t => t.id === c.task)
+  if (task && !task.done && (c.verdict === 'in-scope' || c.verdict === 'other-task')) await update($, activeA, () => task.id)
   if (!turnFiles.includes(rel)) turnFiles.push(rel)
   await notifyLevel($)
 }
 
-/** The files the working tree changed, for a check the person asked for between turns. */
+/**
+ * The files the working tree changed, for a check the person asked for between turns: relative to the project
+ * and only inside it, since the project may be one folder of a larger repository.
+ */
 async function changedFiles($: $): Promise<string[]> {
-  try {
-    const ran = await $.process.run(['git', 'status', '--porcelain', '--untracked-files=all'], { cwd: root, timeoutMs: 5000 })
-    return ran.stdout
-      .split('\n')
-      .map(l => l.slice(3).trim().replace(/^"|"$/g, ''))
-      .filter(f => f && !/^(specs|\.specify|\.claude)\//.test(f))
-      .slice(0, 40)
-  } catch {
-    return []
+  const files = new Set<string>()
+  for (const argv of [
+    ['git', 'diff', '--name-only', '--relative', 'HEAD'],
+    ['git', 'ls-files', '--others', '--exclude-standard'],
+  ]) {
+    try {
+      const ran = await $.process.run(argv, { cwd: root, timeoutMs: 5000 })
+      if (ran.exitCode === 0) for (const line of ran.stdout.split('\n')) if (line.trim()) files.add(line.trim())
+    } catch {
+      // No git, or no commit yet: the files of this session's turns are all there is.
+    }
   }
+  return [...files].filter(f => !isSpecArtifact(f)).slice(0, 40)
 }
 
 async function diffOf($: $, files: string[]): Promise<string> {
   let diff = ''
   try {
-    diff = (await $.process.run(['git', 'diff', '--no-color', '-U2', 'HEAD', '--', ...files], { cwd: root, timeoutMs: 5000 })).stdout
+    diff = (await $.process.run(['git', 'diff', '--no-color', '--relative', '-U2', 'HEAD', '--', ...files], { cwd: root, timeoutMs: 5000 })).stdout
   } catch {
     diff = ''
   }
@@ -380,9 +406,34 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 
 async function statusText($: $): Promise<string> {
   const snap = await read($, snapshotA)
-  if (!snap?.featureDir) return 'No Spec Kit feature found (specs/NNN-*/spec.md). Start one with /speckit-specify.'
+  if (!snap) return 'Spec X-Ref has not read this project yet.'
+  const ledger = await read($, ledgerA)
+  const next = nextStep(snap, ledger)
+  if (!snap.featureDir) return `${next.why} Next: ${next.command ?? 'ask Claude to set up Spec Kit (the speckit-xref:speckit skill)'}.`
   // The host already names the plugin in front of a command's answer.
-  return (turnContext(snap, await read($, ledgerA), await read($, activeA)) ?? '').replace(/^speckit-xref · /, '')
+  return (turnContext(snap, ledger, await read($, activeA), stepLine(next)) ?? '').replace(/^speckit-xref · /, '')
+}
+
+/** The workflow state for the model: where the project stands in Spec Kit and what comes next. */
+async function workflowStatus($: $): Promise<string> {
+  await scan($)
+  const snap = await read($, snapshotA)
+  if (!snap) return 'Spec X-Ref has not read this project yet.'
+  const ledger = await read($, ledgerA)
+  const next = nextStep(snap, ledger)
+  const report = evaluate(snap, ledger)
+  const lines = [
+    `Spec Kit: ${snap.initialized ? 'set up' : 'not set up'}${snap.initialized ? ` · commands as ${speckitCommand(snap, 'plan')}` : ''} · extensions: ${snap.extensions.join(', ') || 'none'}`,
+    `Constitution: ${snap.constitution?.principles.length ? `${snap.constitution.principles.length} principles, ${snap.constitution.musts.length} MUST rules` : 'missing or still the template'}`,
+    `Active feature: ${snap.featureDir ? `${snap.featureDir}${snap.spec ? ` (${snap.spec.title})` : ''}` : 'none'}`,
+  ]
+  if (snap.features.length > 1) lines.push(`All features: ${snap.features.join(', ')} (switch by writing {"feature_directory": "<dir>"} to .specify/feature.json)`)
+  if (snap.featureDir) {
+    lines.push(`Artifacts: spec.md ${snap.spec ? 'yes' : 'no'} · plan.md ${snap.hasPlan ? 'yes' : 'no'} · tasks.md ${snap.tasks.length ? `${report.done}/${report.tasks} done` : 'no'} · FR covered ${report.covered}/${report.total} · drift ${report.level}`)
+  }
+  lines.push(`Phase: ${next.phase}. ${next.why}`, `Next: ${next.command ?? 'set up Spec Kit (see the speckit-xref:speckit skill)'}`)
+  if (next.notes.length) lines.push('Notes:', ...next.notes.map(n => `- ${n}`))
+  return lines.join('\n')
 }
 
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
@@ -420,6 +471,11 @@ export const register: Register = (on, options) => {
         name: 'where',
         description: 'Spec Kit: which tasks and requirements a file belongs to (planned, touched, linked, @spec anchors).',
         inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Path of the file' } }, required: ['file'] },
+      },
+      {
+        name: 'status',
+        description: 'Spec Kit: where this project stands in the Spec Kit workflow (set up, constitution, active feature, plan, tasks, coverage, drift) and the command that comes next. Call it before suggesting a Spec Kit step.',
+        inputSchema: { type: 'object', properties: {} },
       },
       {
         name: 'link',
@@ -471,7 +527,8 @@ export const register: Register = (on, options) => {
       const when = await stamp($)
       await update($, ledgerA, l => logIntent(l, text, currentTask(snap, active)?.id ?? null, when))
     }
-    const note = turnContext(snap, await read($, ledgerA), active)
+    const ledger = await read($, ledgerA)
+    const note = turnContext(snap, ledger, active, stepLine(nextStep(snap, ledger)))
     return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
   }).catch(($, e, next) => next(e))
 
@@ -499,6 +556,7 @@ export const register: Register = (on, options) => {
     return note ? { ...ran, context: [...(ran.context ?? []), note] } : ran
   }).catch(($, e, next) => next(e))
 
+  on('tool.call', { tool: 'mcp__speckit-xref__status' }, async $ => ({ result: await workflowStatus($) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__focus' }, async ($, e) => ({ result: await focus($, str((e as unknown as { task?: unknown }).task)) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__where' }, async ($, e) => ({ result: await where($, str((e as unknown as { file?: unknown }).file)) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__link' }, async ($, e) => {
@@ -573,15 +631,16 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const snap = await read($, snapshotA)
+    const ledger = await read($, ledgerA)
     if (!snap?.featureDir || !snap.spec) {
+      const next = snap ? nextStep(snap, ledger) : null
       return (
         <Box flexDirection="column">
-          <Text dimColor>No Spec Kit feature found.</Text>
-          <Text dimColor>Start one with /speckit-specify; this pane follows specs/NNN-*/.</Text>
+          <Text dimColor>{next?.why ?? 'No Spec Kit feature found.'}</Text>
+          <Text dimColor>{next?.command ? `Next: ${next.command}` : 'Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).'}</Text>
         </Box>
       )
     }
-    const ledger = await read($, ledgerA)
     const report: Report = evaluate(snap, ledger)
     const task = currentTask(snap, await read($, activeA))
     const checking = await read($, checkingA)
@@ -620,6 +679,7 @@ export const register: Register = (on, options) => {
         {task && (task.paths.length || reqs.length) ? row('', [task.paths.join(', '), reqs.join(' ')].filter(Boolean).join(' · '), 'subtle') : null}
         {row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-')}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
+        {row('Next', stepLine(nextStep(snap, ledger)), 'suggestion')}
         {row('Drift', `● ${report.level}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {report.findings
           .filter(f => f.kind !== 'intent')

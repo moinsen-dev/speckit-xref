@@ -16,11 +16,27 @@ It complements read-only viewers such as SpecKit Companion: they show the run; t
 | **Anchors** | `// @spec 001-feature/FR-003` comments count as coverage; one that names a requirement the spec no longer has is drift. |
 | **Intent check** | After a turn that wrote files, one tool-less `$.model.fork` over the session compares the user's words, the spec and the diff. It returns a score, reasons and requests the spec lacks. With no transcript to fork yet, one completion fed by the intent log stands in. |
 | **Fix it from the pane** | *To spec* runs `/speckit-clarify` with the request; *As task* appends a `[Drift]` task to `tasks.md`; *Map FR→tasks* lets a small model map requirements to tasks once and keeps the map. |
-| **Band and pane** | A line above the prompt (`● xref T004 · tasks 3/8 · FR 4/5 · drift yellow (1)`) that stacks with other mods' bands, and a pane: Goal, Vision, Now, Todo, Status, Drift. |
+| **Band and pane** | A line above the prompt (`● xref T004 · tasks 3/8 · FR 4/5 · drift yellow (1)`) that stacks with other mods' bands, and a pane: Goal, Vision, Now, Todo, Status, Next, Drift. |
 
-The model gets three tools: `mcp__speckit-xref__focus` (make a task current), `__where` (which tasks and requirements a file belongs to) and `__link` (tie a file to a task or requirement).
+The model gets four tools: `mcp__speckit-xref__status` (where the project stands in Spec Kit and the next command), `mcp__speckit-xref__focus` (make a task current), `__where` (which tasks and requirements a file belongs to) and `__link` (tie a file to a task or requirement).
 
 Everything the mod keeps lives in one file per feature, `specs/<feature>/xref.json`: tasks touched and linked, requirement map, unplanned edits, intents, anchors, the last intent check. It is derived and safe to delete.
+
+## Install
+
+At the prompt of a terminal session:
+
+```text
+/plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
+```
+
+## The `speckit` skill
+
+`/speckit-xref:speckit`, or any request to set up or run Spec Kit, loads a skill that:
+
+- **sets Spec Kit up:** finds the `specify` CLI or runs it through `uvx`, says what `specify init` writes before it runs, then moves on to the constitution;
+- **walks the workflow:** constitution → specify → clarify → plan → tasks → map → implement → verify, steered by the status tool rather than by guesswork;
+- **handles the day-to-day:** switching features, requests beyond the spec, unplanned edits, strict mode, and the Spec Kit extension with its CI check.
 
 ## Use
 

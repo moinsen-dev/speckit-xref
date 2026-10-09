@@ -138,8 +138,9 @@ export function resolveIntent(ledger: Ledger, text: string): Ledger {
   return { ...ledger, semantic, intents: ledger.intents.map(i => (i.status !== 'resolved' && quotes(i.text, text) ? { ...i, status: 'resolved' as const } : i)) }
 }
 
+/** The task in focus while it is open; once it is checked off, the first open one. */
 export function currentTask(snap: Snapshot, active: string | null): Task | null {
-  const chosen = active ? snap.tasks.find(t => t.id === active) : undefined
+  const chosen = active ? snap.tasks.find(t => t.id === active && !t.done) : undefined
   return chosen ?? snap.tasks.find(t => !t.done) ?? null
 }
 
@@ -192,7 +193,9 @@ export function reqsOf(task: Task, ledger: Ledger): string[] {
   return [...new Set([...task.reqs, ...mapped])]
 }
 
-export const speckitCommand = (snap: Snapshot, name: string) => (snap.commandStyle === 'skills' ? `/speckit-${name}` : `/speckit.${name}`)
+/** How the project invokes a Spec Kit command: `xref.map` is `/speckit-xref-map` for skills, `/speckit.xref.map` for commands. */
+export const speckitCommand = (snap: Snapshot, name: string) =>
+  snap.commandStyle === 'skills' ? `/speckit-${name.replace(/\./g, '-')}` : `/speckit.${name}`
 
 /**
  * The system prompt section: the active spec and the rules that keep the work on it.
@@ -228,7 +231,7 @@ export function composeSection(snap: Snapshot, mode: string, plugin: string): st
 }
 
 /** The note beside a user's prompt: the current task, what it serves, and the drift status right now. */
-export function turnContext(snap: Snapshot, ledger: Ledger, active: string | null): string | null {
+export function turnContext(snap: Snapshot, ledger: Ledger, active: string | null, next?: string): string | null {
   if (!snap.featureDir || !snap.spec) return null
   const report = evaluate(snap, ledger)
   const task = currentTask(snap, active)
@@ -249,6 +252,7 @@ export function turnContext(snap: Snapshot, ledger: Ledger, active: string | nul
     lines.push('Every task in tasks.md is checked.')
   }
   if (report.findings.length) lines.push('Drift:', ...report.findings.slice(0, 5).map(f => `- ${f.text}`))
+  if (next) lines.push(`Next Spec Kit step: ${next}`)
   return lines.join('\n')
 }
 
@@ -261,6 +265,7 @@ export function editNote(rel: string, c: Classified, snap: Snapshot, previous: s
   }
   if (c.verdict === 'other-task' && c.task && c.task !== previous) {
     const task = snap.tasks.find(t => t.id === c.task)
+    if (task?.done) return `speckit-xref: ${rel} belongs to ${c.task}, which is checked off: this is rework on a finished task.`
     return `speckit-xref: ${rel} belongs to ${c.task}${task ? ` (${task.text.slice(0, 80)})` : ''}; that is now the current task.`
   }
   return null

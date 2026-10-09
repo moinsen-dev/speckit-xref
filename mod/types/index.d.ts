@@ -23,7 +23,14 @@ export type Spec = {
 export type Constitution = { principles: string[]; musts: string[] }
 
 export type Snapshot = {
+  /** Whether Spec Kit is set up here (`.specify/` exists). */
+  initialized: boolean
   featureDir: string | null
+  /** Every feature directory under specs/ (and .specify/specs/). */
+  features: string[]
+  hasPlan: boolean
+  /** Installed Spec Kit extensions, by id (`.specify/extensions/<id>/`). */
+  extensions: string[]
   spec: Spec | null
   tasks: Task[]
   constitution: Constitution | null

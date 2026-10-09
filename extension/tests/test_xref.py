@@ -5,11 +5,13 @@ Run: python3 -m unittest discover -s extension/tests
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,10 +22,23 @@ DEMO = HERE.parent.parent / "examples" / "demo"
 FEATURE = "specs/001-magic-link-login"
 
 
+def copy_committed_demo(target: Path) -> None:
+    """The demo as committed, so a playground run in examples/demo does not change what the tests see."""
+    repo = DEMO.parent.parent
+    archive = subprocess.run(["git", "-C", str(repo), "archive", "HEAD", "examples/demo"], capture_output=True)
+    if archive.returncode != 0:
+        shutil.copytree(DEMO, target, dirs_exist_ok=True)
+        return
+    with tempfile.TemporaryDirectory() as unpacked:
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
+            tar.extractall(unpacked, filter="data")
+        shutil.copytree(Path(unpacked) / "examples" / "demo", target, dirs_exist_ok=True)
+
+
 class XrefCli(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="xref-test-"))
-        shutil.copytree(DEMO, self.root, dirs_exist_ok=True)
+        copy_committed_demo(self.root)
         (self.root / FEATURE / "xref.json").unlink(missing_ok=True)
         self.git("init", "-q")
         self.git("add", "-A")
@@ -98,6 +113,23 @@ class XrefCli(unittest.TestCase):
     def test_success_criteria_are_not_claimed_as_covered(self) -> None:
         rows = {r["id"]: r["covered"] for r in self.xref("map")["requirements"]}
         self.assertEqual((rows["FR-002"], rows["FR-005"], rows["SC-001"]), (True, False, None))
+
+    def test_a_project_in_a_folder_of_a_larger_repository_checks_only_its_own_files(self) -> None:
+        mono = Path(tempfile.mkdtemp(prefix="xref-mono-"))
+        self.addCleanup(shutil.rmtree, mono, True)
+        copy_committed_demo(mono / "apps" / "login")
+        (mono / "libs").mkdir()
+        (mono / "libs" / "shared.ts").write_text("export const x = 1\n", encoding="utf-8")
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]):
+            subprocess.run(["git", *args], cwd=mono, check=True, capture_output=True)
+        (mono / "libs" / "shared.ts").write_text("export const x = 2\n", encoding="utf-8")
+        (mono / "apps" / "login" / "src" / "ui").mkdir(parents=True)
+        (mono / "apps" / "login" / "src" / "ui" / "theme.ts").write_text("export const dark = true\n", encoding="utf-8")
+        (mono / "apps" / "login" / "src" / "auth" / "token.ts").write_text("// @spec 001-magic-link-login/FR-002\nexport const ttl = 900\n", encoding="utf-8")
+        done = subprocess.run([sys.executable, "-I", str(SCRIPT), "check", "--json"], cwd=mono / "apps" / "login", capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changed = {c["file"]: c["verdict"] for c in json.loads(done.stdout)["changed"]}
+        self.assertEqual(changed, {"src/auth/token.ts": "linked", "src/ui/theme.ts": "unplanned"})
 
     def test_check_against_a_base_counts_committed_changes(self) -> None:
         self.git("checkout", "-qb", "feature")

@@ -6,6 +6,8 @@ import {
   applySemantic,
   classify,
   composeSection,
+  currentTask,
+  editNote,
   emptyLedger,
   evaluate,
   link,
@@ -15,12 +17,17 @@ import {
   recordTouch,
   turnContext,
 } from '../hooks/xref'
+import { nextStep } from '../hooks/workflow'
 import type { Snapshot } from '../types'
 import { DEMO } from './fixtures/demo'
 
 const FEATURE = 'specs/001-magic-link-login'
 const snap = (): Snapshot => ({
+  initialized: true,
   featureDir: FEATURE,
+  features: [FEATURE],
+  hasPlan: true,
+  extensions: [],
   spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!),
   tasks: parseTasks(DEMO[`${FEATURE}/tasks.md`]!),
   constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!),
@@ -109,6 +116,20 @@ describe('X-Ref', () => {
     expect(link(touched, 'src/ui/theme.ts', 'FR-099', s).error).toContain('no requirement')
   })
 
+  test('the current task is the one in focus while it is open, then the first open one', () => {
+    const s = snap()
+    expect(currentTask(s, 'T006')?.id).toBe('T006')
+    expect(currentTask(s, 'T002')?.id).toBe('T004')
+    expect(currentTask(s, null)?.id).toBe('T004')
+  })
+
+  test('an edit to a finished task\'s file reads as rework, not as a task switch', () => {
+    const s = snap()
+    expect(editNote('src/config/mailer.ts', { verdict: 'other-task', task: 'T002' }, s, 'T004', 'speckit-xref')).toBe(
+      'speckit-xref: src/config/mailer.ts belongs to T002, which is checked off: this is rework on a finished task.',
+    )
+  })
+
   test('three unplanned edits turn the light red', () => {
     let ledger = emptyLedger()
     for (const f of ['a.ts', 'b.ts', 'c.ts']) ledger = recordTouch(ledger, f, { verdict: 'unplanned', task: null }, 'now')
@@ -175,5 +196,45 @@ describe('drift check', () => {
     const second = appendRemediation(first.markdown, parseTasks(first.markdown), 'Another')
     expect(second.id).toBe('T010')
     expect(second.markdown.match(/## Drift Remediation/g)?.length).toBe(1)
+  })
+})
+
+describe('workflow', () => {
+  const phase = (s: Snapshot, ledger = emptyLedger()) => {
+    const step = nextStep(s, ledger)
+    return `${step.phase} ${step.command ?? '-'}`
+  }
+
+  test('walks Spec Kit from setup to verify', () => {
+    const s = snap()
+    expect(phase({ ...s, initialized: false })).toBe('setup -')
+    expect(phase({ ...s, constitution: { principles: [], musts: [] } })).toBe('constitution /speckit-constitution')
+    expect(phase({ ...s, featureDir: null, spec: null })).toBe('specify /speckit-specify')
+    expect(phase({ ...s, hasPlan: false, tasks: [] })).toBe('clarify /speckit-clarify')
+    const settled = { ...s.spec!, reqs: s.spec!.reqs.map(r => ({ ...r, needsClarification: false })) }
+    expect(phase({ ...s, spec: settled, hasPlan: false, tasks: [] })).toBe('plan /speckit-plan')
+    expect(phase({ ...s, tasks: [] })).toBe('tasks /speckit-tasks')
+    expect(phase(s)).toBe('implement /speckit-implement')
+    const done = s.tasks.map(t => ({ ...t, done: true }))
+    expect(phase({ ...s, tasks: done })).toBe('verify /xref check')
+    expect(phase({ ...s, tasks: done, extensions: ['xref'] })).toBe('verify /speckit-xref-check')
+    expect(phase({ ...s, tasks: done, extensions: ['xref'], commandStyle: 'commands' })).toBe('verify /speckit.xref.check')
+  })
+
+  test('asks for the requirement map once when a requirement names no task, and only once', () => {
+    const s = snap()
+    const untied = { ...s, tasks: s.tasks.map(t => ({ ...t, reqs: t.id === 'T004' ? [] : t.reqs })) }
+    expect(phase({ ...untied, extensions: ['xref'] })).toBe('map /speckit-xref-map')
+    const mapped = { ...emptyLedger(), requirements: { 'FR-002': { tasks: ['T004'], files: [], sources: ['llm'] } } }
+    expect(phase(untied, mapped)).toBe('implement /speckit-implement')
+  })
+
+  test('notes an open clarification and the drift beside the step', () => {
+    const s = snap()
+    const drifted = recordTouch(emptyLedger(), 'src/ui/theme.ts', { verdict: 'unplanned', task: 'T004' }, 'now')
+    expect(nextStep(s, drifted).notes).toEqual([
+      'FR-005 still marked NEEDS CLARIFICATION (/speckit-clarify).',
+      'Drift yellow: src/ui/theme.ts is not planned for any task',
+    ])
   })
 })

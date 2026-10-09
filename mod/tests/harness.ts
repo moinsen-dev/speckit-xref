@@ -77,8 +77,9 @@ export function project(on: any, files: Record<string, string>, options: Options
       }
       return ok(lines.join('\n'), lines.length ? 0 : 1)
     }
+    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok('src/auth/token.ts\n')
     if (e.argv[0] === 'git' && e.argv[1] === 'diff') return ok(`diff --git a/src/auth/token.ts b/src/auth/token.ts\n+export const ttl = 15 * 60\n`)
-    if (e.argv[0] === 'git' && e.argv[1] === 'status') return ok(' M src/auth/token.ts\n')
+    if (e.argv[0] === 'git' && e.argv[1] === 'ls-files') return ok('')
     return { deny: 'ENOENT' }
   })
   on('session.cwd', () => ({ value: ROOT }))

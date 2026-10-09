@@ -14,7 +14,7 @@ test('follows the active feature and registers /xref, its tools and the pane', a
   const seen = project(on, { ...DEMO })
   await startSession($)
   expect(seen.commands).toEqual(['xref'])
-  expect(seen.tools).toEqual(['focus', 'where', 'link'])
+  expect(seen.tools).toEqual(['focus', 'where', 'status', 'link'])
   expect(seen.opened).toEqual(['speckit-xref'])
   const status = await xref($)
   expect(status.text).toMatch(new RegExp(`^${FEATURE} · tasks 3/8 · FR covered 4/5 · drift green`))
@@ -28,7 +28,7 @@ test('without a feature it stays quiet: no section, no pane', async ($, on) => {
   expect(seen.opened).toEqual([])
   const composed = await $.prompt.compose(COMPOSE)
   expect(composed.sections.map(s => s.id)).toEqual(['intro'])
-  expect((await xref($)).text).toContain('No Spec Kit feature found')
+  expect((await xref($)).text).toBe('Spec Kit is not set up in this repository (no .specify/). Next: ask Claude to set up Spec Kit (the speckit-xref:speckit skill).')
 })
 
 test('puts the spec into the system prompt and keeps it stable while tasks change', async ($, on) => {
@@ -221,4 +221,47 @@ test('/xref check before the first turn falls back to one completion fed by the 
   expect(seen.forks).toHaveLength(1)
   expect(seen.completes[0]).toContain('What the user said in this session, oldest first:\n- Please also allow passwords as a fallback')
   expect(seen.completes[0]).toContain('Changed files: src/auth/token.ts')
+})
+
+test('the status tool tells the model where the project stands and what comes next', async ($, on) => {
+  project(on, { ...DEMO, '.specify/integration.json': JSON.stringify({ integration: 'claude', integration_settings: { claude: { invoke_separator: '-' } } }), '.specify/extensions/xref/extension.yml': 'x' })
+  await startSession($)
+  const status = await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)
+  expect(status.result).toContain('Spec Kit: set up · commands as /speckit-plan · extensions: xref')
+  expect(status.result).toContain('Constitution: 3 principles, 3 MUST rules')
+  expect(status.result).toContain('Artifacts: spec.md yes · plan.md yes · tasks.md 3/8 done · FR covered 4/5 · drift green')
+  expect(status.result).toContain('Phase: implement. 5 of 8 tasks open; next T004.')
+  expect(status.result).toContain('Next: /speckit-implement')
+  expect(status.result).toContain('- FR-005 still marked NEEDS CLARIFICATION (/speckit-clarify).')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('Next/speckit-implement · 5 of 8 tasks open; next T004.')
+})
+
+test('a project on the commands layout gets dotted commands', async ($, on) => {
+  project(on, { ...DEMO, '.specify/integration.json': JSON.stringify({ integration: 'copilot', integration_settings: { copilot: { invoke_separator: '.' } } }) })
+  await startSession($)
+  expect((await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result).toContain('Next: /speckit.implement')
+})
+
+test('a plan written outside the session moves the next step on', async ($, on) => {
+  const files: Record<string, string> = { ...DEMO }
+  delete files[`${FEATURE}/plan.md`]
+  delete files[`${FEATURE}/tasks.md`]
+  const seen = project(on, files)
+  await startSession($)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('FR-005 still marked NEEDS CLARIFICATION; settle them before planning.')
+  seen.write(`${FEATURE}/plan.md`, '# Plan\n')
+  await seen.clock.advance(4000)
+  // The snapshot is $.state the pane reads, so the drawing follows without a remount.
+  expect(toText(await pane.drawn())).toContain('Next/speckit-tasks · The plan is written; tasks.md is missing.')
+})
+
+test('in a repository without Spec Kit the pane points to the setup skill', async ($, on) => {
+  project(on, { 'README.md': '# app\n' })
+  await startSession($)
+  const status = await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)
+  expect(status.result).toContain('Phase: setup. Spec Kit is not set up in this repository (no .specify/).')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).')
 })

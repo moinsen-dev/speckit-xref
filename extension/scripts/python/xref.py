@@ -497,15 +497,15 @@ def scan_anchors(root: Path) -> list[dict]:
 
 
 def changed_files(root: Path, base: str | None) -> list[str]:
-    files: dict[str, None] = {}
+    """Changed files relative to the project and only inside it: the project may be one folder of a larger repository."""
+    runs = [["git", "diff", "--name-only", "--relative", "HEAD"], ["git", "ls-files", "--others", "--exclude-standard"]]
     if base:
-        for line in (run(["git", "diff", "--name-only", f"{base}...HEAD"], root) or "").split("\n"):
+        runs.insert(0, ["git", "diff", "--name-only", "--relative", f"{base}...HEAD"])
+    files: dict[str, None] = {}
+    for argv in runs:
+        for line in (run(argv, root) or "").split("\n"):
             if line.strip():
                 files.setdefault(line.strip(), None)
-    for line in (run(["git", "status", "--porcelain", "--untracked-files=all"], root) or "").split("\n"):
-        if len(line) > 3:
-            path = line[3:].split(" -> ")[-1].strip().strip('"')
-            files.setdefault(path, None)
     return [f for f in files if not is_spec_artifact(f)]
 
 
