@@ -1,13 +1,41 @@
 // Pure X-Ref and drift logic: which task a file serves, what counts as drift, what the model is told.
 
 import type { Anchor, Ledger, Semantic, Snapshot, Spec, Task } from '../types'
+import { emptyLedger } from './ledger'
+import { LADDER, isActive, isStale, levelOf } from './proof'
+import type { Rung } from './proof'
+import { fingerprint, isTestFile, localId, matchesAny } from './rules'
+import type { Rules } from './rules'
 
-export type Verdict = 'in-scope' | 'other-task' | 'linked' | 'unplanned' | 'untracked' | 'spec'
+export { emptyLedger, localId }
+
+/** The verdicts of docs/contract-0.4.md §3, in the order they are tried. */
+export type CoreVerdict = 'spec' | 'exempt' | 'task-linked' | 'planned' | 'linked' | 'unclear' | 'untracked' | 'unplanned'
+export type Verdict = 'in-scope' | 'other-task' | 'linked' | 'unplanned' | 'untracked' | 'spec' | 'exempt' | 'unclear'
 export type Classified = { verdict: Verdict; task: string | null }
 
 export type Level = 'none' | 'green' | 'yellow' | 'red'
-export type Finding = { kind: 'unplanned' | 'dangling' | 'semantic' | 'intent'; level: 'yellow' | 'red'; text: string; file?: string; intent?: string }
-export type Report = { level: Level; findings: Finding[]; covered: number; total: number; uncovered: string[]; done: number; tasks: number }
+export type Finding = {
+  kind: 'unplanned' | 'dangling' | 'orphan-test' | 're-verify' | 'semantic' | 'intent'
+  level: 'yellow' | 'red'
+  text: string
+  file?: string
+  intent?: string
+  id?: string
+}
+export type Report = {
+  level: Level
+  findings: Finding[]
+  /** Active FRs at `planned` or above. */
+  covered: number
+  total: number
+  uncovered: string[]
+  done: number
+  tasks: number
+  levels: Record<Rung, number>
+  /** Spec gaps that do not raise the drift level. */
+  notes: string[]
+}
 
 /** A text cut at a word boundary, an ellipsis where it was cut. */
 export function short(text: string, max: number): string {
@@ -16,8 +44,6 @@ export function short(text: string, max: number): string {
   const space = cut.lastIndexOf(' ')
   return (space > max * 0.5 ? cut.slice(0, space) : cut).replace(/[\s,;:(]+$/, '') + '…'
 }
-
-export const emptyLedger = (): Ledger => ({ tasks: {}, requirements: {}, unplanned: [], intents: [], anchors: [], semantic: null })
 
 const MAX_UNPLANNED = 100
 const MAX_INTENTS = 50
@@ -31,8 +57,9 @@ export function relPath(file: string, root: string): string {
 
 const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-/** Spec Kit's own files and the agent's configuration are never drift. */
-export const isSpecArtifact = (rel: string) => /^(specs|\.specify|\.claude|\.github)\//.test(rel) || /^(CLAUDE|AGENTS)\.md$/.test(rel)
+/** Spec Kit's own files and the agent's configuration are never drift; CI workflows are code. */
+export const isSpecArtifact = (rel: string) =>
+  (/^(specs|\.specify|\.claude|\.github)\//.test(rel) && !/^\.github\/workflows\//.test(rel)) || /^(CLAUDE|AGENTS)\.md$/.test(rel)
 
 export function pathMatches(rel: string, planned: string): boolean {
   const p = planned.replace(/^\.\//, '')
@@ -52,7 +79,7 @@ export function plans(task: Task, rel: string): boolean {
   })
 }
 
-export const ANCHOR = /@spec\s+((?:[\w.-]+\/)?(?:FR|SC|T)-?\d{3,})/g
+export const ANCHOR = /@spec\s+((?:[\w.-]+\/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))/g
 
 export function anchorsIn(text: string, file: string): Anchor[] {
   const out: Anchor[] = []
@@ -62,34 +89,56 @@ export function anchorsIn(text: string, file: string): Anchor[] {
   return out
 }
 
-/** The bare id of an anchor or link (`001-auth/FR-003` → `FR-003`) when it belongs to `featureDir`, else null. */
-export function localId(id: string, featureDir: string | null): string | null {
-  const slash = id.lastIndexOf('/')
-  if (slash === -1) return id
-  const feature = id.slice(0, slash)
-  return featureDir && basename(featureDir) === feature ? id.slice(slash + 1) : null
-}
+const DEFAULT_RULES: Rules = { exempt: [], unclear: [] }
 
-export function classify(rel: string, snap: Snapshot, ledger: Ledger, active: string | null, newText = ''): Classified {
+/** The shared classification (§3): first match wins. The extension's batch check reports these verdicts as they are. */
+export function classifyCore(
+  rel: string,
+  snap: Pick<Snapshot, 'tasks'>,
+  ledger: Ledger,
+  rules: Rules = DEFAULT_RULES,
+  newText = '',
+): { verdict: CoreVerdict; task: string | null } {
   if (isSpecArtifact(rel)) return { verdict: 'spec', task: null }
-  for (const [id, entry] of Object.entries(ledger.tasks)) if (entry.linked.includes(rel)) return { verdict: 'linked', task: id }
+  if (matchesAny(rel, rules.exempt)) return { verdict: 'exempt', task: null }
+  for (const [id, entry] of Object.entries(ledger.tasks)) if (entry.linked.includes(rel)) return { verdict: 'task-linked', task: id }
   // The task that plans a file comes before its anchors: it says which task the work is on.
   const matches = snap.tasks.filter(t => plans(t, rel))
-  const activeMatch = matches.find(t => t.id === active)
-  if (activeMatch) return { verdict: 'in-scope', task: activeMatch.id }
-  const other = matches.find(t => !t.done) ?? matches[0]
-  if (other) return { verdict: active ? 'other-task' : 'in-scope', task: other.id }
-  if (newText && anchorsIn(newText, rel).length > 0) return { verdict: 'linked', task: active }
-  if (Object.values(ledger.requirements).some(r => r.files.includes(rel))) return { verdict: 'linked', task: active }
-  if (ledger.anchors.some(a => a.file === rel)) return { verdict: 'linked', task: active }
+  const match = matches.find(t => !t.done) ?? matches[0]
+  if (match) return { verdict: 'planned', task: match.id }
+  if (newText && anchorsIn(newText, rel).length > 0) return { verdict: 'linked', task: null }
+  if (Object.values(ledger.requirements).some(r => r.files.includes(rel))) return { verdict: 'linked', task: null }
+  if (ledger.anchors.some(a => a.file === rel)) return { verdict: 'linked', task: null }
+  if (matchesAny(rel, rules.unclear)) return { verdict: 'unclear', task: null }
   if (snap.tasks.length === 0) return { verdict: 'untracked', task: null }
-  return { verdict: 'unplanned', task: active }
+  return { verdict: 'unplanned', task: null }
+}
+
+/** The live verdict: a planned file is in scope for the task in focus, or moves the focus to its own task. */
+export function classify(rel: string, snap: Snapshot, ledger: Ledger, active: string | null, newText = ''): Classified {
+  const core = classifyCore(rel, snap, ledger, snap.rules, newText)
+  switch (core.verdict) {
+    case 'task-linked':
+      return { verdict: 'linked', task: core.task }
+    case 'planned': {
+      const own = active ? snap.tasks.find(t => t.id === active && plans(t, rel)) : undefined
+      if (own) return { verdict: 'in-scope', task: own.id }
+      return { verdict: active ? 'other-task' : 'in-scope', task: core.task }
+    }
+    case 'linked':
+    case 'unplanned':
+    case 'unclear':
+      return { verdict: core.verdict, task: active }
+    default:
+      return { verdict: core.verdict, task: null }
+  }
 }
 
 /** Books one finished write into the ledger; returns the ledger it became. */
 export function recordTouch(ledger: Ledger, rel: string, c: Classified, at: string): Ledger {
   const next: Ledger = { ...ledger, tasks: { ...ledger.tasks }, unplanned: ledger.unplanned }
-  if (c.task && c.verdict !== 'unplanned') {
+  // Exempt and unclear files are no evidence for a task and no drift either.
+  if (c.task && c.verdict !== 'unplanned' && c.verdict !== 'exempt' && c.verdict !== 'unclear') {
     const entry = next.tasks[c.task] ?? { touched: [], linked: [] }
     if (!entry.touched.includes(rel)) next.tasks[c.task] = { ...entry, touched: [...entry.touched, rel] }
   }
@@ -108,8 +157,9 @@ export function link(ledger: Ledger, rel: string, id: string, snap: Snapshot, so
     if (!snap.tasks.some(t => t.id === bare)) return { ledger, error: `${bare} is no task in tasks.md` }
     const entry = next.tasks[bare] ?? { touched: [], linked: [] }
     if (!entry.linked.includes(rel)) next.tasks[bare] = { ...entry, linked: [...entry.linked, rel] }
-  } else if (/^(FR|SC)-\d{3,}$/.test(bare)) {
-    if (!snap.spec?.reqs.some(r => r.id === bare)) return { ledger, error: `${bare} is no requirement in spec.md` }
+  } else if (/^(FR|SC)-\d{3,}$/.test(bare) || /^US\d+-AS\d+$/.test(bare)) {
+    const known = snap.spec?.reqs.some(r => r.id === bare) || snap.spec?.stories.some(s => s.scenarios.some(x => x.id === bare))
+    if (!known) return { ledger, error: `${bare} is no requirement or acceptance scenario in spec.md` }
     const entry = next.requirements[bare] ?? { tasks: [], files: [], sources: [] }
     next.requirements[bare] = {
       ...entry,
@@ -117,9 +167,12 @@ export function link(ledger: Ledger, rel: string, id: string, snap: Snapshot, so
       sources: entry.sources.includes(source) ? entry.sources : [...entry.sources, source],
     }
   } else {
-    return { ledger, error: `${id} is neither a task (T###) nor a requirement (FR-### / SC-###)` }
+    return { ledger, error: `${id} is neither a task (T###), a requirement (FR-### / SC-###) nor a scenario (US1-AS1)` }
   }
   next.unplanned = ledger.unplanned.map(u => (u.file === rel ? { ...u, acknowledged: true } : u))
+  // The text a link was made against: when it changes, the link needs new proof.
+  const req = snap.spec?.reqs.find(r => r.id === bare)
+  if (req) next.fingerprints = { ...ledger.fingerprints, [bare]: fingerprint(req.text) }
   return { ledger: next }
 }
 
@@ -145,21 +198,44 @@ export function currentTask(snap: Snapshot, active: string | null): Task | null 
   return chosen ?? snap.tasks.find(t => !t.done) ?? null
 }
 
-export function evaluate(snap: Snapshot, ledger: Ledger): Report {
+/** What the ladder reads from a snapshot. */
+const proofSnap = (snap: Snapshot) => ({ featureDir: snap.featureDir, tasks: snap.tasks, reqs: snap.spec?.reqs ?? [], realTests: snap.realTests ?? [] })
+
+/**
+ * The drift report (§8). Only deterministic findings decide unless `semantic` is on: the live mod lets the
+ * intent check count, the extension's exit code never does.
+ */
+export function evaluate(snap: Snapshot, ledger: Ledger, opts: { semantic?: boolean } = {}): Report {
+  const semanticOn = opts.semantic ?? true
   const findings: Finding[] = []
   const open = ledger.unplanned.filter(u => !u.acknowledged)
   for (const u of open) findings.push({ kind: 'unplanned', level: 'yellow', file: u.file, text: `${u.file} is not planned for any task` })
   if (open.length >= 3) findings.push({ kind: 'unplanned', level: 'red', text: `${open.length} edits outside the planned files` })
 
-  const reqIds = new Set(snap.spec?.reqs.map(r => r.id) ?? [])
-  const taskIds = new Set(snap.tasks.map(t => t.id))
+  const reqs = snap.spec?.reqs ?? []
+  const byId = new Map(reqs.map(r => [r.id, r]))
+  const known = new Set([...reqs.filter(r => isActive(r)).map(r => r.id), ...snap.tasks.map(t => t.id), ...(snap.spec?.stories.flatMap(s => s.scenarios.map(x => x.id)) ?? [])])
   for (const a of ledger.anchors) {
     const bare = localId(a.id, snap.featureDir)
-    if (bare && !reqIds.has(bare) && !taskIds.has(bare)) findings.push({ kind: 'dangling', level: 'yellow', file: a.file, text: `${a.file}:${a.line} anchors ${a.id}, which the spec no longer has` })
+    if (!bare || known.has(bare)) continue
+    const old = byId.get(bare)
+    const why = old ? (old.supersededBy ? `superseded by ${old.supersededBy}` : 'retired') : 'which the spec no longer has'
+    const test = isTestFile(a.file)
+    findings.push({
+      kind: test ? 'orphan-test' : 'dangling',
+      level: 'yellow',
+      file: a.file,
+      id: bare,
+      text: test ? `${a.file}:${a.line} tests ${a.id}, ${old ? `which is ${why}` : why}` : `${a.file}:${a.line} anchors ${a.id}, ${old ? `which is ${why}` : why}`,
+    })
+  }
+  const proof = proofSnap(snap)
+  for (const r of reqs) {
+    if (isActive(r) && isStale(r.id, proof, ledger)) findings.push({ kind: 're-verify', level: 'yellow', id: r.id, text: `${r.id} changed since it was last proven; it needs new proof` })
   }
 
   const s = ledger.semantic
-  if (s) {
+  if (s && semanticOn) {
     if (s.verdict === 'drift' || s.score < 50) findings.push({ kind: 'semantic', level: 'red', text: `Intent check ${s.score}/100: ${s.reasons[0] ?? 'the change drifts from the spec'}` })
     else if (s.verdict === 'minor' || s.score < 80) findings.push({ kind: 'semantic', level: 'yellow', text: `Intent check ${s.score}/100: ${s.reasons[0] ?? 'minor drift'}` })
     for (const c of s.changes) {
@@ -167,25 +243,27 @@ export function evaluate(snap: Snapshot, ledger: Ledger): Report {
     }
   }
 
-  const reqs = snap.spec?.reqs.filter(r => r.kind === 'FR') ?? []
-  const uncovered = reqs.filter(r => !isCovered(r.id, snap, ledger)).map(r => r.id)
+  const frs = reqs.filter(r => r.kind === 'FR' && isActive(r))
+  const levels = Object.fromEntries(LADDER.map(r => [r, 0])) as Record<Rung, number>
+  const uncovered: string[] = []
+  for (const r of frs) {
+    const rung = levelOf(r.id, proof, ledger)
+    levels[rung] += 1
+    if (rung === 'specified') uncovered.push(r.id)
+  }
+  const notes = (snap.spec?.stories ?? []).filter(st => st.scenarios.length === 0).map(st => `${st.id} has no acceptance scenarios`)
   const level: Level = !snap.featureDir ? 'none' : findings.some(f => f.level === 'red') ? 'red' : findings.length ? 'yellow' : 'green'
   return {
     level,
     findings,
-    covered: reqs.length - uncovered.length,
-    total: reqs.length,
+    covered: frs.length - uncovered.length,
+    total: frs.length,
     uncovered,
     done: snap.tasks.filter(t => t.done).length,
     tasks: snap.tasks.length,
+    levels,
+    notes,
   }
-}
-
-function isCovered(id: string, snap: Snapshot, ledger: Ledger): boolean {
-  if (snap.tasks.some(t => t.reqs.includes(id))) return true
-  const entry = ledger.requirements[id]
-  if (entry && (entry.tasks.length > 0 || entry.files.length > 0)) return true
-  return ledger.anchors.some(a => localId(a.id, snap.featureDir) === id)
 }
 
 /** The FRs a task serves: named in its text, or mapped to it in the ledger. */
@@ -375,37 +453,4 @@ export function appendRemediation(tasksMd: string, tasks: Task[], text: string):
   const base = tasksMd.replace(/\s*$/, '')
   const markdown = base.includes(REMEDIATION_HEADING) ? `${base}\n${line}\n` : `${base}\n\n${REMEDIATION_HEADING}\n\n${line}\n`
   return { markdown, id }
-}
-
-export function ledgerFromJson(text: string | null): Ledger {
-  if (!text) return emptyLedger()
-  try {
-    const raw = JSON.parse(text) as Partial<Ledger> & { schema_version?: number }
-    const base = emptyLedger()
-    return {
-      tasks: raw.tasks && typeof raw.tasks === 'object' ? raw.tasks : base.tasks,
-      requirements: raw.requirements && typeof raw.requirements === 'object' ? raw.requirements : base.requirements,
-      unplanned: Array.isArray(raw.unplanned) ? raw.unplanned : base.unplanned,
-      intents: Array.isArray(raw.intents) ? raw.intents : base.intents,
-      anchors: Array.isArray(raw.anchors) ? raw.anchors : base.anchors,
-      semantic: raw.semantic ?? null,
-    }
-  } catch {
-    return emptyLedger()
-  }
-}
-
-export function ledgerToJson(ledger: Ledger, featureDir: string, at: string, report: Report): string {
-  return JSON.stringify(
-    {
-      schema_version: 1,
-      producer: 'speckit-xref',
-      feature: featureDir,
-      updated_at: at,
-      summary: { level: report.level, coverage: `${report.covered}/${report.total}`, tasks: `${report.done}/${report.tasks}` },
-      ...ledger,
-    },
-    null,
-    2,
-  ) + '\n'
 }

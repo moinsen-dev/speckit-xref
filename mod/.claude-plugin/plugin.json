@@ -62,6 +62,29 @@
       "title": "Autopilot step budget",
       "description": "How many steps one autopilot run takes before it waits for you.",
       "default": 25
+    },
+    "review": {
+      "type": "string",
+      "title": "Spec gate",
+      "description": "spec: the autopilot stops once at the written spec until you approve it (the pane, /xref approve or the dialog). spec+plan: also at the plan. none: no review, for maximum autonomy.",
+      "default": "spec",
+      "options": [
+        "spec",
+        "spec+plan",
+        "none"
+      ]
+    },
+    "testCommand": {
+      "type": "string",
+      "title": "Test command",
+      "description": "The command that runs the project's tests (e.g. npx vitest run). Empty: derived from plan.md's **Testing**: line. The autopilot runs it after each implement step; failures become repair steps, at most three.",
+      "default": ""
+    },
+    "junitPath": {
+      "type": "string",
+      "title": "JUnit report",
+      "description": "Where the test command writes a JUnit XML report (e.g. reports/junit.xml). With it, each requirement is proven by the tests that name or anchor it; without it, a passing suite proves every requirement that has a real test.",
+      "default": ""
     }
   }
 }

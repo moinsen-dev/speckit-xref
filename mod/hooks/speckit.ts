@@ -1,6 +1,7 @@
 // Pure readers for GitHub Spec Kit artifacts. No IO: register.tsx reads the files and hands the text in.
 
-import type { Constitution, Spec, Story, Req, Task } from '../types'
+import type { Constitution, Scenario, Spec, Story, Req, Task } from '../types'
+import { reqStatus } from './rules'
 
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)
 const unbold = (text: string) => text.replace(/\*\*/g, '').replace(/`/g, '').trim()
@@ -30,8 +31,21 @@ export function parseSpec(markdown: string): Spec {
   const input = inputLine?.[1] ? inputLine[1].trim().replace(/^"(.*)"$/, '$1').trim() : null
 
   const stories: Story[] = []
-  for (const m of markdown.matchAll(/^###\s+User Story\s+(\d+)\s*[-–—:]\s*(.+?)\s*(?:\(Priority:\s*(P\d+)\))?\s*(?:🎯.*)?$/gm)) {
-    stories.push({ id: `US${m[1]}`, title: unbold(m[2] ?? ''), priority: m[3] ?? null })
+  let story: Story | null = null
+  for (const line of markdown.split('\n')) {
+    const m = /^###\s+User Story\s+(\d+)\s*[-–—:]\s*(.+?)\s*(?:\(Priority:\s*(P\d+)\))?\s*(?:🎯.*)?$/.exec(line)
+    if (m) {
+      story = { id: `US${m[1]}`, title: unbold(m[2] ?? ''), priority: m[3] ?? null, scenarios: [] }
+      stories.push(story)
+      continue
+    }
+    if (/^#{1,3}\s/.test(line)) {
+      story = null
+      continue
+    }
+    // A numbered Given/When/Then line is scenario USn-AS<k>: the id an anchor or a test can name.
+    const scenario = story ? /^\s*(\d+)\.\s+(\*\*Given\*\*.*)$/.exec(line) : null
+    if (story && scenario) story.scenarios.push({ id: `${story.id}-AS${Number(scenario[1])}`, text: clip(unbold(scenario[2] ?? ''), 300) } satisfies Scenario)
   }
 
   const reqs: Req[] = []
@@ -41,7 +55,8 @@ export function parseSpec(markdown: string): Spec {
     if (seen.has(id)) continue
     seen.add(id)
     const text = m[3] ?? ''
-    reqs.push({ id, kind: m[2] as 'FR' | 'SC', text: clip(unbold(text), 300), needsClarification: /NEEDS CLARIFICATION/i.test(text) })
+    const clipped = clip(unbold(text), 300)
+    reqs.push({ id, kind: m[2] as 'FR' | 'SC', text: clipped, needsClarification: /NEEDS CLARIFICATION/i.test(text), ...reqStatus(unbold(text)) })
   }
 
   return {

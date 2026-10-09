@@ -17,7 +17,8 @@ import {
   recordTouch,
   turnContext,
 } from '../hooks/xref'
-import { nextStep } from '../hooks/workflow'
+import { rulesFrom, specFingerprint } from '../hooks/rules'
+import { nextStep, openPhase, tasksFingerprint } from '../hooks/workflow'
 import type { Snapshot } from '../types'
 import { DEMO } from './fixtures/demo'
 
@@ -36,6 +37,16 @@ const snap = (): Snapshot => ({
   tasks: parseTasks(DEMO[`${FEATURE}/tasks.md`]!),
   constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!),
   commandStyle: 'skills',
+  rules: rulesFrom(null),
+  realTests: [],
+  planFingerprint: null,
+  testCommand: 'npx vitest run',
+  branch: null,
+  phase: openPhase(parseTasks(DEMO[`${FEATURE}/tasks.md`]!)),
+  tasksFingerprint: tasksFingerprint(parseTasks(DEMO[`${FEATURE}/tasks.md`]!)),
+  commands: ['analyze', 'checklist', 'clarify', 'constitution', 'converge', 'implement', 'plan', 'specify', 'tasks'],
+  checklists: [],
+  persistence: 'flow-back',
 })
 
 describe('Spec Kit readers', () => {
@@ -229,13 +240,24 @@ describe('workflow', () => {
     expect([withIdea.command, withIdea.needsUser]).toEqual(['/speckit-specify a reading list app', null])
     expect(phase({ ...s, hasPlan: false, tasks: [] })).toBe('clarify /speckit-clarify')
     const settled = { ...s.spec!, reqs: s.spec!.reqs.map(r => ({ ...r, needsClarification: false })) }
-    expect(phase({ ...s, spec: settled, hasPlan: false, tasks: [] })).toBe('plan /speckit-plan')
+    // The spec gate: the written spec waits for the person's approval before it is planned.
+    const unplanned = { ...s, spec: settled, hasPlan: false, tasks: [] }
+    expect(phase(unplanned)).toBe('review -')
+    expect(nextStep(unplanned, emptyLedger()).needsUser).toContain('press Approve spec')
+    expect(phase(unplanned, { ...emptyLedger(), approvals: { spec: specFingerprint(settled) } })).toBe('plan /speckit-plan')
+    expect(nextStep(unplanned, emptyLedger(), null, { review: 'none' }).phase).toBe('plan')
+    // An approval is for one text: a changed requirement asks again.
+    const changed = { ...settled, reqs: settled.reqs.map(r => (r.id === 'FR-002' ? { ...r, text: 'Links expire after 5 minutes.' } : r)) }
+    expect(phase({ ...unplanned, spec: changed }, { ...emptyLedger(), approvals: { spec: specFingerprint(settled) } })).toBe('review -')
     expect(phase({ ...s, tasks: [] })).toBe('tasks /speckit-tasks')
     expect(phase(s)).toBe('implement /speckit-implement')
     const done = s.tasks.map(t => ({ ...t, done: true }))
-    expect(phase({ ...s, tasks: done })).toBe('verify /xref check')
-    expect(phase({ ...s, tasks: done, extensions: ['xref'] })).toBe('verify /speckit-xref-check')
-    expect(phase({ ...s, tasks: done, extensions: ['xref'], commandStyle: 'commands' })).toBe('verify /speckit.xref.check')
+    expect(phase({ ...s, tasks: done })).toBe('converge /speckit-converge')
+    const converged = { ...emptyLedger(), checkpoints: { converge: s.tasksFingerprint } }
+    expect(phase({ ...s, tasks: done }, converged)).toBe('verify /xref check')
+    expect(phase({ ...s, tasks: done, extensions: ['xref'] }, converged)).toBe('verify /speckit-xref-check')
+    expect(phase({ ...s, tasks: done, extensions: ['xref'], commandStyle: 'commands' }, converged)).toBe('verify /speckit.xref.check')
+    expect(phase({ ...s, tasks: done, commands: [] })).toBe('verify /xref check')
   })
 
   test('asks for the requirement map once when a requirement names no task, and only once', () => {

@@ -1,5 +1,7 @@
 import { mock } from 'claude-code/testing'
 
+import { ledgerFromParts, localPath } from '../hooks/ledger'
+
 export const ROOT = '/work'
 export const FEATURE = 'specs/001-magic-link-login'
 
@@ -19,7 +21,24 @@ export const BAND = {
 
 const USAGE = { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
-type Options = { env?: Record<string, string>; surfaces?: string[]; fork?: string; forkReason?: string; complete?: string; anchors?: string; noRipgrep?: boolean; untracked?: string[]; onPath?: string[]; classify?: string }
+type Options = {
+  env?: Record<string, string>
+  surfaces?: string[]
+  fork?: string
+  forkReason?: string
+  complete?: string
+  anchors?: string
+  noRipgrep?: boolean
+  untracked?: string[]
+  onPath?: string[]
+  classify?: string
+  /** What the project's test command does: exit codes in turn (the last repeats), and its output. */
+  tests?: { exits: number[]; output?: string }
+  /** What `git diff --name-only` lists, as the working tree changes; the default is src/auth/token.ts. */
+  changed?: () => string[]
+  /** The person's answers to `$.ui.ask`, in turn; none means the dialog is dismissed. */
+  answers?: string[]
+}
 
 /** Stubs every call the mod makes over an in-memory project; `files` changes as the mod writes. */
 export function project(on: any, files: Record<string, string>, options: Options = {}) {
@@ -33,7 +52,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     touch(path)
   }
   const isDir = (path: string) => path === '' || Object.keys(files).some(k => k.startsWith(path + '/'))
-  const seen = { opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
+  const seen = { deferred: [] as string[], compacted: [] as string[], testRuns: [] as string[], asked: [] as string[], notified: [] as string[], aborted: [] as string[], opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
 
   on('fs.read', ($: any, e: any) => (rel(e.path) in files ? { value: files[rel(e.path)] } : { deny: 'ENOENT' }))
   on('fs.write', ($: any, e: any) => {
@@ -78,7 +97,13 @@ export function project(on: any, files: Record<string, string>, options: Options
       }
       return ok(lines.join('\n'), lines.length ? 0 : 1)
     }
-    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok('src/auth/token.ts\n')
+    if (e.argv[0] === 'sh' && options.tests) {
+      seen.testRuns.push(e.argv[2])
+      const exit = options.tests.exits[Math.min(seen.testRuns.length - 1, options.tests.exits.length - 1)] ?? 0
+      return ok(options.tests.output ?? (exit ? 'FAIL tests/auth/token.test.ts' : 'ok'), exit)
+    }
+    if (e.argv[0] === 'git' && e.argv[1] === 'hash-object') return ok(e.argv.slice(3).map((f: string) => `h-${f}-${mtimes[f] ?? 0}`).join('\n'))
+    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok((options.changed ? options.changed() : ['src/auth/token.ts']).join('\n') + '\n')
     if (e.argv[0] === 'git' && e.argv[1] === 'diff') return ok(`diff --git a/src/auth/token.ts b/src/auth/token.ts\n+export const ttl = 15 * 60\n`)
     if (e.argv[0] === 'git' && e.argv[1] === 'ls-files') return ok('')
     return { deny: 'ENOENT' }
@@ -101,6 +126,7 @@ export function project(on: any, files: Record<string, string>, options: Options
   })
   on('tool.register', ($: any, e: any) => {
     seen.tools.push(e.name)
+    if (e.isDeferred) seen.deferred.push(e.name)
     return { value: { tool: `mcp__speckit-xref__${e.name}` } }
   })
   on('model.fork', ($: any, e: any) => {
@@ -126,12 +152,36 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude Code.', scope: 'shared' }] }))
   // The tools beneath the mod write what they were asked to, as Write and Edit would.
   on('tool.call', ($: any, e: any) => {
+    // $.ui.ask is the AskUserQuestion tool beneath the asking hook: the scripted answers stand in for the person.
+    if (e.tool === 'AskUserQuestion') {
+      const question = e.questions?.[0]?.question ?? ''
+      seen.asked.push(question)
+      const answer = options.answers?.shift()
+      if (answer === undefined) return { deny: 'dismissed' }
+      return { result: { questions: e.questions, answers: { [question]: answer } } }
+    }
     const path = typeof e.file_path === 'string' ? rel(e.file_path) : null
     if (path && e.tool === 'Write') write(path, e.content)
     if (path && e.tool === 'Edit') write(path, path in files ? files[path]!.replace(e.old_string, e.new_string) : e.new_string)
     return { result: 'ok' }
   })
   on('turn.complete', () => ({ text: '' }))
+  on('tool.check', () => ({ decision: 'allow' }))
+  on('session.compact', ($: any, e: any) => {
+    seen.compacted.push(e.instructions ?? '')
+    return { messages: e.messages }
+  })
+  on('skill.prompt', ($: any, e: any) => ({ text: e.text }))
+  on('ui.notify', ($: any, e: any) => {
+    seen.notified.push(e.text)
+    return { value: { isSent: true, channel: 'terminal' } }
+  })
+  on('turn.abort', ($: any, e: any) => {
+    seen.aborted.push(e.turnId)
+    return { value: undefined }
+  })
+  on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: [], cost: { usd: 0.5 } } }))
+  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn beneath'] }))
   on('session.start', () => ({ cwd: ROOT }))
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 10) })
@@ -152,7 +202,12 @@ export async function endTurn($: any) {
   await $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1000, isAborted: false, turnId: 'turn-1' })
 }
 
-export const ledgerOf = (files: Record<string, string>) => JSON.parse(files[`${FEATURE}/xref.json`] ?? 'null')
+/** The ledger as the mod keeps it: both files merged, the committed one under `committed`. */
+export const ledgerOf = (files: Record<string, string>): any => {
+  const committed = files[`${FEATURE}/xref.json`] ?? null
+  const local = files[localPath(FEATURE)] ?? null
+  return committed || local ? { ...ledgerFromParts(committed, local), committed: committed ? JSON.parse(committed) : null } : null
+}
 
 /** What a drawn element reads as: a column's children on lines of their own, a row's side by side. */
 export function toText(element: any): string {

@@ -13,8 +13,13 @@ const INTENT_REPLY = JSON.stringify({
 test('follows the active feature and registers /xref, its tools and the pane', async ($, on) => {
   const seen = project(on, { ...DEMO })
   await startSession($)
-  expect(seen.commands).toEqual(['xref'])
+  expect(seen.commands).toEqual(['xref', 'xref-stop'])
   expect(seen.tools).toEqual(['focus', 'where', 'status', 'ask', 'link'])
+  // Unasked, the pane opens only where it is a sidebar: in fullscreen, never over the main screen.
+  expect(seen.opened).toEqual([])
+  await $.ui.mount({ ...BAND, surface: 'terminal', viewport: { columns: 180, rows: 40, isFullscreen: false } })
+  expect(seen.opened).toEqual([])
+  await $.ui.mount({ ...BAND, surface: 'terminal', viewport: { columns: 180, rows: 40, isFullscreen: true } })
   expect(seen.opened).toEqual(['speckit-xref'])
   const status = await xref($)
   expect(status.text).toMatch(new RegExp(`^${FEATURE} · tasks 3/8 · FR covered 4/5 · drift green`))
@@ -51,6 +56,9 @@ test('the person\'s prompt is logged as intent and carries the current task', as
   expect(entered.context.at(-1)).toContain('Current task: T004')
   await endTurn($)
   expect(ledgerOf(seen.files).intents.map((i: any) => i.text)).toEqual(['Please also allow passwords as a fallback'])
+  // The person's words stay on this machine: the committed half holds no intent.
+  expect(seen.files[`${FEATURE}/xref.json`] ?? '').not.toContain('passwords')
+  expect(seen.files['.specify/xref/.gitignore']).toBe('local/\n')
 })
 
 test('books a planned edit to its task and flags an unplanned one to the model and the person', async ($, on) => {
@@ -65,9 +73,9 @@ test('books a planned edit to its task and flags an unplanned one to the model a
   const ledger = ledgerOf(seen.files)
   expect(ledger.tasks.T006.touched).toEqual(['src/auth/callback.ts'])
   expect(ledger.unplanned.map((u: any) => u.file)).toEqual(['src/ui/theme.ts'])
-  expect(ledger.summary.level).toBe('yellow')
+  expect((await xref($)).text).toContain('drift yellow')
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(toText(await band.drawn())).toContain('xref T006 · tasks 3/8 · FR 4/5 · drift yellow (1)')
+  expect(toText(await band.drawn())).toContain('▲ xref T006 · tasks 3/8 · FR 4/5 · watch (1)')
 })
 
 test('linking the file through the tool clears the drift', async ($, on) => {
@@ -78,7 +86,7 @@ test('linking the file through the tool clears the drift', async ($, on) => {
   expect(answer.result).toBe('Linked src/ui/theme.ts to FR-004.')
   const where = await $.tool.call({ tool: 'mcp__speckit-xref__where', file: `${ROOT}/src/ui/theme.ts` } as never)
   expect(where.result).toContain('Requirements: FR-004')
-  expect(ledgerOf(seen.files).summary.level).toBe('green')
+  expect((await xref($)).text).toContain('drift green')
 })
 
 test('strict mode refuses an unplanned edit and names the way forward', { options: { mode: 'strict' } }, async ($, on) => {
@@ -99,7 +107,7 @@ test('anchors in the code count as coverage, and one to a missing requirement is
   expect(where.result).toContain('001-magic-link-login/FR-002 (line 1)')
   await $.tool.call({ tool: 'Write', file_path: `${ROOT}/src/auth/request-link.ts`, content: '// @spec 001-magic-link-login/FR-009\n' })
   await endTurn($)
-  expect(ledgerOf(seen.files).summary.level).toBe('yellow')
+  expect((await xref($)).text).toContain('drift yellow')
   expect((await xref($)).text).toContain('anchors 001-magic-link-login/FR-009, which the spec no longer has')
 })
 
@@ -131,7 +139,7 @@ test('after a turn that wrote, the intent check runs on the clock and its verdic
     const pane = await $.ui.mount({ ...PANE, surface })
     const text = toText(await pane.drawn())
     expect(text).toContain('Magic Link Login')
-    expect(text).toContain('Drift● red · intent 45/100')
+    expect(text).toContain('Drift✖ off-spec · intent 45/100')
     expect(text).toContain('User asked: "allow passwords as a fallback", which contradicts the spec')
     expect(await pane.find({ key: 'spec-0' })).toBeDefined()
     await pane.unmount()
@@ -191,7 +199,7 @@ test('with the intent check switched off, a turn that wrote asks no model', { op
   await endTurn($)
   await seen.clock.advance(10)
   expect(seen.forks).toHaveLength(0)
-  expect(ledgerOf(seen.files).summary.level).toBe('green')
+  expect((await xref($)).text).toContain('drift green')
 })
 
 test('a request the person already sent to the spec stays settled when the next check quotes it again', async ($, on) => {

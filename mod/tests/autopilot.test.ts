@@ -17,7 +17,7 @@ test('/xref auto on hands the next Spec Kit step to the model, and the next one 
   await seen.clock.advance(0)
   const [first] = autopilotPrompts(seen)
   expect(first).toContain('[speckit-xref autopilot · step 1/25] implement: 5 of 8 tasks open; next T004.')
-  expect(first).toContain('Run /speckit-implement now: invoke it through the Skill tool and carry it through.')
+  expect(first).toContain("Run /speckit-implement now through the Skill tool, scoped by its argument to one phase: \"Only the phase 'Phase 3: User Story 1 - Request a login link (Priority: P1) 🎯 MVP' (T004, T005)")
   expect(first).toContain('Carry the step through without asking whether to continue')
   expect(first).toContain('Current task: T004')
   expect(await band($)).toContain('auto ▶ 1/25')
@@ -132,15 +132,19 @@ test('without a feature it waits for the idea, then specifies it in the person\'
 
 test('once every task is checked and verified, the autopilot ends the run', async ($, on) => {
   const done = DEMO[`${FEATURE}/tasks.md`]!.replace(/- \[ \]/g, '- [x]')
-  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: done })
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: done }, { tests: { exits: [0] } })
   await startSession($)
   await xref($, 'auto on')
   await seen.clock.advance(0)
-  expect(autopilotPrompts(seen)[0]).toContain('verify: Every task is checked: check the code against the spec.')
+  // Spec Kit's own loop first: converge looks for work the tasks missed; then the code is checked against the spec.
+  expect(autopilotPrompts(seen)[0]).toContain('converge: Every task is checked: find the work the tasks missed.')
   await turn($)
   await seen.clock.advance(0)
-  expect(autopilotPrompts(seen)).toHaveLength(1)
-  expect(seen.toasts.at(-1)).toBe(`Autopilot done: every task of ${FEATURE} is checked and the drift is green.`)
+  expect(autopilotPrompts(seen)[1]).toContain('verify: Every task is checked: check the code against the spec.')
+  await turn($)
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)).toHaveLength(2)
+  expect(seen.toasts.at(-1)).toBe(`Autopilot done: every task of ${FEATURE} is checked, the tests pass and the drift is green.`)
   expect((await xref($, 'auto')).text).toBe('Autopilot off. /xref auto on [steps] starts it.')
 })
 

@@ -1,7 +1,16 @@
 // The speckit-xref contract: what the mod reads out of Spec Kit, what it keeps per feature, and the session values it draws from.
 
-export type Story = { id: string; title: string; priority: string | null }
-export type Req = { id: string; kind: 'FR' | 'SC'; text: string; needsClarification: boolean }
+export type Scenario = { id: string; text: string }
+export type Story = { id: string; title: string; priority: string | null; scenarios: Scenario[] }
+export type Req = {
+  id: string
+  kind: 'FR' | 'SC'
+  text: string
+  needsClarification: boolean
+  /** Retired and superseded requirements stay in spec.md for history; they leave the ladder. */
+  status: 'active' | 'superseded' | 'retired'
+  supersededBy: string | null
+}
 export type Task = {
   id: string
   done: boolean
@@ -44,6 +53,26 @@ export type Snapshot = {
   constitution: Constitution | null
   /** How the project invokes Spec Kit's commands: `/speckit-clarify` (skills) or `/speckit.clarify` (commands). */
   commandStyle: 'skills' | 'commands'
+  /** What never counts as drift (exempt) and what is listed but not drift (unclear): defaults plus `.xrefignore`. */
+  rules: { exempt: string[]; unclear: string[] }
+  /** Test files tied to the feature whose content holds real tests (not only test.todo). */
+  realTests: string[]
+  /** The fingerprint of plan.md, for the spec+plan review gate. */
+  planFingerprint: string | null
+  /** The command that runs the project's tests: the plugin option, else plan.md's `**Testing**:` line. */
+  testCommand: string | null
+  /** The git branch checked out, when there is one. */
+  branch: string | null
+  /** The open `##` phase of tasks.md the autopilot implements next, if any. */
+  phase: string | null
+  /** A fingerprint of tasks.md's task lines, to see whether converge changed them. */
+  tasksFingerprint: string
+  /** The Spec Kit commands installed for Claude Code, without prefix: `plan`, `analyze`, `xref-check`. */
+  commands: string[]
+  /** Checklists of the feature with open items. */
+  checklists: { file: string; open: number }[]
+  /** What a spec change sets off, from the constitution (flow-back by default). */
+  persistence: 'flow-back' | 'flow-forward' | 'living'
 }
 
 export type Unplanned = { file: string; at: string; task: string | null; acknowledged: boolean }
@@ -56,16 +85,36 @@ export type Semantic = {
   reasons: string[]
   changes: { text: string; kind: 'extends' | 'contradicts' }[]
   at: string
+  /** git HEAD and a hash of the diff the verdict looked at. */
+  head?: string
+  diffHash?: string
 }
+export type Verification = { status: 'passing' | 'failing'; tests: string[]; at: string; commit: string; fingerprint: string }
+export type Decision = { id: string; question: string; options: string[]; blocks: string[]; at: string; answer: string | null }
 
-/** What the mod keeps per feature, persisted as `specs/<feature>/xref.json`. */
+/**
+ * What the mod keeps per feature. Persisted in two files (docs/contract-0.4.md §1): the committed
+ * `specs/<feature>/xref.json` (map, links, accepted, fingerprints) and the local `.specify/xref/local/<feature>.json`.
+ */
 export type Ledger = {
   tasks: Record<string, { touched: string[]; linked: string[] }>
+  /** By requirement id (FR, SC) and by scenario id (USn-ASm). */
   requirements: Record<string, { tasks: string[]; files: string[]; sources: string[] }>
   unplanned: Unplanned[]
   intents: Intent[]
   anchors: Anchor[]
   semantic: Semantic | null
+  semanticHistory: Semantic[]
+  /** A requirement's text fingerprint when it was last mapped, linked or verified. */
+  fingerprints: Record<string, string>
+  verification: Record<string, Verification>
+  /** `spec`/`plan`: the fingerprint the person approved. */
+  approvals: Record<string, string>
+  decisions: Decision[]
+  /** Workflow checkpoints: `analyze` (spec fingerprint analyzed), `converge` (tasks fingerprint converged). */
+  checkpoints: Record<string, string>
+  /** Keys of either file the mod does not know, written back as they were. */
+  extra: { committed: Record<string, unknown>; local: Record<string, unknown> }
 }
 
 /** The autopilot: it moves through Spec Kit's workflow on its own and stops only for the person. */
@@ -81,6 +130,29 @@ export type Autopilot = {
   lastPhase: string | null
   /** What the person asked for before a feature existed: the words /speckit-specify gets. */
   idea: string | null
+  /** Failed test runs in a row; the fourth makes it the person's decision. */
+  repairs: number
+  /** The last test run: whether it passed and the tail of its output. */
+  lastTest: { ok: boolean; at: string; output: string } | null
+  /** When this run started, and the session's cost then, for the band's `$1.80 · 23m`. */
+  startedAt: number | null
+  costAtStart: number
+  /** A night run: a larger budget, a briefing when it stops. */
+  night: boolean
+  /** The phase the last implement step was scoped to. */
+  scope: string | null
+}
+
+/** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */
+export type RunEntry = {
+  at: string
+  step: number
+  phase: string
+  task: string | null
+  files: string[]
+  durationMs: number
+  tokens: number
+  outcome: string
 }
 
 declare module 'claude-code' {
@@ -91,6 +163,16 @@ declare module 'claude-code' {
       active: string | null
       checking: boolean
       autopilot: Autopilot
+      /** The question raised through the ask tool during the running turn. */
+      asked: string | null
+      /** The files written during the running turn, by tools or found changed at its end. */
+      turnFiles: string[]
+      /** The running turn's id and start, for Stop and for finding Bash writes. */
+      turn: { id: string; startedAt: number; dirty: string[] } | null
+      /** The pane's detail view on narrow widths. */
+      details: boolean
+      /** When the person last spoke: the "since you left" card counts from here. */
+      seenAt: number
     }
   }
 }
