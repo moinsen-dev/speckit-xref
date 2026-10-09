@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  extension:
+    name: Spec Kit extension + parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Extension tests
+        run: python -m unittest discover -s extension/tests -v
+      - name: Parity (the extension's Python readers equal the mod's TypeScript readers)
+        run: node --experimental-strip-types scripts/parity.mjs
+      - name: Test fixture matches examples/demo
+        run: node scripts/build-fixture.mjs && git diff --exit-code mod/tests/fixtures/demo.ts
+
+  mod:
+    name: Claude Code mod
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.294
+      - name: Validate the mod and the marketplace
+        run: |
+          claude plugin validate --strict ./mod
+          claude plugin validate .
+      - name: Mod tests
+        run: claude plugin test ./mod
