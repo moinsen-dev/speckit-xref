@@ -1,0 +1,160 @@
+name: "speckit-xref"
+description: "Check a pull request against its Spec Kit feature (unplanned files, dangling anchors, stale proof) and write a job summary"
+author: "moinsen-dev"
+branding:
+  icon: "git-pull-request"
+  color: "blue"
+
+inputs:
+  fail-on:
+    description: "Fail the job at this drift level: none, yellow or red. Only deterministic findings count, never the LLM verdict."
+    required: false
+    default: "red"
+  base:
+    description: "Git ref or sha to compare against. Empty: the pull request's base sha, else HEAD~1."
+    required: false
+    default: ""
+  feature:
+    description: "Feature folder, e.g. specs/001-magic-link-login. Empty: derived from the branch name or the diff."
+    required: false
+    default: ""
+  junit:
+    description: "Space-separated JUnit XML paths or globs, e.g. 'reports/*.xml'. When set, verify reads them before the check."
+    required: false
+    default: ""
+  working-directory:
+    description: "The Spec Kit project root, relative to the workspace."
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    # Every ${{ }} goes through env: or if:, never into a run: body.
+    - name: Prepare
+      id: prep
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XREF_BASE: ${{ inputs.base }}
+        XREF_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        XREF_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        script="$GITHUB_ACTION_PATH/../extension/scripts/python/xref.py"
+        if [ ! -f "$script" ]; then
+          echo "::error::speckit-xref: $script not found"
+          exit 2
+        fi
+        if ! command -v python3 >/dev/null; then
+          echo "::error::speckit-xref: python3 is not on PATH"
+          exit 2
+        fi
+        case "$XREF_FAIL_ON" in
+          none|yellow|red) ;;
+          *) echo "::error::speckit-xref: fail-on must be none, yellow or red, not '$XREF_FAIL_ON'"; exit 2 ;;
+        esac
+        base="${XREF_BASE:-${XREF_PR_BASE:-HEAD~1}}"
+        if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+          echo "::error::speckit-xref: base '$base' is not in this checkout. Check out with fetch-depth: 0."
+          exit 2
+        fi
+        echo "script=$script" >> "$GITHUB_OUTPUT"
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+
+    - name: Verify test results
+      id: verify
+      if: inputs.junit != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XREF_SCRIPT: ${{ steps.prep.outputs.script }}
+        XREF_FEATURE: ${{ inputs.feature }}
+        XREF_JUNIT: ${{ inputs.junit }}
+      run: |
+        shopt -s nullglob
+        shopt -s globstar 2>/dev/null || true
+        args=()
+        if [ -n "$XREF_FEATURE" ]; then args+=(--feature "$XREF_FEATURE"); fi
+        found=0
+        read -r -a patterns <<< "$XREF_JUNIT"
+        for pattern in "${patterns[@]}"; do
+          matched=0
+          # Unquoted on purpose: the shell expands the glob.
+          for file in $pattern; do
+            if [ -f "$file" ]; then
+              args+=(--junit "$file")
+              matched=1
+              found=1
+            fi
+          done
+          if [ "$matched" = 0 ]; then echo "::warning::speckit-xref: no JUnit file matches '$pattern'"; fi
+        done
+        if [ "$found" = 0 ]; then
+          echo "rc=skipped" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # The summary reads the same reports, so passing requirements show in the PR (nothing is written in CI).
+        list="${RUNNER_TEMP:-/tmp}/speckit-xref-junit.txt"
+        : > "$list"
+        for ((i = 0; i < ${#args[@]}; i++)); do
+          if [ "${args[$i]}" = "--junit" ]; then printf '%s\n' "${args[$((i + 1))]}" >> "$list"; fi
+        done
+        echo "list=$list" >> "$GITHUB_OUTPUT
+        rc=0
+        python3 "$XREF_SCRIPT" verify "${args[@]}" --no-write || rc=$?
+        echo "rc=$rc" >> "$GITHUB_OUTPUT"
+        if [ "$rc" = 1 ]; then echo "::warning::speckit-xref: a test mapped to a requirement failed"; fi
+        if [ "$rc" -ge 2 ]; then echo "::error::speckit-xref: verify failed (exit $rc)"; fi
+        exit 0
+
+    - name: Check drift
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XREF_SCRIPT: ${{ steps.prep.outputs.script }}
+        XREF_BASE: ${{ steps.prep.outputs.base }}
+        XREF_FAIL_ON: ${{ inputs.fail-on }}
+        XREF_FEATURE: ${{ inputs.feature }}
+      run: |
+        args=(--base "$XREF_BASE" --fail-on "$XREF_FAIL_ON" --no-write)
+        if [ -n "$XREF_FEATURE" ]; then args+=(--feature "$XREF_FEATURE"); fi
+        rc=0
+        python3 "$XREF_SCRIPT" check "${args[@]}" || rc=$?
+        echo "rc=$rc" >> "$GITHUB_OUTPUT"
+        exit 0
+
+    - name: Write job summary
+      if: always() && steps.prep.outcome == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XREF_SCRIPT: ${{ steps.prep.outputs.script }}
+        XREF_BASE: ${{ steps.prep.outputs.base }}
+        XREF_FEATURE: ${{ inputs.feature }}
+        XREF_JUNIT_LIST: ${{ steps.verify.outputs.list }}
+      run: |
+        args=(--base "$XREF_BASE")
+        if [ -n "$XREF_FEATURE" ]; then args+=(--feature "$XREF_FEATURE"); fi
+        if [ -n "$XREF_JUNIT_LIST" ] && [ -f "$XREF_JUNIT_LIST" ]; then
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then args+=(--junit "$file"); fi
+          done < "$XREF_JUNIT_LIST"
+        fi
+        out="$(mktemp)"
+        rc=0
+        python3 "$XREF_SCRIPT" summary "${args[@]}" > "$out" || rc=$?
+        if [ "$rc" = 0 ]; then
+          cat "$out" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "::warning::speckit-xref: summary failed (exit $rc)"
+          printf '### speckit-xref\n\nNo summary (exit %s). The log of the drift check lists the findings.\n' "$rc" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        rm -f "$out"
+
+    - name: Result
+      if: always() && steps.prep.outcome == 'success'
+      shell: bash
+      env:
+        XREF_CHECK_RC: ${{ steps.check.outputs.rc }}
+      run: exit "${XREF_CHECK_RC:-2}"

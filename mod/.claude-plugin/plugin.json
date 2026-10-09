@@ -85,6 +85,26 @@
       "title": "JUnit report",
       "description": "Where the test command writes a JUnit XML report (e.g. reports/junit.xml). With it, each requirement is proven by the tests that name or anchor it; without it, a passing suite proves every requirement that has a real test.",
       "default": ""
+    },
+    "commitPerTask": {
+      "type": "string",
+      "title": "Commit per task",
+      "description": "on: after an autopilot step whose tests passed, the tasks it checked off are committed with their files (feature branches only, never main; nothing you staged is mixed in; files outside the plan or .env files stop it). off by default.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
+    },
+    "parallel": {
+      "type": "string",
+      "title": "Parallel [P] tasks",
+      "description": "on: a phase's open [P] tasks go to subagents of their own (speckit-xref:task-runner), one per task, and the main agent checks them off. off by default.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
     }
   }
 }

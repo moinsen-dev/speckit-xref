@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: xref
   name: "Spec X-Ref"
-  version: "0.1.3"
-  description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, coverage, intent"
+  version: "0.2.0"
+  description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, a coverage ladder proven by tests, intent"
   author: moinsen-dev
   repository: https://github.com/moinsen-dev/speckit-xref
   license: MIT
@@ -37,6 +37,12 @@ provides:
     - name: speckit.xref.report
       file: commands/speckit.xref.report.md
       description: "Write a traceability report: requirement to tasks to files and @spec anchors, plus drift"
+    - name: speckit.xref.verify
+      file: commands/speckit.xref.verify.md
+      description: "Run the tests and record which requirements they prove: passing or failing, per requirement"
+    - name: speckit.xref.revise
+      file: commands/speckit.xref.revise.md
+      description: "Fold a change request into the spec: new requirement ids, SUPERSEDED and RETIRED markers, appended tasks, revisions.md"
 
 hooks:
   after_tasks:

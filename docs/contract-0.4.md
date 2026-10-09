@@ -114,11 +114,11 @@ A story section starts at its `### User Story N …` heading and ends at the nex
 
 ## 6. Fingerprints
 
-`normalizeText`: Unicode NFKC, lower-case, collapse whitespace to one space, trim, drop trailing `.;:!`, trim. `fingerprint(text)` = lower-case hex SHA-256 of the UTF-8 of the normalised text (TypeScript: a pure synchronous SHA-256 in `mod/hooks/rules.ts`, since the mod's sandbox has no WebCrypto guarantee; Python: `hashlib`). The **spec fingerprint** (for the spec gate) is the fingerprint of the `Input` line, every requirement text and every scenario text joined with `\n`, in document order.
+`normalizeText`: Unicode NFKC, lower-case, collapse whitespace to one space, trim, drop trailing `.;:!`, trim. `fingerprint(text)` = lower-case hex SHA-256 of the UTF-8 of the normalised text (TypeScript: a pure synchronous SHA-256 in `mod/hooks/rules.ts`, since the mod's sandbox has no WebCrypto guarantee; Python: `hashlib`). The **spec fingerprint** (for the spec gate) is the fingerprint of the `Input` line, then every requirement text in spec order, then every scenario text in story order, joined with `\n` (a missing input is the empty string).
 
 ## 7. Feature resolution
 
-Order: `--feature` (extension) → `SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json` → `SPECIFY_FEATURE` → the git branch (`GITHUB_HEAD_REF`, else `git rev-parse --abbrev-ref HEAD`) → (extension with `--base`) the single feature whose `specs/` folder or planned files the diff touches → the spec written last. Under `CI` set to any non-empty value, the last fallback is an error naming the candidates instead.
+Order: `--feature` (extension) → `SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json` → `SPECIFY_FEATURE` → the git branch (`GITHUB_HEAD_REF`, else `git rev-parse --abbrev-ref HEAD`) → (extension with `--base`) the single feature whose `specs/` folder or planned files the diff touches → the spec written last. Under `CI` set to any non-empty value, the last fallback takes a lone feature as it is, and with two or more candidates it is an error naming them instead (the mtime of a fresh checkout says nothing).
 
 `featureFromBranch(branch, dirs)`: take the number from `(?:^|/)(\d{3,})-` in the branch; return the one feature dir whose basename starts with that number and `-`; none or several → null.
 

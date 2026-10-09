@@ -17,9 +17,11 @@ You **MUST** consider the user input before proceeding (if not empty). It may na
 1. From the repository root, run:
 
    ```bash
-   python3 .specify/extensions/xref/scripts/python/xref.py report --json
+   python3 .specify/extensions/xref/scripts/python/xref.py report
    ```
 
-   (`python` on Windows.) It writes `<feature>/xref-report.md`: every requirement with its tasks, the files those tasks touched or that were linked to it, its `@spec` anchors, uncovered and unclear requirements marked, then the drift findings and the requests that went beyond the spec.
+   (`python` on Windows.) It prints the report in Markdown: the coverage ladder (`specified` → `planned` → `implemented` → `tested` → `passing`) and every requirement with its level, tasks, files and `@spec` anchors, uncovered and unclear requirements marked; then the drift findings, notes (spec gaps), the last intent check as advice, the requests that went beyond the spec, and metrics (unplanned edits caught and how they ended, the share accepted blind).
 
-2. Tell the user where the report is and summarise it in three lines: drift level, coverage, the most important finding. Do not change any file besides the report.
+2. Unless the user named another path, save it next to the spec: run the same command with `--out <feature>/xref-report.md`, where `<feature>` is the folder in backticks on the report's third line (`--format json` for JSON).
+
+3. Tell the user where the report is and summarise it in three lines: drift level, the ladder, the most important finding. Do not change any file besides the report.

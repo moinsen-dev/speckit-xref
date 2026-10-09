@@ -56,7 +56,18 @@ import type { Anchor } from '../types'
 import type { Classified, Level, Report } from './xref'
 
 type $ = EngineInterface
-type Options = { mode: string; driftCheck: string; mapModel: string; autopilot: string; autopilotMaxSteps: number; testCommand: string; junitPath: string; review: string; commitPerTask: string }
+type Options = {
+  mode: string
+  driftCheck: string
+  mapModel: string
+  autopilot: string
+  autopilotMaxSteps: number
+  testCommand: string
+  junitPath: string
+  review: string
+  commitPerTask: string
+  parallel: string
+}
 
 const PLUGIN = 'speckit-xref'
 const PANE = 'speckit-xref'
@@ -107,6 +118,10 @@ let junitPath = ''
 let review: Flow['review'] = 'spec'
 // Read by the strict guard's fallback, which has to be a top-level function.
 let strict = false
+let parallel = false
+let commitPerTask = false
+// In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
+let pendingPrompt: string | null = null
 
 const at = (rel: string) => (rel.startsWith('/') ? rel : `${root}/${rel}`)
 const stamp = async ($: $) => new Date(await $.clock.now()).toISOString()
@@ -534,8 +549,10 @@ async function toSpec($: $, intent: string): Promise<void> {
   await update($, ledgerA, l => resolveIntent(l, intent))
   await persist($)
   const args = `The user asked during implementation: "${intent}". Fold this into the spec, or record why it stays out of scope.`
+  // The extension's revise keeps ids stable (new, SUPERSEDED, RETIRED) and logs revisions.md; clarify is the fallback.
+  const revise = snap.extensions.includes('xref') && snap.commands.includes('xref-revise')
   // A plugin runs a slash command through $.command.run; a prompt may not start with one.
-  const command = speckitCommand(snap, 'clarify').slice(1)
+  const command = speckitCommand(snap, revise ? 'xref.revise' : 'clarify').slice(1)
   try {
     await $.command.run({ command, args })
   } catch {
@@ -867,7 +884,72 @@ async function advance($: $): Promise<void> {
     return advance($)
   }
   const active = await read($, activeA)
-  void $.prompt.submit({ text: autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) })
+  const text = autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) + parallelNote(snap, step)
+  await update($, autopilotA, a => ({ ...a, doneAtStep: snap.tasks.filter(t => t.done).map(t => t.id) }))
+  // Nobody is at the prompt in a -p run: the Stop hook hands the step over as its re-prompt.
+  if (!interactive) {
+    pendingPrompt = text
+    return
+  }
+  void $.prompt.submit({ text })
+}
+
+const RUNNER = 'task-runner'
+
+/** With the parallel option, a phase's open [P] tasks go to subagents of their own, one per task. */
+function parallelNote(snap: Snapshot, step: Step): string {
+  if (!parallel || step.phase !== 'implement' || !snap.phase) return ''
+  const ready = snap.tasks.filter(t => !t.done && t.parallel && t.phase === snap.phase)
+  if (ready.length < 2) return ''
+  return [
+    '',
+    '',
+    `Parallel: ${ready.map(t => t.id).join(', ')} are marked [P] and touch different files. Spawn one ${PLUGIN}:${RUNNER} agent per task, all in one message (prompt: the task id and its line from tasks.md).`,
+    'When they report back, check those tasks off in tasks.md yourself, then do the rest of the phase.',
+  ].join('\n')
+}
+
+/** What a task-runner subagent is told: one task, its planned files, the xref rules, and no tasks.md. */
+const RUNNER_PROMPT = [
+  'You implement exactly one task of a GitHub Spec Kit feature; other agents implement its sibling tasks at the same time.',
+  'Read the task line you were given, the spec.md and plan.md of the active feature (specs/<feature>/), and the files the task names.',
+  `First call mcp__${PLUGIN}__focus with the task id. Change only the files the task names; if another file is unavoidable, call mcp__${PLUGIN}__link for it.`,
+  'Mark code that implements a requirement with a comment `@spec <feature>/FR-###`; tests carry the anchor of what they prove.',
+  'Do not edit tasks.md and do not commit: the main agent checks the task off. Run the tests that cover your files if you can.',
+  'Report in three lines: what you changed (files), what the tests said, and anything left open.',
+].join('\n')
+
+/**
+ * Commit per task (an option, off by default): after a step whose tests passed, the tasks it checked off are
+ * committed with their files, on a feature branch only. The mod checks the staged diff itself, since git hooks
+ * do not run under $.process.run.
+ */
+async function commitTasks($: $): Promise<string | null> {
+  if (!commitPerTask) return null
+  const snap = await read($, snapshotA)
+  const ap = await read($, autopilotA)
+  if (!snap?.featureDir || !snap.branch || /^(main|master|trunk|develop)$/.test(snap.branch)) return null
+  const fresh = snap.tasks.filter(t => t.done && !(ap.doneAtStep ?? []).includes(t.id))
+  if (!fresh.length) return null
+  const ledger = await read($, ledgerA)
+  const git = (argv: string[]) => $.process.run(['git', ...argv], { cwd: root, timeoutMs: 15_000 })
+  try {
+    // Never mix in what the person staged themselves.
+    if ((await git(['diff', '--cached', '--name-only'])).stdout.trim()) return 'commit skipped: the index already holds staged changes'
+    const files = [...new Set([...fresh.flatMap(t => ledger.tasks[t.id]?.touched ?? []), `${snap.featureDir}/tasks.md`, `${snap.featureDir}/xref.json`])]
+    const present = []
+    for (const f of files) if (await exists($, f)) present.push(f)
+    const secret = present.find(f => /(^|\/)\.env(?!\.example$)/.test(f))
+    if (secret) return `commit skipped: ${secret} looks like a secret`
+    const drift = present.filter(f => ledger.unplanned.some(u => u.file === f && !u.acknowledged))
+    if (drift.length) return `commit skipped: ${drift.join(', ')} ${drift.length === 1 ? 'is' : 'are'} outside the plan`
+    await git(['add', '--', ...present])
+    const subject = fresh.length === 1 ? `${fresh[0]!.id}: ${short(fresh[0]!.text, 60)}` : `${fresh.map(t => t.id).join(', ')} (${snap.featureDir.slice(snap.featureDir.lastIndexOf('/') + 1)})`
+    const ran = await git(['commit', '-m', subject, '-m', `Tasks checked by the speckit-xref autopilot; tests passed.`])
+    return ran.exitCode === 0 ? `committed ${fresh.map(t => t.id).join(', ')}` : `commit failed: ${ran.stderr.trim().slice(0, 200)}`
+  } catch (error) {
+    return `commit failed: ${String(error).slice(0, 200)}`
+  }
 }
 
 type TurnEnd = { answer: string; reason: string; isAborted: boolean; durationMs: number; usage?: { input_tokens?: number; output_tokens?: number } }
@@ -908,6 +990,10 @@ async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
     if (tests.ran) {
       const when = await stamp($)
       await update($, autopilotA, a => ({ ...a, lastTest: { ok: tests.ok, at: when, output: tests.output }, repairs: tests.ok ? 0 : a.repairs + 1 }))
+      if (tests.ok) {
+        const committed = await commitTasks($)
+        if (committed) $.ui.toast(`Autopilot: ${committed}`)
+      }
     }
   }
   const snap = await read($, snapshotA)
@@ -1104,6 +1190,8 @@ export const register: Register = (on, options) => {
   strict = mode === 'strict'
   junitPath = typeof opts.junitPath === 'string' ? opts.junitPath.trim() : ''
   review = opts.review === 'none' || opts.review === 'spec+plan' ? opts.review : 'spec'
+  parallel = opts.parallel === 'on'
+  commitPerTask = opts.commitPerTask === 'on'
   const driftCheck = opts.driftCheck === 'off' ? 'off' : 'fork'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
@@ -1120,7 +1208,14 @@ export const register: Register = (on, options) => {
     await update($, turnA, () => null)
     await update($, seenAtA, () => 0)
     cli = { specify: await onPath($, 'specify'), uvx: await onPath($, 'uvx') }
-    if (autopilotByDefault) await update($, autopilotA, a => (a.on ? a : { ...a, on: true, max: maxSteps }))
+    // SPECKIT_XREF_AUTOPILOT=on|night|<steps> switches it on for this session: the way into a -p run, where /xref auto on starts no model turn.
+    const fromEnv = ((await $.env.get('SPECKIT_XREF_AUTOPILOT')) ?? '').trim().toLowerCase()
+    const envSteps = Number(fromEnv) > 0 ? Math.floor(Number(fromEnv)) : null
+    if (autopilotByDefault || fromEnv === 'on' || fromEnv === 'night' || envSteps) {
+      const night = fromEnv === 'night'
+      const max = envSteps ?? (night ? Math.max(maxSteps, 100) : maxSteps)
+      await update($, autopilotA, a => (a.on ? a : { ...a, on: true, max, night, startedAt: Date.now() }))
+    }
     await scan($)
     const commands = [
       { name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | approve | focus T### | auto on|night|off | pane', argumentHint: '[check | map | ack | approve | focus T### | auto on [steps]|night|off | pane]' },
@@ -1184,6 +1279,13 @@ export const register: Register = (on, options) => {
     }
     timer?.cancel()
     timer = initialized ? $.clock.every(REFRESH_MS, () => void refresh($).catch(() => undefined)) : null
+    if (parallel) {
+      try {
+        await $.agent.register({ name: RUNNER, description: 'Implements one Spec Kit task of a phase while sibling [P] tasks run in other agents; never edits tasks.md.', prompt: RUNNER_PROMPT })
+      } catch {
+        // Without the agent type the phase runs in the main loop, one task after another.
+      }
+    }
     return next(e)
   })
 
@@ -1283,6 +1385,8 @@ export const register: Register = (on, options) => {
     await persist($)
     const snap = await read($, snapshotA)
     if (snap?.initialized && !timer) timer = $.clock.every(REFRESH_MS, () => void refresh($).catch(() => undefined))
+    // In a -p run with the autopilot on, the Stop hook already did all of this before the turn ended.
+    if (!interactive && (await read($, autopilotA)).on) return result
     const check = files.length > 0 && driftCheck === 'fork' && !e.isAborted
     const end: TurnEnd = { answer: e.answer ?? '', reason: e.reason, isAborted: e.isAborted, durationMs: e.durationMs, usage: e.usage as TurnEnd['usage'] }
     // After the turn, on the clock, so the person gets the prompt back at once; the check first, so the
@@ -1294,6 +1398,36 @@ export const register: Register = (on, options) => {
       })().catch(() => undefined),
     )
     return result
+  })
+
+  // The headless driver: in a -p run nobody submits the next prompt, so the Stop hook re-prompts with it.
+  on('classic.Stop', async ($, e, next) => {
+    const result = await next(e)
+    if (interactive || result.block || !root) return result
+    const ap = await read($, autopilotA)
+    if (!ap.on || ap.paused) return result
+    if (!pendingPrompt) {
+      await bookShellWrites($)
+      const files = await read($, turnFilesA)
+      await update($, turnFilesA, () => [])
+      await refresh($)
+      await persist($)
+      if (files.length && driftCheck === 'fork') await runCheck($, files, mapModel).catch(() => undefined)
+      await afterTurn($, { answer: e.last_assistant_message ?? '', reason: 'answer', isAborted: false, durationMs: 0 }, files)
+    }
+    const prompt = pendingPrompt
+    pendingPrompt = null
+    return prompt ? { ...result, block: prompt } : result
+  })
+
+  // Commands layout (`/speckit.implement`): the same state rides the expansion as context.
+  on('classic.UserPromptExpansion', async ($, e, next) => {
+    const result = await next(e)
+    if (!/^speckit\.(implement|clarify|plan|tasks|analyze|converge)$/.test(e.command_name)) return result
+    const snap = await read($, snapshotA)
+    if (!snap?.featureDir) return result
+    const note = turnContext(snap, await read($, ledgerA), await read($, activeA))
+    return note ? { ...result, additionalContext: [...(result.additionalContext ?? []), note] } : result
   })
 
   // A stop that cannot wait for the turn: the autopilot goes off and its running step ends now.

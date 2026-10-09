@@ -141,6 +141,8 @@ export type Autopilot = {
   night: boolean
   /** The phase the last implement step was scoped to. */
   scope: string | null
+  /** The tasks checked when the last step was handed over: commit per task commits what came after. */
+  doneAtStep?: string[]
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

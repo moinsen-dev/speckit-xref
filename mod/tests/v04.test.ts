@@ -266,3 +266,53 @@ test('a request beyond the spec becomes one revise step, not a loop', async ($, 
   await seen.clock.advance(10)
   expect(autopilotPrompts(seen)[2]).not.toContain('revise:')
 })
+
+test('headless: in a -p run the Stop hook hands the next step over as its re-prompt', { options: { autopilot: 'on' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO })
+  await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
+  const first = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Ready.' } as never)
+  expect(first.block).toContain('[speckit-xref autopilot · step 1/25] implement')
+  expect(autopilotPrompts(seen)).toHaveLength(0)
+  tick('T004')(seen)
+  const second = await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'T004 done.' } as never)
+  expect(second.block).toContain('step 2/25')
+  // A question for the person ends the -p run instead of re-prompting.
+  await $.tool.call({ tool: 'mcp__speckit-xref__ask', question: 'Per email or per IP?' } as never)
+  expect((await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Per email or per IP?' } as never)).block).toBeUndefined()
+})
+
+test('parallel: a phase\'s [P] tasks go to task-runner subagents', { options: { parallel: 'on' } }, async ($, on) => {
+  const tasks = DEMO[`${FEATURE}/tasks.md`]!.replace('- [ ] T004 [US1]', '- [ ] T004 [P] [US1]').replace('- [ ] T005 [US1]', '- [ ] T005 [P] [US1]')
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: tasks })
+  await startSession($)
+  expect(seen.agents).toEqual(['task-runner'])
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)[0]).toContain('Parallel: T004, T005 are marked [P] and touch different files. Spawn one speckit-xref:task-runner agent per task')
+})
+
+test('commit per task: a step whose tests pass commits the tasks it checked, on a feature branch', { options: { commitPerTask: 'on' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, branch: '001-magic-link-login' })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/src/auth/token.ts`, old_string: 'a', new_string: 'b' })
+  tick('T004')(seen)
+  await turn($)
+  await seen.clock.advance(10)
+  const commit = seen.ran.find(argv => argv[0] === 'git' && argv[1] === 'commit')
+  expect(commit?.[3]).toBe('T004: Implement token service in src/auth/token.ts (FR-002)')
+  expect(seen.ran.find(argv => argv[0] === 'git' && argv[1] === 'add')).toEqual(['git', 'add', '--', 'src/auth/token.ts', `${FEATURE}/tasks.md`, `${FEATURE}/xref.json`])
+  expect(seen.toasts).toContain('Autopilot: committed T004')
+})
+
+test('commit per task never commits on main', { options: { commitPerTask: 'on' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, branch: 'main' })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  tick('T004')(seen)
+  await turn($)
+  await seen.clock.advance(10)
+  expect(seen.ran.some(argv => argv[0] === 'git' && argv[1] === 'commit')).toBe(false)
+})

@@ -1,0 +1,45 @@
+schema_version: "1.0"
+
+preset:
+  id: "xref"
+  name: "Spec X-Ref"
+  version: "0.1.0"
+  description: "Tasks name their files in backticks and their requirements as (FR-###); implement marks code and tests with @spec anchors and checks a task off only when its tests pass"
+  author: "moinsen-dev"
+  repository: "https://github.com/moinsen-dev/speckit-xref"
+  license: "MIT"
+
+requires:
+  # The overrides are edited copies of the 1.1.2 originals (TASKS_TEMPLATE_CONTENT, runtime template resolution).
+  speckit_version: ">=1.1.2,<2.0.0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "Sample tasks with backticked paths and (FR-###)"
+      replaces: "tasks-template"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "The Testing line names the command that runs the tests"
+      replaces: "plan-template"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Every task names its files in backticks and the requirements it serves"
+      replaces: "speckit.tasks"
+
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "Focus, @spec anchors in code and tests, check off only on passing tests, one phase when asked"
+      replaces: "speckit.implement"
+
+tags:
+  - "traceability"
+  - "requirements"
+  - "tdd"

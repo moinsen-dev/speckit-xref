@@ -152,16 +152,10 @@ export function featureFromBranch(branch: string, dirs: readonly string[]): stri
   return hits.length === 1 ? hits[0]! : null
 }
 
-// ---- Requirement status (§11) ----
+// ---- Requirement status (§11): in speckit.ts, which the parity script loads without the rest ----
 
-export type ReqStatus = { status: 'active' | 'superseded' | 'retired'; supersededBy: string | null }
-
-export function reqStatus(text: string): ReqStatus {
-  const by = /SUPERSEDED by ((?:FR|SC)-\d{3,})/.exec(text)
-  if (by) return { status: 'superseded', supersededBy: by[1]! }
-  if (/RETIRED/.test(text)) return { status: 'retired', supersededBy: null }
-  return { status: 'active', supersededBy: null }
-}
+export { reqStatus } from './speckit'
+export type { ReqStatus } from './speckit'
 
 /** The bare id of an anchor or link (`001-auth/FR-003` → `FR-003`) when it belongs to `featureDir`, else null. */
 export function localId(id: string, featureDir: string | null): string | null {

@@ -431,15 +431,20 @@ export function applyMapping(ledger: Ledger, text: string, snap: Snapshot): { le
   const reqIds = new Set(snap.spec?.reqs.map(r => r.id) ?? [])
   const taskIds = new Set(snap.tasks.map(t => t.id))
   const requirements = { ...ledger.requirements }
+  const fingerprints = { ...ledger.fingerprints }
   let mapped = 0
   for (const [id, value] of Object.entries(raw)) {
     if (!reqIds.has(id) || !Array.isArray(value)) continue
     const tasks = value.filter((t): t is string => typeof t === 'string' && taskIds.has(t))
     const entry = requirements[id] ?? { tasks: [], files: [], sources: [] }
     requirements[id] = { ...entry, tasks: [...new Set([...entry.tasks, ...tasks])], sources: entry.sources.includes('llm') ? entry.sources : [...entry.sources, 'llm'] }
-    if (tasks.length) mapped += 1
+    if (tasks.length) {
+      mapped += 1
+      const req = snap.spec?.reqs.find(r => r.id === id)
+      if (req) fingerprints[id] = fingerprint(req.text)
+    }
   }
-  return { ledger: { ...ledger, requirements }, mapped }
+  return { ledger: { ...ledger, requirements, fingerprints }, mapped }
 }
 
 export const REMEDIATION_HEADING = '## Drift Remediation (speckit-xref)'

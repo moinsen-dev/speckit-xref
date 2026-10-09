@@ -10,11 +10,11 @@ opens a draft PR that adds the entry to `extensions/catalog.community.json` and
 | --- | --- |
 | Extension ID | `xref` |
 | Extension Name | `Spec X-Ref` |
-| Version | `0.1.3` |
+| Version | `0.2.0` |
 | Description | `Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, coverage, intent` |
 | Author | `moinsen-dev` |
 | Repository URL | `https://github.com/moinsen-dev/speckit-xref` |
-| Download URL | `https://github.com/moinsen-dev/speckit-xref/releases/download/v0.3.0/speckit-xref-extension-v0.1.3.zip` |
+| Download URL | `https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-extension-v0.2.0.zip` |
 | License | `MIT` |
 | Homepage | `https://github.com/moinsen-dev/speckit-xref` |
 | Documentation URL | `https://github.com/moinsen-dev/speckit-xref/blob/main/extension/README.md` |
@@ -39,7 +39,7 @@ opens a draft PR that adds the entry to `extensions/catalog.community.json` and
 - Classifies every changed file against the files tasks.md plans: planned, linked or unplanned
 - @spec anchors in code count as coverage; an anchor to a requirement the spec no longer has is drift
 - Intent check: the agent compares the user's own words, the spec and the diff, and records a score and any request beyond the spec
-- CI: `xref.py check --base origin/main --fail-on red` exits 2 on drift, without a model
+- CI: `xref.py check --base origin/main --fail-on red --no-write` exits 1 on drift (2 on a usage error), deterministic, without a model
 - Traceability report: requirement -> tasks -> files and anchors
 - Shares specs/<feature>/xref.json with the speckit-xref Claude Code mod, which keeps it live inside the agent loop
 ```

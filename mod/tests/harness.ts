@@ -38,6 +38,8 @@ type Options = {
   changed?: () => string[]
   /** The person's answers to `$.ui.ask`, in turn; none means the dialog is dismissed. */
   answers?: string[]
+  /** The git branch checked out. */
+  branch?: string
 }
 
 /** Stubs every call the mod makes over an in-memory project; `files` changes as the mod writes. */
@@ -52,7 +54,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     touch(path)
   }
   const isDir = (path: string) => path === '' || Object.keys(files).some(k => k.startsWith(path + '/'))
-  const seen = { deferred: [] as string[], compacted: [] as string[], testRuns: [] as string[], asked: [] as string[], notified: [] as string[], aborted: [] as string[], opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
+  const seen = { agents: [] as string[], deferred: [] as string[], compacted: [] as string[], testRuns: [] as string[], asked: [] as string[], notified: [] as string[], aborted: [] as string[], opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
 
   on('fs.read', ($: any, e: any) => (rel(e.path) in files ? { value: files[rel(e.path)] } : { deny: 'ENOENT' }))
   on('fs.write', ($: any, e: any) => {
@@ -102,6 +104,9 @@ export function project(on: any, files: Record<string, string>, options: Options
       const exit = options.tests.exits[Math.min(seen.testRuns.length - 1, options.tests.exits.length - 1)] ?? 0
       return ok(options.tests.output ?? (exit ? 'FAIL tests/auth/token.test.ts' : 'ok'), exit)
     }
+    if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--abbrev-ref')) return options.branch ? ok(`${options.branch}\n`) : { deny: 'ENOENT' }
+    if (e.argv[0] === 'git' && (e.argv[1] === 'add' || e.argv[1] === 'commit')) return ok('')
+    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--cached')) return ok('')
     if (e.argv[0] === 'git' && e.argv[1] === 'hash-object') return ok(e.argv.slice(3).map((f: string) => `h-${f}-${mtimes[f] ?? 0}`).join('\n'))
     if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok((options.changed ? options.changed() : ['src/auth/token.ts']).join('\n') + '\n')
     if (e.argv[0] === 'git' && e.argv[1] === 'diff') return ok(`diff --git a/src/auth/token.ts b/src/auth/token.ts\n+export const ttl = 15 * 60\n`)
@@ -167,6 +172,11 @@ export function project(on: any, files: Record<string, string>, options: Options
   })
   on('turn.complete', () => ({ text: '' }))
   on('tool.check', () => ({ decision: 'allow' }))
+  on('classic.Stop', () => ({}))
+  on('agent.register', ($: any, e: any) => {
+    seen.agents.push(e.name)
+    return { value: { type: `speckit-xref:${e.name}` } }
+  })
   on('session.compact', ($: any, e: any) => {
     seen.compacted.push(e.instructions ?? '')
     return { messages: e.messages }

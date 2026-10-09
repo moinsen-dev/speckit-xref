@@ -1,7 +1,16 @@
 // Pure readers for GitHub Spec Kit artifacts. No IO: register.tsx reads the files and hands the text in.
 
 import type { Constitution, Scenario, Spec, Story, Req, Task } from '../types'
-import { reqStatus } from './rules'
+
+/** A requirement's status (docs/contract-0.4.md §11): `SUPERSEDED by FR-006`, `RETIRED`, else active. */
+export type ReqStatus = { status: 'active' | 'superseded' | 'retired'; supersededBy: string | null }
+
+export function reqStatus(text: string): ReqStatus {
+  const by = /SUPERSEDED by ((?:FR|SC)-\d{3,})/.exec(text)
+  if (by) return { status: 'superseded', supersededBy: by[1]! }
+  if (/RETIRED/.test(text)) return { status: 'retired', supersededBy: null }
+  return { status: 'active', supersededBy: null }
+}
 
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)
 const unbold = (text: string) => text.replace(/\*\*/g, '').replace(/`/g, '').trim()
