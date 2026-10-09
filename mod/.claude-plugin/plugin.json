@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: the spec in the system prompt, every edit booked against a task, and a drift check after each turn.",
   "author": {
     "name": "Ulrich Diedrichsen",
@@ -46,6 +46,22 @@
       "title": "Model for mapping and transcript-less checks",
       "description": "The model that maps requirements to tasks (/xref map) and runs a drift check when there is no transcript to fork yet (an alias such as haiku, or a model id).",
       "default": "haiku"
+    },
+    "autopilot": {
+      "type": "string",
+      "title": "Autopilot",
+      "description": "off: each Spec Kit step waits for you. on: every session starts with the autopilot switched on; after a turn it hands the next step to Claude by itself and stops only for decisions that are yours (/xref auto on|off switches it per session).",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
+    },
+    "autopilotMaxSteps": {
+      "type": "number",
+      "title": "Autopilot step budget",
+      "description": "How many steps one autopilot run takes before it waits for you.",
+      "default": 25
     }
   }
 }

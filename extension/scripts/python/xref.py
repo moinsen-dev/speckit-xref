@@ -101,6 +101,7 @@ def parse_spec(markdown: str) -> dict:
 
 
 PATH_EXT = re.compile(r"\.[a-z0-9]{1,6}$", re.I | A)
+SPEC_DOCS = re.compile(r"^(spec|plan|tasks|research|data-model|quickstart|constitution|checklist)\.md$", re.I | A)
 
 
 def extract_paths(text: str) -> list[str]:
@@ -109,6 +110,9 @@ def extract_paths(text: str) -> list[str]:
     def keep(raw: str) -> None:
         path = re.sub(r"[.,;:)]+$", "", re.sub(r"^\./", "", raw.strip()))
         if not path or re.match(r"^https?:", path, re.I) or " " in path or len(path) > 200:
+            return
+        # "as plan.md says" names Spec Kit's own documents, not a file the task writes.
+        if SPEC_DOCS.match(path):
             return
         if "/" in path or PATH_EXT.search(path):
             found.setdefault(path, None)

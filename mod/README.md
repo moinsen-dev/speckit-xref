@@ -18,7 +18,7 @@ It complements read-only viewers such as SpecKit Companion: they show the run; t
 | **Fix it from the pane** | *To spec* runs `/speckit-clarify` with the request; *As task* appends a `[Drift]` task to `tasks.md`; *Map FR→tasks* lets a small model map requirements to tasks once and keeps the map. |
 | **Band and pane** | A line above the prompt (`● xref T004 · tasks 3/8 · FR 4/5 · drift yellow (1)`) that stacks with other mods' bands, and a pane: Goal, Vision, Now, Todo, Status, Next, Drift. |
 
-The model gets four tools: `mcp__speckit-xref__status` (where the project stands in Spec Kit and the next command), `mcp__speckit-xref__focus` (make a task current), `__where` (which tasks and requirements a file belongs to) and `__link` (tie a file to a task or requirement).
+The model gets five tools: `mcp__speckit-xref__status` (CLI, setup, integration, workflow phase, autopilot and the next command), `mcp__speckit-xref__ask` (the autopilot waits for the person), `mcp__speckit-xref__focus` (make a task current), `__where` (which tasks and requirements a file belongs to) and `__link` (tie a file to a task or requirement).
 
 Everything the mod keeps lives in one file per feature, `specs/<feature>/xref.json`: tasks touched and linked, requirement map, unplanned edits, intents, anchors, the last intent check. It is derived and safe to delete.
 
@@ -29,6 +29,18 @@ At the prompt of a terminal session:
 ```text
 /plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
 ```
+
+## Autopilot
+
+`/xref auto on [steps]` lets the work run: after every turn the mod hands the next Spec Kit step to Claude by itself, so nobody has to answer "next is X, shall I go on?". It stops only for what is yours:
+- the product idea;
+- a `[NEEDS CLARIFICATION]` question;
+- a request that contradicts the spec;
+- destructive or irreversible actions.
+
+Claude flags those through the `mcp__speckit-xref__ask` tool. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
+
+It also stops on Esc, after three steps without progress, at the step budget (25 by default) and when every task is checked and verified. The band shows `auto ▶ 3/25` while it runs and `auto ⏸ waiting for you` when it waits. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
 
 ## The `speckit` skill
 
@@ -48,10 +60,11 @@ The active feature is read the way Spec Kit's scripts read it: `SPECIFY_FEATURE_
 /xref map          map requirements to tasks with a small model
 /xref ack          accept every edit outside the plan
 /xref focus T004   make a task current
+/xref auto on [n]  autopilot: work through Spec Kit by itself (off: stop)
 /xref pane         open the pane
 ```
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`).
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25).
 
 ## Develop
 

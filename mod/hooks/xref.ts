@@ -72,16 +72,17 @@ export function localId(id: string, featureDir: string | null): string | null {
 
 export function classify(rel: string, snap: Snapshot, ledger: Ledger, active: string | null, newText = ''): Classified {
   if (isSpecArtifact(rel)) return { verdict: 'spec', task: null }
-  if (newText && anchorsIn(newText, rel).length > 0) return { verdict: 'linked', task: active }
   for (const [id, entry] of Object.entries(ledger.tasks)) if (entry.linked.includes(rel)) return { verdict: 'linked', task: id }
-  if (Object.values(ledger.requirements).some(r => r.files.includes(rel))) return { verdict: 'linked', task: active }
-  if (ledger.anchors.some(a => a.file === rel)) return { verdict: 'linked', task: active }
-  if (snap.tasks.length === 0) return { verdict: 'untracked', task: null }
+  // The task that plans a file comes before its anchors: it says which task the work is on.
   const matches = snap.tasks.filter(t => plans(t, rel))
   const activeMatch = matches.find(t => t.id === active)
   if (activeMatch) return { verdict: 'in-scope', task: activeMatch.id }
   const other = matches.find(t => !t.done) ?? matches[0]
   if (other) return { verdict: active ? 'other-task' : 'in-scope', task: other.id }
+  if (newText && anchorsIn(newText, rel).length > 0) return { verdict: 'linked', task: active }
+  if (Object.values(ledger.requirements).some(r => r.files.includes(rel))) return { verdict: 'linked', task: active }
+  if (ledger.anchors.some(a => a.file === rel)) return { verdict: 'linked', task: active }
+  if (snap.tasks.length === 0) return { verdict: 'untracked', task: null }
   return { verdict: 'unplanned', task: active }
 }
 

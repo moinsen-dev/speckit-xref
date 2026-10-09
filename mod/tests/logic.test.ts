@@ -28,6 +28,9 @@ const snap = (): Snapshot => ({
   features: [FEATURE],
   hasPlan: true,
   extensions: [],
+  claudeIntegration: true,
+  speckitVersion: '1.1.2',
+  tools: { specify: true, uvx: true },
   spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!),
   tasks: parseTasks(DEMO[`${FEATURE}/tasks.md`]!),
   constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!),
@@ -65,6 +68,7 @@ describe('Spec Kit readers', () => {
     expect(extractPaths('Implement POST /auth/link handler in src/auth/request-link.ts')).toEqual(['src/auth/request-link.ts'])
     expect(extractPaths('Update README.md, then CHANGELOG.md.')).toEqual(['README.md', 'CHANGELOG.md'])
     expect(extractPaths('Something in "quoted/path.txt" and (src/x.py)')).toEqual(['quoted/path.txt', 'src/x.py'])
+    expect(extractPaths('Create package.json (justified in plan.md, see spec.md) and docs/plan.md')).toEqual(['package.json', 'docs/plan.md'])
   })
 
   test('reads MUST rules and principles, and skips an unfilled template', () => {
@@ -96,6 +100,8 @@ describe('X-Ref', () => {
     expect(classify('specs/001-magic-link-login/tasks.md', s, ledger, 'T004').verdict).toBe('spec')
     expect(classify('src/ui/theme.ts', s, ledger, 'T004')).toEqual({ verdict: 'unplanned', task: 'T004' })
     expect(classify('src/ui/theme.ts', s, ledger, 'T004', '// @spec FR-003\n').verdict).toBe('linked')
+    // The task that plans a file wins over the file's anchor: the focus follows the plan.
+    expect(classify('src/auth/callback.ts', s, ledger, 'T004', '// @spec 001-magic-link-login/FR-003\n')).toEqual({ verdict: 'other-task', task: 'T006' })
     // T001 (done) names the folder src/auth/: a new file there is no longer planned by it.
     expect(classify('src/auth/password-fallback.ts', s, ledger, 'T004').verdict).toBe('unplanned')
     const reopened = { ...s, tasks: s.tasks.map(t => (t.id === 'T001' ? { ...t, done: false } : t)) }
@@ -207,9 +213,15 @@ describe('workflow', () => {
 
   test('walks Spec Kit from setup to verify', () => {
     const s = snap()
-    expect(phase({ ...s, initialized: false })).toBe('setup -')
+    expect(phase({ ...s, initialized: false })).toBe('setup specify init --here --force --non-interactive --integration claude')
+    expect(phase({ ...s, initialized: false, tools: { specify: false, uvx: true } })).toBe("setup uvx --from 'specify-cli>=1.1,<2' specify init --here --force --non-interactive --integration claude")
+    expect(nextStep({ ...s, initialized: false, tools: { specify: false, uvx: false } }, emptyLedger()).needsUser).toBe('Install uv (https://docs.astral.sh/uv/) or the specify CLI (pipx install specify-cli).')
+    expect(phase({ ...s, claudeIntegration: false })).toBe('integration specify integration install claude')
     expect(phase({ ...s, constitution: { principles: [], musts: [] } })).toBe('constitution /speckit-constitution')
     expect(phase({ ...s, featureDir: null, spec: null })).toBe('specify /speckit-specify')
+    expect(nextStep({ ...s, featureDir: null, spec: null }, emptyLedger()).needsUser).toContain('Describe the feature')
+    const withIdea = nextStep({ ...s, featureDir: null, spec: null }, emptyLedger(), 'a reading list app')
+    expect([withIdea.command, withIdea.needsUser]).toEqual(['/speckit-specify a reading list app', null])
     expect(phase({ ...s, hasPlan: false, tasks: [] })).toBe('clarify /speckit-clarify')
     const settled = { ...s.spec!, reqs: s.spec!.reqs.map(r => ({ ...r, needsClarification: false })) }
     expect(phase({ ...s, spec: settled, hasPlan: false, tasks: [] })).toBe('plan /speckit-plan')

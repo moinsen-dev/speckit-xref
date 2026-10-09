@@ -1,6 +1,6 @@
 ---
 name: speckit
-description: Set up and run GitHub Spec Kit in this repository with speckit-xref. Covers initialising Spec Kit for Claude Code, writing the constitution, starting or switching a feature, naming the next Spec Kit step, resolving drift between the user's intent, the spec and the code, choosing how strictly edits are held to the spec, and adding the speckit-xref Spec Kit extension and its CI drift check. Use when the user wants spec-driven development here, asks what comes next in a Spec Kit project, or asks how to handle Spec Kit.
+description: Set up and run GitHub Spec Kit in this repository with speckit-xref, step by step or on autopilot. Covers checking whether Spec Kit and its CLI are there, initialising Spec Kit for Claude Code, writing the constitution, starting or switching a feature, naming the next Spec Kit step, resolving drift between the user's intent, the spec and the code, choosing how strictly edits are held to the spec, and adding the speckit-xref Spec Kit extension and its CI drift check. Use when the user wants spec-driven development here, asks what comes next in a Spec Kit project, or asks how to handle Spec Kit.
 ---
 
 # Spec Kit with speckit-xref
@@ -8,7 +8,9 @@ description: Set up and run GitHub Spec Kit in this repository with speckit-xref
 The speckit-xref mod is loaded in this session. It reads Spec Kit's files, puts the active spec into your system prompt, attaches the current task to every prompt, books every edit against a task, and checks for drift after each turn. This skill gets a repository there and keeps the work on the spec.
 
 **Start with `mcp__speckit-xref__status`.** It reports:
-- whether Spec Kit is set up, and how its commands are invoked;
+- whether the `specify` CLI is installed, or can run through `uvx`;
+- whether Spec Kit is set up, which release, whether its Claude Code integration is there, and how its commands are invoked;
+- whether the autopilot is on, and what it waits for;
 - the constitution, the active feature and its artifacts;
 - coverage, drift, the current phase and the next command.
 
@@ -16,9 +18,33 @@ Act on that report rather than on assumptions. Call it again after every step. I
 
 Spell commands the way the status report does: `/speckit-plan` in the skills layout Claude Code gets by default, `/speckit.plan` in a commands layout.
 
+## Autopilot: maximum autonomy
+
+The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`). From then on the mod hands the next Spec Kit step to you after every turn: setup, constitution, specify, plan, tasks, map, implement, verify. While it runs:
+
+- **Never ask whether to continue**, never end with "Next is X, shall I?": end your turn and the autopilot moves on.
+- **Decide what the person left open** from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write (spec, plan, constitution).
+- **Stop only for what is theirs:**
+  - the product idea;
+  - a `[NEEDS CLARIFICATION]` question;
+  - a conflict between their request and the spec;
+  - anything destructive or irreversible;
+  - credentials or payments.
+
+  Then call `mcp__speckit-xref__ask` with the question, put the question in your answer, and end your turn. The autopilot waits for their answer and goes on after it.
+
+The autopilot also stops when:
+- a turn is interrupted (Esc);
+- three steps pass without progress;
+- the step budget (25 by default) is used up;
+- every task is checked and verified;
+- the intent check finds a request that contradicts the spec.
+
+`/xref auto` shows its state, and `/xref auto off` ends it.
+
 ## Phase `setup`: Spec Kit is not set up yet
 
-1. **Find the CLI.** If `command -v specify` succeeds, use `specify` (`specify version` shows the release). Otherwise, if `command -v uvx` succeeds, run it without installing anything: `uvx --from 'specify-cli>=1.1,<2' specify …`. If neither exists, tell the user to install uv (<https://docs.astral.sh/uv/>) or run `pipx install specify-cli`, then stop.
+1. **Find the CLI.** The status report says whether `specify` is installed or `uvx` can run it (`uvx --from 'specify-cli>=1.1,<2' specify …`, nothing installed). If neither is there, the person has to install uv (<https://docs.astral.sh/uv/>) or run `pipx install specify-cli`: tell them, then stop.
 2. **Say what it writes, and get the user's go.**
    - It writes `.specify/` (scripts, templates, `memory/constitution.md`, `integration.json`) and `.claude/skills/speckit-*/` (Spec Kit's commands as skills).
    - It touches no source file, `CLAUDE.md` or `.claude/settings.json`, and it keeps an existing constitution.
@@ -26,11 +52,13 @@ Spell commands the way the status report does: `/speckit-plan` in the skills lay
 3. **Run** `specify init --here --force --non-interactive --integration claude`. `--force` only skips the "directory is not empty" question.
 4. If `/speckit-constitution` is not offered afterwards, the new skills load with the next session: ask the user to restart Claude Code in this folder and continue there.
 
+Spec Kit set up for another agent only (phase `integration`): `specify integration install claude` adds the Claude Code skills next to it.
+
 ## The workflow, phase by phase
 
 | Phase | Command | What matters here |
 | --- | --- | --- |
-| `constitution` | `/speckit-constitution` | Ask the user for 3 to 7 principles, each a short, checkable MUST rule (tests, dependencies, privacy, …). The mod puts every MUST rule into every prompt, so few and sharp beats many. |
+| `constitution` | `/speckit-constitution` | 3 to 7 principles, each a short, checkable MUST rule (tests, dependencies, privacy, …). Ask the person, or on autopilot draft them from the repository and mark them as assumptions. The mod puts every MUST rule into every prompt, so few and sharp beats many. |
 | `specify` | `/speckit-specify <the user's idea>` | Pass the user's words **verbatim**. They become the spec's `Input` line, which every drift check compares the code against. Do not polish them. |
 | `clarify` | `/speckit-clarify` | Settles `[NEEDS CLARIFICATION]` markers before planning. |
 | `plan` | `/speckit-plan <technical choices>` | Stack, storage and structure, as the user decides them. |
@@ -75,7 +103,7 @@ It adds `/speckit-xref-map`, `/speckit-xref-check` and `/speckit-xref-report`, a
 
 ## Never
 
-- Run `specify init`, or install the extension, without the user's go.
+- Run `specify init`, or install the extension, without the user's go. Switching the autopilot on counts as that go for `specify init`, but not for the extension.
 - Overwrite an existing `spec.md`, `plan.md` or constitution.
 - Tick a task you did not finish.
 - Paraphrase the user's idea into the spec's `Input` line.

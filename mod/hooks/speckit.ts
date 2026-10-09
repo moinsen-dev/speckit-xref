@@ -55,6 +55,7 @@ export function parseSpec(markdown: string): Spec {
 }
 
 const PATH_EXT = /\.[a-z0-9]{1,6}$/i
+const SPEC_DOCS = /^(spec|plan|tasks|research|data-model|quickstart|constitution|checklist)\.md$/i
 
 /** File and directory paths named in a task's description: backticked, or bare tokens that look like paths. */
 export function extractPaths(text: string): string[] {
@@ -62,6 +63,8 @@ export function extractPaths(text: string): string[] {
   const keep = (raw: string) => {
     const path = raw.trim().replace(/^\.\//, '').replace(/[.,;:)]+$/, '')
     if (!path || /^https?:/i.test(path) || path.includes(' ') || path.length > 200) return
+    // "as plan.md says" names Spec Kit's own documents, not a file the task writes.
+    if (SPEC_DOCS.test(path)) return
     if (path.includes('/') || PATH_EXT.test(path)) found.add(path)
   }
   for (const m of text.matchAll(/`([^`]+)`/g)) keep(m[1] ?? '')

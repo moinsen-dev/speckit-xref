@@ -19,7 +19,7 @@ export const BAND = {
 
 const USAGE = { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
-type Options = { env?: Record<string, string>; surfaces?: string[]; fork?: string; forkReason?: string; complete?: string; anchors?: string; noRipgrep?: boolean; untracked?: string[] }
+type Options = { env?: Record<string, string>; surfaces?: string[]; fork?: string; forkReason?: string; complete?: string; anchors?: string; noRipgrep?: boolean; untracked?: string[]; onPath?: string[]; classify?: string }
 
 /** Stubs every call the mod makes over an in-memory project; `files` changes as the mod writes. */
 export function project(on: any, files: Record<string, string>, options: Options = {}) {
@@ -33,7 +33,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     touch(path)
   }
   const isDir = (path: string) => path === '' || Object.keys(files).some(k => k.startsWith(path + '/'))
-  const seen = { opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[] }
+  const seen = { opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[] }
 
   on('fs.read', ($: any, e: any) => (rel(e.path) in files ? { value: files[rel(e.path)] } : { deny: 'ENOENT' }))
   on('fs.write', ($: any, e: any) => {
@@ -60,6 +60,7 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('process.run', ($: any, e: any) => {
     seen.ran.push([...e.argv])
     const ok = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (e.argv[0] === 'which') return ok('', (options.onPath ?? ['uvx']).includes(e.argv[1]) ? 0 : 1)
     const grep = e.argv[0] === 'rg' || (e.argv[0] === 'git' && e.argv[1] === 'grep')
     if (e.argv[0] === 'rg' && options.noRipgrep) return { deny: 'ENOENT' }
     if (grep) {
@@ -107,6 +108,10 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('model.complete', ($: any, e: any) => {
     seen.completes.push(e.prompt)
     return { value: options.complete ? { isAnswered: true, text: options.complete, usage: USAGE } : { isAnswered: false, reason: 'empty-reply', usage: USAGE } }
+  })
+  on('model.classify', ($: any, e: any) => {
+    seen.classified.push(e.text)
+    return { value: options.classify ?? e.labels[1] }
   })
   on('prompt.submit', ($: any, e: any) => {
     seen.submitted.push(e)

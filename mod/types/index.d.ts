@@ -31,6 +31,12 @@ export type Snapshot = {
   hasPlan: boolean
   /** Installed Spec Kit extensions, by id (`.specify/extensions/<id>/`). */
   extensions: string[]
+  /** Whether Spec Kit's Claude Code integration is installed (its skills or commands are there). */
+  claudeIntegration: boolean
+  /** The Spec Kit release the project was set up with (`.specify/init-options.json`). */
+  speckitVersion: string | null
+  /** What can run Spec Kit's CLI on this machine. */
+  tools: { specify: boolean; uvx: boolean }
   spec: Spec | null
   tasks: Task[]
   constitution: Constitution | null
@@ -60,6 +66,21 @@ export type Ledger = {
   semantic: Semantic | null
 }
 
+/** The autopilot: it moves through Spec Kit's workflow on its own and stops only for the person. */
+export type Autopilot = {
+  on: boolean
+  /** Why it waits for the person; null while it runs. */
+  paused: string | null
+  steps: number
+  max: number
+  /** The progress key after the last step, the steps since it last changed, and the last phase. */
+  last: string | null
+  stalls: number
+  lastPhase: string | null
+  /** What the person asked for before a feature existed: the words /speckit-specify gets. */
+  idea: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'speckit-xref': {
@@ -67,6 +88,7 @@ declare module 'claude-code' {
       ledger: Ledger
       active: string | null
       checking: boolean
+      autopilot: Autopilot
     }
   }
 }

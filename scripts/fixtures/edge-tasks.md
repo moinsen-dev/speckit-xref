@@ -11,4 +11,5 @@
 ### Not a phase heading
 
 - [ ] T006 Something in "quoted/path.txt" and (src/x.py)
+- [ ] T007 Create package.json (justified in plan.md, see spec.md) and docs/plan.md
 - [ ] T6 too short an id

@@ -6,7 +6,7 @@ It comes in two parts that share one file per feature, `specs/<feature>/xref.jso
 
 | | What | For |
 | --- | --- | --- |
-| [**Claude Code mod**](mod/) | Live, inside the agent loop: the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task, unplanned edits flagged to the model at once, an intent check after each turn, a band and a pane. A `speckit` skill sets Spec Kit up and walks its workflow. | Claude Code (terminal and desktop) |
+| [**Claude Code mod**](mod/) | Live, inside the agent loop: the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task, unplanned edits flagged to the model at once, an intent check after each turn, a band and a pane. A `speckit` skill sets Spec Kit up and walks its workflow; an autopilot runs the workflow by itself and stops only for decisions that are yours. | Claude Code (terminal and desktop) |
 | [**Spec Kit extension**](extension/) | Batch: `/speckit.xref.map`, `/speckit.xref.check`, `/speckit.xref.report`, hooks after `tasks` and `implement`, and a CI check that fails the build on drift. | Every agent Spec Kit supports, and CI |
 
 ```
@@ -32,7 +32,7 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.2.0/speckit-xref-extension-v0.1.2.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.3.0/speckit-xref-extension-v0.1.3.zip
 ```
 
 ## Try it

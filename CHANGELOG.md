@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-10-09
+
+### Added
+
+- Autopilot (`/xref auto on [steps]`, the plugin options `autopilot` and `autopilotMaxSteps`, a pane button): after every turn the mod hands the next Spec Kit step to Claude by itself. It stops only for the person: Claude calls the new `mcp__speckit-xref__ask` tool, or ends on a question a small model judges to be a real decision ("shall I go on?" is not one). It also stops when a feature idea is missing, when a request contradicts the spec, on Esc, after three steps without progress, at the step budget, and when every task is checked and verified. What the person says before a feature exists becomes `/speckit-specify` in their own words.
+- Environment check: whether the `specify` CLI is installed or runs through `uvx`, which Spec Kit release the project uses, and whether its Claude Code integration is there (a new `integration` phase: `specify integration install claude`). The setup step names the exact `specify init` command.
+- The skill covers the autopilot and the environment check.
+
+### Fixed (found in a live autopilot run)
+
+- A task that names Spec Kit's own documents ("justified in plan.md") no longer counts them as files it plans (mod and extension 0.1.3).
+- A file planned by another task moves the focus to that task even when it carries an `@spec` anchor; anchors still count as coverage.
+
 ## 0.2.0 — 2026-10-09
 
 ### Added

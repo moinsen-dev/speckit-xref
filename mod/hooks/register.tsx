@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import type { Ledger, Snapshot } from '../types'
+import type { Autopilot, Ledger, Snapshot } from '../types'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
-import { nextStep, stepLine } from './workflow'
+import { AUTONOMY_RULES, QUESTION_LABELS, autopilotPrompt, endsWithQuestion, idleAutopilot, nextStep, progressKey, specifyCli, stepLine } from './workflow'
 import {
   acknowledgeAll,
   anchorsIn,
@@ -35,7 +35,7 @@ import type { Anchor } from '../types'
 import type { Classified, Level, Report } from './xref'
 
 type $ = EngineInterface
-type Options = { mode: string; driftCheck: string; mapModel: string }
+type Options = { mode: string; driftCheck: string; mapModel: string; autopilot: string; autopilotMaxSteps: number }
 
 const PLUGIN = 'speckit-xref'
 const PANE = 'speckit-xref'
@@ -54,6 +54,7 @@ const snapshotA = atom({ plugin: 'speckit-xref', key: 'snapshot' } as const, nul
 const ledgerA = atom({ plugin: 'speckit-xref', key: 'ledger' } as const, emptyLedger())
 const activeA = atom({ plugin: 'speckit-xref', key: 'active' } as const, null)
 const checkingA = atom({ plugin: 'speckit-xref', key: 'checking' } as const, false)
+const autopilotA = atom({ plugin: 'speckit-xref', key: 'autopilot' } as const, idleAutopilot())
 
 // The module's own: they start over on a reload, and session.start fills them again.
 let root = ''
@@ -62,6 +63,11 @@ let offered = false
 let lastLevel: Level = 'none'
 let turnFiles: string[] = []
 let timer: { cancel: () => void } | null = null
+// What can run Spec Kit's CLI here, looked up once a session.
+let cli = { specify: false, uvx: false }
+// The question the model raised through mcp__speckit-xref__ask during the turn running now.
+let askedThisTurn: string | null = null
+let mapModel = 'haiku'
 
 const at = (rel: string) => (rel.startsWith('/') ? rel : `${root}/${rel}`)
 const stamp = async ($: $) => new Date(await $.clock.now()).toISOString()
@@ -85,6 +91,15 @@ async function mtime($: $, rel: string): Promise<number> {
 async function exists($: $, rel: string): Promise<boolean> {
   try {
     return await $.fs.exists(at(rel))
+  } catch {
+    return false
+  }
+}
+
+/** Whether a program is on the PATH. */
+async function onPath($: $, program: string): Promise<boolean> {
+  try {
+    return (await $.process.run(['which', program], { cwd: root, timeoutMs: 3000 })).exitCode === 0
   } catch {
     return false
   }
@@ -138,11 +153,12 @@ async function currentSignature($: $, featureDir: string | null): Promise<string
 async function scan($: $): Promise<void> {
   const features = await listFeatures($)
   const featureDir = await resolveFeature($, features)
-  const [specMd, tasksMd, constitutionMd, integrationJson] = await Promise.all([
+  const [specMd, tasksMd, constitutionMd, integrationJson, initOptions] = await Promise.all([
     featureDir ? readText($, `${featureDir}/spec.md`) : null,
     featureDir ? readText($, `${featureDir}/tasks.md`) : null,
     readText($, '.specify/memory/constitution.md'),
     readText($, '.specify/integration.json'),
+    readText($, '.specify/init-options.json'),
   ])
   let extensions: string[] = []
   try {
@@ -159,6 +175,9 @@ async function scan($: $): Promise<void> {
     features: features.map(f => f.dir),
     hasPlan: featureDir ? await exists($, `${featureDir}/plan.md`) : false,
     extensions,
+    claudeIntegration: await hasClaudeIntegration($, integrationJson),
+    speckitVersion: speckitVersionOf(initOptions),
+    tools: cli,
     spec: specMd ? parseSpec(specMd) : null,
     tasks: tasksMd ? parseTasks(tasksMd) : [],
     constitution: constitutionMd ? parseConstitution(constitutionMd) : null,
@@ -173,6 +192,33 @@ async function scan($: $): Promise<void> {
   }
   await update($, snapshotA, () => snapshot)
   signature = await currentSignature($, featureDir)
+}
+
+/** Spec Kit's Claude Code integration: recorded in integration.json, or its skills or commands are there. */
+async function hasClaudeIntegration($: $, integrationJson: string | null): Promise<boolean> {
+  try {
+    const value = JSON.parse(integrationJson ?? '') as { installed_integrations?: unknown }
+    if (Array.isArray(value.installed_integrations) && value.installed_integrations.includes('claude')) return true
+  } catch {
+    // No integration.json: look for the files themselves.
+  }
+  for (const [dir, prefix] of [['.claude/skills', 'speckit-'], ['.claude/commands', 'speckit.']] as const) {
+    try {
+      if ((await $.fs.list(at(dir))).some(entry => entry.name.startsWith(prefix))) return true
+    } catch {
+      continue
+    }
+  }
+  return false
+}
+
+function speckitVersionOf(initOptions: string | null): string | null {
+  try {
+    const value = JSON.parse(initOptions ?? '') as { speckit_version?: unknown }
+    return typeof value.speckit_version === 'string' ? value.speckit_version : null
+  } catch {
+    return null
+  }
 }
 
 async function refresh($: $): Promise<void> {
@@ -307,6 +353,8 @@ async function runCheck($: $, files: string[], model: string): Promise<string> {
     await update($, ledgerA, l => applySemantic(l, semantic))
     await persist($)
     await notifyLevel($)
+    const conflict = (await read($, ledgerA)).semantic?.changes.find(c => c.kind === 'contradicts')
+    if (conflict && (await read($, autopilotA)).on) await pauseAutopilot($, `your request "${conflict.text}" contradicts the spec; decide in the pane`)
     return `Intent check ${semantic.score}/100 (${semantic.verdict})${semantic.reasons[0] ? `: ${semantic.reasons[0]}` : ''}`
   } finally {
     await update($, checkingA, () => false)
@@ -404,12 +452,71 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
   return `Linked ${rel} to ${id}.`
 }
 
+/** Stops the autopilot until the person speaks, and says why. */
+async function pauseAutopilot($: $, reason: string): Promise<void> {
+  await update($, autopilotA, a => ({ ...a, paused: reason }))
+  $.ui.toast(`Autopilot waits for you: ${reason}`)
+}
+
+async function stopAutopilot($: $, why: string): Promise<void> {
+  await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+  $.ui.toast(why)
+}
+
+/**
+ * One autopilot step: the next Spec Kit step is handed to the model as a prompt of its own, unless only the
+ * person can take it, the run stopped moving, or the step budget is spent.
+ */
+async function advance($: $): Promise<void> {
+  const ap = await read($, autopilotA)
+  if (!ap.on || ap.paused) return
+  await scan($)
+  const snap = await read($, snapshotA)
+  if (!snap) return
+  const ledger = await read($, ledgerA)
+  const step = nextStep(snap, ledger, ap.idea)
+  if (step.needsUser) return pauseAutopilot($, step.needsUser)
+  const key = progressKey(snap, ledger)
+  const stalls = key === ap.last ? ap.stalls + 1 : 0
+  if (stalls >= 3) return pauseAutopilot($, 'three steps without progress; look at what blocks it, then say go')
+  if (ap.steps >= ap.max) return pauseAutopilot($, `the step budget (${ap.max}) is used up; /xref auto on starts a new one`)
+  if (step.phase === 'verify' && ap.lastPhase === 'verify') {
+    const level = evaluate(snap, ledger).level
+    if (level === 'red') return pauseAutopilot($, 'the feature is built, but the drift is red; decide in the pane')
+    return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked and the drift is ${level}.`)
+  }
+  await update($, autopilotA, a => ({ ...a, steps: a.steps + 1, last: key, stalls, lastPhase: step.phase, idea: step.phase === 'specify' ? null : a.idea }))
+  // The mod maps requirements itself where no extension command does it, then moves on.
+  if (step.phase === 'map' && !snap.extensions.includes('xref')) {
+    await runMap($, mapModel)
+    return advance($)
+  }
+  const active = await read($, activeA)
+  void $.prompt.submit({ text: autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) })
+}
+
+/** After a turn: the autopilot pauses where the model or the person needs the person, and moves on otherwise. */
+async function afterTurn($: $, answer: string, isAborted: boolean): Promise<void> {
+  const asked = askedThisTurn
+  askedThisTurn = null
+  const ap = await read($, autopilotA)
+  if (!ap.on || ap.paused) return
+  if (isAborted) return pauseAutopilot($, 'you interrupted the turn; say go to go on')
+  if (asked) return pauseAutopilot($, asked)
+  if (endsWithQuestion(answer)) {
+    // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
+    const label = await $.model.classify(answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
+    if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
+  }
+  $.clock.after(0, () => void advance($).catch(() => undefined))
+}
+
 async function statusText($: $): Promise<string> {
   const snap = await read($, snapshotA)
   if (!snap) return 'Spec X-Ref has not read this project yet.'
   const ledger = await read($, ledgerA)
   const next = nextStep(snap, ledger)
-  if (!snap.featureDir) return `${next.why} Next: ${next.command ?? 'ask Claude to set up Spec Kit (the speckit-xref:speckit skill)'}.`
+  if (!snap.featureDir) return `${next.why} Next: ${next.needsUser ?? next.command ?? ''}`
   // The host already names the plugin in front of a command's answer.
   return (turnContext(snap, ledger, await read($, activeA), stepLine(next)) ?? '').replace(/^speckit-xref · /, '')
 }
@@ -422,8 +529,11 @@ async function workflowStatus($: $): Promise<string> {
   const ledger = await read($, ledgerA)
   const next = nextStep(snap, ledger)
   const report = evaluate(snap, ledger)
+  const ap = await read($, autopilotA)
   const lines = [
-    `Spec Kit: ${snap.initialized ? 'set up' : 'not set up'}${snap.initialized ? ` · commands as ${speckitCommand(snap, 'plan')}` : ''} · extensions: ${snap.extensions.join(', ') || 'none'}`,
+    `Spec Kit CLI: ${snap.tools.specify ? 'specify is installed' : snap.tools.uvx ? 'not installed; runs through uvx' : 'missing, and no uvx either'}`,
+    `Spec Kit: ${snap.initialized ? `set up${snap.speckitVersion ? ` (${snap.speckitVersion})` : ''}` : 'not set up'}${snap.initialized ? ` · Claude Code integration ${snap.claudeIntegration ? `yes, commands as ${speckitCommand(snap, 'plan')}` : 'missing'}` : ''} · extensions: ${snap.extensions.join(', ') || 'none'}`,
+    `Autopilot: ${ap.on ? (ap.paused ? `on, waiting: ${ap.paused}` : `on, step ${ap.steps}/${ap.max}`) : 'off (/xref auto on)'}`,
     `Constitution: ${snap.constitution?.principles.length ? `${snap.constitution.principles.length} principles, ${snap.constitution.musts.length} MUST rules` : 'missing or still the template'}`,
     `Active feature: ${snap.featureDir ? `${snap.featureDir}${snap.spec ? ` (${snap.spec.title})` : ''}` : 'none'}`,
   ]
@@ -431,7 +541,8 @@ async function workflowStatus($: $): Promise<string> {
   if (snap.featureDir) {
     lines.push(`Artifacts: spec.md ${snap.spec ? 'yes' : 'no'} · plan.md ${snap.hasPlan ? 'yes' : 'no'} · tasks.md ${snap.tasks.length ? `${report.done}/${report.tasks} done` : 'no'} · FR covered ${report.covered}/${report.total} · drift ${report.level}`)
   }
-  lines.push(`Phase: ${next.phase}. ${next.why}`, `Next: ${next.command ?? 'set up Spec Kit (see the speckit-xref:speckit skill)'}`)
+  lines.push(`Phase: ${next.phase}. ${next.why}`, `Next: ${next.command ?? next.needsUser ?? ''}`)
+  if (next.needsUser) lines.push(`Needs the person: ${next.needsUser}`)
   if (next.notes.length) lines.push('Notes:', ...next.notes.map(n => `- ${n}`))
   return lines.join('\n')
 }
@@ -447,14 +558,19 @@ export const register: Register = (on, options) => {
   const opts = options as unknown as Partial<Options>
   const mode = opts.mode === 'strict' ? 'strict' : 'advisory'
   const driftCheck = opts.driftCheck === 'off' ? 'off' : 'fork'
-  const mapModel = opts.mapModel || 'haiku'
+  mapModel = opts.mapModel || 'haiku'
+  const autopilotByDefault = opts.autopilot === 'on'
+  const maxSteps = typeof opts.autopilotMaxSteps === 'number' && opts.autopilotMaxSteps > 0 ? Math.floor(opts.autopilotMaxSteps) : 25
 
   on('session.start', async ($, e, next) => {
     root = e.cwd || (await $.session.cwd())
     lastLevel = 'none'
     turnFiles = []
+    askedThisTurn = null
+    cli = { specify: await onPath($, 'specify'), uvx: await onPath($, 'uvx') }
+    if (autopilotByDefault) await update($, autopilotA, a => (a.on ? a : { ...a, on: true, max: maxSteps }))
     await scan($)
-    for (const command of [{ name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | focus T### | pane', argumentHint: '[check | map | ack | focus T### | pane]' }]) {
+    for (const command of [{ name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | focus T### | auto on|off | pane', argumentHint: '[check | map | ack | focus T### | auto on [steps]|off | pane]' }]) {
       try {
         await $.command.register(command)
       } catch {
@@ -476,6 +592,11 @@ export const register: Register = (on, options) => {
         name: 'status',
         description: 'Spec Kit: where this project stands in the Spec Kit workflow (set up, constitution, active feature, plan, tasks, coverage, drift) and the command that comes next. Call it before suggesting a Spec Kit step.',
         inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'ask',
+        description: 'Spec Kit autopilot: call this when, and only when, the work needs a decision only the person can make (the product idea, a [NEEDS CLARIFICATION] question, a conflict between their request and the spec, anything destructive or irreversible, credentials). The autopilot then waits for their answer. Never call it to ask whether to continue.',
+        inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'The question for the person, in one or two sentences' } }, required: ['question'] },
       },
       {
         name: 'link',
@@ -520,7 +641,14 @@ export const register: Register = (on, options) => {
     const snap = await read($, snapshotA)
     // An engine that names no origin (a test's own submission) speaks for the person.
     const origin = (e.origin as { kind?: string } | undefined)?.kind
-    if (!snap?.featureDir || (origin !== undefined && !PERSON.has(origin))) return next(e)
+    if (origin !== undefined && !PERSON.has(origin)) return next(e)
+    const ap = await read($, autopilotA)
+    const said = e.text.trim()
+    // The person's word ends a pause; before a feature exists, what they ask for is the idea to specify.
+    if (ap.on && (ap.paused || (!snap?.featureDir && said && !said.startsWith('/')))) {
+      await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea: !snap?.featureDir && said && !said.startsWith('/') ? said.slice(0, 600) : a.idea }))
+    }
+    if (!snap?.featureDir) return next(e)
     const text = e.text.trim()
     const active = await read($, activeA)
     if (text && !text.startsWith('/')) {
@@ -529,7 +657,8 @@ export const register: Register = (on, options) => {
     }
     const ledger = await read($, ledgerA)
     const note = turnContext(snap, ledger, active, stepLine(nextStep(snap, ledger)))
-    return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
+    const notes = [note, ap.on ? AUTONOMY_RULES.join('\n') : null].filter((n): n is string => !!n)
+    return next(notes.length ? { ...e, context: [...(e.context ?? []), ...notes] } : e)
   }).catch(($, e, next) => next(e))
 
   // Every write is booked against a task; one outside the plan is drift, refused in strict mode.
@@ -556,6 +685,11 @@ export const register: Register = (on, options) => {
     return note ? { ...ran, context: [...(ran.context ?? []), note] } : ran
   }).catch(($, e, next) => next(e))
 
+  on('tool.call', { tool: 'mcp__speckit-xref__ask' }, async ($, e) => {
+    askedThisTurn = str((e as unknown as { question?: unknown }).question) || 'a decision only you can make'
+    const ap = await read($, autopilotA)
+    return { result: ap.on ? 'The autopilot will wait for the person. Put the question in your answer and end your turn.' : 'Noted. Put the question in your answer.' }
+  }).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__status' }, async $ => ({ result: await workflowStatus($) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__focus' }, async ($, e) => ({ result: await focus($, str((e as unknown as { task?: unknown }).task)) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__where' }, async ($, e) => ({ result: await where($, str((e as unknown as { file?: unknown }).file)) })).catch(failed)
@@ -573,6 +707,7 @@ export const register: Register = (on, options) => {
     await persist($)
     // The check runs after the turn, on the clock, so the person gets the prompt back at once.
     if (files.length && driftCheck === 'fork' && !e.isAborted) $.clock.after(0, () => void runCheck($, files, mapModel).catch(() => undefined))
+    await afterTurn($, e.answer ?? '', e.isAborted)
     return result
   })
 
@@ -590,6 +725,22 @@ export const register: Register = (on, options) => {
         return { text: 'Accepted every edit outside the plan.' }
       case 'focus':
         return { text: await focus($, rest[0] ?? '') }
+      case 'auto': {
+        const [mode = '', budget = ''] = rest
+        if (mode === 'off') {
+          await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+          return { text: 'Autopilot off.' }
+        }
+        if (mode === 'on') {
+          const max = Number(budget) > 0 ? Math.floor(Number(budget)) : maxSteps
+          await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, max }))
+          // The first step starts once this command is done; each later one when a turn ends.
+          $.clock.after(0, () => void advance($).catch(() => undefined))
+          return { text: `Autopilot on: it works through Spec Kit by itself for up to ${max} steps and stops only for decisions that are yours. /xref auto off stops it; so does Esc.` }
+        }
+        const ap = await read($, autopilotA)
+        return { text: ap.on ? (ap.paused ? `Autopilot on, waiting for you: ${ap.paused}` : `Autopilot on, step ${ap.steps}/${ap.max}.`) : 'Autopilot off. /xref auto on [steps] starts it.' }
+      }
       case 'pane':
         await $.ui.open({ id: PANE, title: TITLE })
         return { text: 'Spec X-Ref pane opened.' }
@@ -601,20 +752,27 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const snap = await read($, snapshotA)
-    if (!snap?.featureDir || e.props.hasSurvey) return next(e)
+    const ap = await read($, autopilotA)
+    if ((!snap?.featureDir && !ap.on) || e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const report = evaluate(snap, await read($, ledgerA))
-    const task = currentTask(snap, await read($, activeA))
+    const ledger = await read($, ledgerA)
+    const report = snap?.featureDir ? evaluate(snap, ledger) : null
+    const task = snap ? currentTask(snap, await read($, activeA)) : null
     const checking = await read($, checkingA)
+    const auto = ap.on ? (ap.paused ? ' · auto ⏸ waiting for you' : ` · auto ▶ ${ap.steps}/${ap.max}`) : ''
     const mine = (
       <Box key="speckit-xref-band" flexDirection="row">
-        <Text color={LEVEL_COLOR[report.level]}>● </Text>
+        <Text color={LEVEL_COLOR[report?.level ?? 'none']}>● </Text>
         <Text bold>xref </Text>
         <Text wrap="truncate-end">
-          {task ? `${task.id} · ` : ''}tasks {report.done}/{report.tasks} · FR {report.covered}/{report.total} · drift {report.level}
-          {report.findings.length ? ` (${report.findings.length})` : ''}
+          {report
+            ? `${task ? `${task.id} · ` : ''}tasks ${report.done}/${report.tasks} · FR ${report.covered}/${report.total} · drift ${report.level}${report.findings.length ? ` (${report.findings.length})` : ''}`
+            : snap
+              ? nextStep(snap, ledger, ap.idea).phase
+              : ''}
           {checking ? ' · checking…' : ''}
         </Text>
+        <Text color={ap.paused ? 'warning' : 'suggestion'}>{auto}</Text>
       </Box>
     )
     const theirs = await next(e)
@@ -632,12 +790,30 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const snap = await read($, snapshotA)
     const ledger = await read($, ledgerA)
+    const ap = await read($, autopilotA)
+    const autoLabel = ap.on ? (ap.paused ? `on · waiting for you: ${ap.paused}` : `on · step ${ap.steps}/${ap.max}`) : 'off'
+    const toggle = (
+      <Button
+        key="auto"
+        label={ap.on ? 'Autopilot off' : 'Autopilot on'}
+        hotkey="p"
+        onPress={() =>
+          void (ap.on
+            ? update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+            : update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null })).then(() => advance($)))
+        }
+      />
+    )
     if (!snap?.featureDir || !snap.spec) {
-      const next = snap ? nextStep(snap, ledger) : null
+      const next = snap ? nextStep(snap, ledger, ap.idea) : null
       return (
         <Box flexDirection="column">
           <Text dimColor>{next?.why ?? 'No Spec Kit feature found.'}</Text>
-          <Text dimColor>{next?.command ? `Next: ${next.command}` : 'Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).'}</Text>
+          <Text dimColor>{next?.needsUser ?? (next?.command ? `Next: ${next.command}` : 'Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).')}</Text>
+          <Text dimColor>Autopilot {autoLabel}</Text>
+          <Box flexDirection="row" marginTop={1}>
+            {toggle}
+          </Box>
         </Box>
       )
     }
@@ -679,7 +855,8 @@ export const register: Register = (on, options) => {
         {task && (task.paths.length || reqs.length) ? row('', [task.paths.join(', '), reqs.join(' ')].filter(Boolean).join(' · '), 'subtle') : null}
         {row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-')}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
-        {row('Next', stepLine(nextStep(snap, ledger)), 'suggestion')}
+        {row('Next', stepLine(nextStep(snap, ledger, ap.idea)), 'suggestion')}
+        {row('Auto', autoLabel, ap.paused ? 'warning' : ap.on ? 'suggestion' : 'subtle')}
         {row('Drift', `● ${report.level}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {report.findings
           .filter(f => f.kind !== 'intent')
@@ -699,6 +876,7 @@ export const register: Register = (on, options) => {
           <Button key="check" label="Check now" hotkey="c" onPress={() => void runCheck($, [], mapModel).then(text => $.ui.toast(text))} />
           <Button key="ack" label="Accept edits" hotkey="a" onPress={() => void update($, ledgerA, acknowledgeAll).then(() => persist($))} />
           {report.uncovered.length && snap.tasks.length ? <Button key="map" label="Map FR→tasks" hotkey="m" onPress={() => void runMap($, mapModel).then(text => $.ui.toast(text))} /> : null}
+          {toggle}
         </Box>
       </Box>
     )
