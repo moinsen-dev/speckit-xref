@@ -175,6 +175,8 @@ declare module 'claude-code' {
       details: boolean
       /** When the person last spoke: the "since you left" card counts from here. */
       seenAt: number
+      /** The chip under each booked write in the transcript, by tool_use_id: `T006 · FR-004` or `▲ unplanned`. */
+      chips: Record<string, string>
     }
   }
 }

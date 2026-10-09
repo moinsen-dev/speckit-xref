@@ -4,7 +4,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, RunEntry, Snapshot } from '../types'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, runLogPath } from './ledger'
 import { LADDER, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
-import { featureFromBranch, fingerprint, hasRealTests, isTestFile, rulesFrom, sha256 } from './rules'
+import { featureFromBranch, fingerprint, hasRealTests, isTestFile, matchesAny, rulesFrom } from './rules'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
 import type { Flow, Step } from './workflow'
 import {
@@ -101,6 +101,7 @@ const turnFilesA = atom({ plugin: 'speckit-xref', key: 'turnFiles' } as const, [
 const turnA = atom({ plugin: 'speckit-xref', key: 'turn' } as const, null)
 const detailsA = atom({ plugin: 'speckit-xref', key: 'details' } as const, false)
 const seenAtA = atom({ plugin: 'speckit-xref', key: 'seenAt' } as const, 0)
+const chipsA = atom({ plugin: 'speckit-xref', key: 'chips' } as const, {} as Record<string, string>)
 
 // The module's own: they start over on a reload, and session.start or register fills them again.
 let root = ''
@@ -122,6 +123,8 @@ let parallel = false
 let commitPerTask = false
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
+// When the step running now was handed over: its length in the run log, where a -p run reports none.
+let stepStartedAt = 0
 
 const at = (rel: string) => (rel.startsWith('/') ? rel : `${root}/${rel}`)
 const stamp = async ($: $) => new Date(await $.clock.now()).toISOString()
@@ -440,6 +443,8 @@ async function afterWrite($: $, rel: string, c: Classified, newText: string): Pr
     await scan($)
     return
   }
+  // Lockfiles, build output, caches: no evidence for a task, no drift, no part of the turn's changes.
+  if (c.verdict === 'exempt') return
   const when = await stamp($)
   // A file's anchors are read again when the write may have added or removed one.
   const hadAnchors = (await read($, ledgerA)).anchors.some(a => a.file === rel)
@@ -886,6 +891,7 @@ async function advance($: $): Promise<void> {
   const active = await read($, activeA)
   const text = autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) + parallelNote(snap, step)
   await update($, autopilotA, a => ({ ...a, doneAtStep: snap.tasks.filter(t => t.done).map(t => t.id) }))
+  stepStartedAt = await $.clock.now()
   // Nobody is at the prompt in a -p run: the Stop hook hands the step over as its re-prompt.
   if (!interactive) {
     pendingPrompt = text
@@ -963,13 +969,15 @@ async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
   if (ap.lastPhase && ap.steps > 0) {
     const snap = await read($, snapshotA)
     const outcome = e.isAborted ? 'interrupted' : e.reason !== 'answer' ? e.reason : asked ? 'asked the person' : 'answered'
+    // The tasks this step checked off, else the one it was on.
+    const checked = snap ? snap.tasks.filter(t => t.done && !(ap.doneAtStep ?? []).includes(t.id)).map(t => t.id) : []
     await logRun($, {
       at: await stamp($),
       step: ap.steps,
       phase: ap.lastPhase,
-      task: snap ? (currentTask(snap, await read($, activeA))?.id ?? null) : null,
+      task: checked.length ? checked.join(', ') : snap ? (currentTask(snap, await read($, activeA))?.id ?? null) : null,
       files,
-      durationMs: e.durationMs,
+      durationMs: e.durationMs || (stepStartedAt ? (await $.clock.now()) - stepStartedAt : 0),
       tokens: (e.usage?.input_tokens ?? 0) + (e.usage?.output_tokens ?? 0),
       outcome,
     })
@@ -1000,6 +1008,23 @@ async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
   if (snap && evaluate(snap, await read($, ledgerA)).level === 'red') return pauseAutopilot($, 'the drift is red; look at the findings in the pane, then Resume')
   await advance($)
 }
+/** The chip a booked write gets in the transcript: the task and what it serves, or why it is drift. */
+function chipFor(c: Classified, snap: Snapshot, ledger: Ledger): string | null {
+  if (c.verdict === 'unplanned') return '▲ unplanned'
+  if (c.verdict === 'unclear') return '· unclear'
+  if (c.verdict === 'spec' || c.verdict === 'exempt' || c.verdict === 'untracked') return null
+  const task = snap.tasks.find(t => t.id === c.task)
+  if (!task) return c.verdict === 'linked' ? '● linked' : null
+  const reqs = reqsOf(task, ledger)
+  return `● ${task.id}${reqs.length ? ` · ${reqs.join(' ')}` : ''}${task.done ? ' · rework' : ''}`
+}
+
+/** An autopilot prompt as one line in the transcript: `▶ auto 3/25 · implement · 4 of 8 tasks open; next T005.` */
+export function compactPrompt(text: string): string | null {
+  const m = /^\[speckit-xref autopilot · step (\d+\/\d+)\] (\w+): (.*)$/m.exec(text)
+  return m ? `▶ auto ${m[1]} · ${m[2]} · ${m[3]}` : null
+}
+
 /** What this run cost so far and how long it took: ` · $1.80 · 23m`. */
 async function runCost($: $, ap: Autopilot): Promise<string> {
   if (!ap.startedAt) return ''
@@ -1053,7 +1078,7 @@ async function bookShellWrites($: $): Promise<void> {
   if (!turn || !snap?.featureDir) return
   const booked = new Set(await read($, turnFilesA))
   const before = new Map(turn.dirty.map(entry => [entry.slice(0, entry.lastIndexOf(':')), entry.slice(entry.lastIndexOf(':') + 1)]))
-  const now = (await changedFiles($)).filter(f => !booked.has(f))
+  const now = (await changedFiles($)).filter(f => !booked.has(f) && !matchesAny(f, snap.rules.exempt))
   const hashes = await hashFiles($, now.filter(f => before.has(f)))
   // A file dirty before the turn counts only when its content provably changed.
   const fresh = now.filter(f => !before.has(f) || (hashes[f] && before.get(f) && hashes[f] !== before.get(f))).slice(0, 40)
@@ -1361,6 +1386,9 @@ export const register: Register = (on, options) => {
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError) return ran
     await afterWrite($, rel, c, newText)
+    const chip = chipFor(c, snap, await read($, ledgerA))
+    const id = str((e as unknown as { tool_use_id?: unknown }).tool_use_id)
+    if (chip && id) await update($, chipsA, chips => Object.fromEntries([...Object.entries(chips), [id, chip]].slice(-200)))
     const note = editNote(rel, c, snap, current, PLUGIN)
     return note ? { ...ran, context: [...(ran.context ?? []), note] } : ran
   }).catch(guardFailed)
@@ -1528,6 +1556,25 @@ export const register: Register = (on, options) => {
         await refresh($)
         return { text: await statusText($) }
     }
+  })
+
+  // Transcript chips: each booked write says which task it served, and the autopilot's long prompts fold to one line.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    if (!WRITE_TOOLS.has(e.props.tool)) return next(e)
+    const chip = (await read($, chipsA))[e.props.tool_use_id]
+    const theirs = await next(e)
+    if (!chip || !theirs) return theirs
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        {theirs}
+        <Text dimColor color={chip.startsWith('▲') ? 'warning' : undefined}>{`  ${chip}`}</Text>
+      </Box>
+    )
+  })
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    const line = e.props.isExpanded ? null : compactPrompt(e.props.text)
+    return next(line ? { ...e, props: { ...e.props, text: line } } : e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

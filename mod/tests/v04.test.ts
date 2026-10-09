@@ -316,3 +316,18 @@ test('commit per task never commits on main', { options: { commitPerTask: 'on' }
   await seen.clock.advance(10)
   expect(seen.ran.some(argv => argv[0] === 'git' && argv[1] === 'commit')).toBe(false)
 })
+
+test('transcript chips: a booked write names its task, an unplanned one says so; autopilot prompts fold to one line', async ($, on) => {
+  project(on, { ...DEMO })
+  await startSession($)
+  await $.tool.call({ tool: 'Edit', tool_use_id: 'tu-1', file_path: `${ROOT}/src/auth/callback.ts`, old_string: 'a', new_string: 'b' } as never)
+  await $.tool.call({ tool: 'Write', tool_use_id: 'tu-2', file_path: `${ROOT}/src/ui/theme.ts`, content: 'x' } as never)
+  const row = async (id: string) => {
+    const props = { tool_use_id: id, tool: 'Edit', input: {}, isRunning: false, isErrored: false, isInterrupted: false }
+    return toText(await (await $.ui.mount({ plugin: 'speckit-xref', component: 'ToolUse', surface: 'terminal', props } as never)).drawn())
+  }
+  expect(await row('tu-1')).toBe('drawn beneath\n  ● T006 · FR-003')
+  expect(await row('tu-2')).toBe('drawn beneath\n  ▲ unplanned')
+  const message = await $.ui.mount({ plugin: 'speckit-xref', component: 'UserMessage', surface: 'terminal', props: { text: '[speckit-xref autopilot · step 3/25] implement: 4 of 8 tasks open; next T005.\nRun …', origin: { kind: 'plugin', name: 'speckit-xref' }, isExpanded: false } } as never)
+  expect(toText(await message.drawn())).toBe('▶ auto 3/25 · implement · 4 of 8 tasks open; next T005.')
+})

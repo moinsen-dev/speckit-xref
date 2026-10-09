@@ -2,19 +2,22 @@
 
 **Keep the code on the spec.** speckit-xref ties a [GitHub Spec Kit](https://github.com/github/spec-kit) feature and its code together and measures the drift between what the user asked for, what the spec says, and what the code does.
 
-It comes in two parts that share one file per feature, `specs/<feature>/xref.json`:
+It comes in four parts that share one contract ([`docs/contract-0.4.md`](docs/contract-0.4.md)) and one record per feature:
 
 | | What | For |
 | --- | --- | --- |
-| [**Claude Code mod**](mod/) | Live, inside the agent loop: the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task, unplanned edits flagged to the model at once, an intent check after each turn, a band and a pane. A `speckit` skill sets Spec Kit up and walks its workflow; an autopilot runs the workflow by itself and stops only for decisions that are yours. | Claude Code (terminal and desktop) |
-| [**Spec Kit extension**](extension/) | Batch: `/speckit.xref.map`, `/speckit.xref.check`, `/speckit.xref.report`, hooks after `tasks` and `implement`, and a CI check that fails the build on drift. | Every agent Spec Kit supports, and CI |
+| [**Claude Code mod**](mod/) | Live, inside the agent loop: the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task (Bash writes included), unplanned edits flagged to the model at once, an intent check after each turn, a band and a pane. An autopilot runs the workflow by itself, gated by your review of the spec and by the tests, and stops only for decisions that are yours. | Claude Code (terminal and desktop, and `claude -p`) |
+| [**Spec Kit extension**](extension/) | Batch: `/speckit.xref.map`, `check`, `verify`, `report`, `revise`, hooks after `tasks` and `implement`, and a deterministic CI check. | Every agent Spec Kit supports, and CI |
+| [**Spec Kit preset**](preset/) | Spec Kit's own `tasks` and `implement` commands, told to name every task's files and requirements and to prove each task with tests. | Spec Kit 1.1.2+ |
+| [**GitHub Action**](action/) | The CI check on every pull request, with a job summary: requirement → tasks → files and how far each is proven. | GitHub Actions |
 
 ```
            specs/NNN-feature/spec.md · tasks.md · .specify/memory/constitution.md   (Spec Kit, untouched)
                                          │
-                       specs/NNN-feature/xref.json   ← requirement ↔ task ↔ file, intents, drift
+       specs/NNN-feature/xref.json  (committed: requirement ↔ task ↔ file, accepted files, fingerprints)
+       .specify/xref/local/NNN-feature.json  (git-ignored: your prompts, intent verdicts, test results, the run)
                          ▲                                   ▲
-     Claude Code mod (live, per turn)            Spec Kit extension (per command, per CI run)
+     Claude Code mod (live, per turn)       Spec Kit extension · GitHub Action (per command, per pull request)
 ```
 
 ## Why
@@ -32,7 +35,21 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.3.0/speckit-xref-extension-v0.1.3.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-extension-v0.2.0.zip
+```
+
+**Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.
+
+```bash
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-preset-v0.1.0.zip
+```
+
+**GitHub Action**, in a workflow on `pull_request` (see [`action/`](action/)):
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: moinsen-dev/speckit-xref/action@v0.4.0
 ```
 
 ## Try it
@@ -49,27 +66,32 @@ In the demo, ask Claude for a password fallback. The spec in its prompt names pa
 
 ## How drift is measured
 
-- **Unplanned edits:** a changed file that no task plans, links or anchors. A folder a task names counts only while the task is open.
-- **Dangling anchors:** `// @spec 001-login/FR-009` where the spec has no FR-009.
-- **Coverage:** functional requirements that have a task, a linked file or an anchor.
-- **Intent:** a model compares the user's own words (logged prompt by prompt), the spec and the diff, and records a score and any request the spec lacks or rules out.
+Red has to mean something, and "done" has to be proven.
 
-The levels:
-- **yellow:** an unplanned edit, a dangling anchor, an intent score below 80, or a request beyond the spec.
-- **red:** three unplanned edits, an intent score below 50, or a request the spec rules out.
+- **Unplanned edits:** a changed file that no task plans, links or anchors. A folder a task names counts only while the task is open. Lockfiles, build output and generated code never count; manifests, configs and Markdown are listed as *unclear*, not as drift. `.xrefignore` adds your own (`unclear: <pattern>` for the second kind).
+- **Dangling anchors:** `// @spec 001-login/FR-009` where the spec has no FR-009, or where FR-009 was retired or superseded. In a test file it is an *orphan test*.
+- **Re-verify:** a requirement whose text changed since it was mapped, linked or proven.
+- **Intent:** a model compares your own words (logged prompt by prompt, kept on your machine), the spec and the diff. It advises the mod live; it never fails a CI build.
+
+The levels: **● ok**, **▲ watch** (one unplanned edit, a dangling anchor, a requirement to re-verify, a request beyond the spec), **✖ off-spec** (three unplanned edits, an intent score below 50, a request the spec rules out).
+
+Each requirement climbs a **proof ladder**: *specified* → *planned* (a task names it) → *implemented* (its task is done and non-test code shows it) → *tested* (a test with real tests in it anchors it; `test.todo` does not count) → *passing* (the test run proved it, for the text it has now). Acceptance scenarios get ids too (`US1-AS2`), and tests and anchors may name them.
 
 ## Develop
 
 ```bash
-claude plugin test ./mod                               # 31 mod tests
+claude plugin test ./mod                               # mod tests, contract cases included
 claude plugin validate --strict ./mod
 python3 -m unittest discover -s extension/tests        # extension tests
+python3 -I extension/scripts/python/xref.py selftest   # the contract cases, Python side
 node --experimental-strip-types scripts/parity.mjs     # Python readers == TypeScript readers
-node scripts/build-fixture.mjs                         # after editing examples/demo
-scripts/package-extension.sh                           # dist/speckit-xref-extension-v<version>.zip
+node scripts/build-fixture.mjs                         # after editing examples/demo or scripts/fixtures/cases.json
+scripts/package-extension.sh                           # dist/: extension and preset archives
 ```
 
-When you release, bump the version in all four places: `mod/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top level and the plugin entry) and `extension/extension.yml`.
+A change to a shared rule starts in [`docs/contract-0.4.md`](docs/contract-0.4.md) and `scripts/fixtures/cases.json`; both implementations must then pass the cases.
+
+When you release, bump the version in all five places: `mod/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (top level and the plugin entry), `extension/extension.yml` and `preset/preset.yml`.
 
 Design notes, in German: [`docs/research.de.md`](docs/research.de.md).
 

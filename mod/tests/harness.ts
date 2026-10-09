@@ -192,7 +192,7 @@ export function project(on: any, files: Record<string, string>, options: Options
   })
   on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: [], cost: { usd: 0.5 } } }))
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
-  on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn beneath'] }))
+  on('ui.render', ($: any, e: any) => ({ type: 'Text', props: {}, children: [e.component === 'UserMessage' ? e.props.text : 'drawn beneath'] }))
   on('session.start', () => ({ cwd: ROOT }))
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 10) })
   return { files, clock, write, ...seen }

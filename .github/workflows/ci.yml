@@ -19,10 +19,26 @@ jobs:
           node-version: "22"
       - name: Extension tests
         run: python -m unittest discover -s extension/tests -v
+      - name: Contract cases, Python side (the mod runs the same cases in contract.test.ts)
+        run: python3 -I extension/scripts/python/xref.py selftest
       - name: Parity (the extension's Python readers equal the mod's TypeScript readers)
         run: node --experimental-strip-types scripts/parity.mjs
-      - name: Test fixture matches examples/demo
-        run: node scripts/build-fixture.mjs && git diff --exit-code mod/tests/fixtures/demo.ts
+      - name: Test fixtures match examples/demo and scripts/fixtures/cases.json
+        run: node scripts/build-fixture.mjs && git diff --exit-code mod/tests/fixtures/demo.ts mod/tests/fixtures/cases.ts
+
+  action:
+    name: GitHub Action on the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run the Action from this checkout
+        uses: ./action
+        with:
+          working-directory: examples/demo
+          feature: specs/001-magic-link-login
+          fail-on: none
 
   mod:
     name: Claude Code mod

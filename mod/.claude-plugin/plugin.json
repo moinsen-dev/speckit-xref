@@ -1,8 +1,8 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.3.2",
-  "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: the spec in the system prompt, every edit booked against a task, and a drift check after each turn.",
+  "version": "0.4.0",
+  "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, and an autopilot gated by your spec review and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
     "email": "uli@moinsen.dev",

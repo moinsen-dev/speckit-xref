@@ -20,7 +20,7 @@ Spell commands the way the status report does: `/speckit-plan` in the skills lay
 
 ## Autopilot: maximum autonomy
 
-The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`). From then on the mod hands the next Spec Kit step to you after every turn: setup, constitution, specify, plan, tasks, map, implement, verify. While it runs:
+The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`; in a `-p` run, `SPECKIT_XREF_AUTOPILOT=on`). From then on the mod hands the next Spec Kit step to you after every turn: constitution, specify, clarify, the person's review of the spec, plan, tasks, map, analyze, implement one phase at a time, repair when the tests fail, converge, verify. While it runs:
 
 - **Never ask whether to continue**, never end with "Next is X, shall I?": end your turn and the autopilot moves on.
 - **Decide what the person left open** from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write (spec, plan, constitution).
@@ -31,16 +31,21 @@ The person can let the work run: `/xref auto on [steps]` (or the plugin option `
   - anything destructive or irreversible;
   - credentials or payments.
 
-  Then call `mcp__speckit-xref__ask` with the question, put the question in your answer, and end your turn. The autopilot waits for their answer and goes on after it.
+  Then call `mcp__speckit-xref__ask` with the question (and `options`, and `blocks` with the stories or tasks it holds up). Where the person is there, it answers with their choice: go on with it. A question that blocks only some stories is queued; leave those alone and go on with the rest. Otherwise put the question in your answer and end your turn: the autopilot waits for their answer.
+- **Implement only the phase the prompt names**, and stop when it is done. Check a task off only when its tests pass (a test-writing task in TDD is done when its tests exist and fail).
+- **A repair step** carries the failing test output: fix the code, not the tests, unless a test contradicts the spec.
+- **Never approve the spec yourself.** The spec gate is the person's: they approve it in the pane, with `/xref approve` or in the dialog.
+- While it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused: ask instead.
 
 The autopilot also stops when:
-- a turn is interrupted (Esc);
+- a turn is interrupted (Esc or `/xref-stop`), or ends with an API error or a refusal;
+- the tests still fail after three repairs;
+- the drift turns red, or the intent check finds a request that contradicts the spec;
 - three steps pass without progress;
 - the step budget (25 by default) is used up;
-- every task is checked and verified;
-- the intent check finds a request that contradicts the spec.
+- every task is checked, converged, verified and the test suite passes.
 
-`/xref auto` shows its state, and `/xref auto off` ends it.
+`/xref auto` shows its state, `/xref auto off` ends it, `/xref auto night` starts a long run that leaves a briefing.
 
 ## Phase `setup`: Spec Kit is not set up yet
 
@@ -68,21 +73,27 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 | `specify` | `/speckit-specify <the user's idea>` | Pass the user's words **verbatim**. They become the spec's `Input` line, which every drift check compares the code against. Do not polish them. |
 | `clarify` | `/speckit-clarify` | Settles `[NEEDS CLARIFICATION]` markers before planning. |
 | `plan` | `/speckit-plan <technical choices>` | Stack, storage and structure, as the user decides them. |
-| `tasks` | `/speckit-tasks` | Each task should name the files it touches (`… in src/auth/token.ts`). The mod books edits by those paths, and a task without paths cannot be checked. |
+| `review` | the person | The spec gate: the person compares the spec with their words and approves it (pane, `/xref approve`). Never approve it yourself. |
+| `tasks` | `/speckit-tasks` | Each task names its files in backticks and the requirements it serves as `(FR-###)` (the speckit-xref preset makes `/speckit-tasks` do this). The mod books edits by those paths, and a task without paths cannot be checked. |
 | `map` | `/speckit-xref-map` or `/xref map` | Records which task serves which requirement, once. Spec Kit does not keep this. |
-| `implement` | `/speckit-implement` | Call `mcp__speckit-xref__focus` before you start a task. Mark code that implements a requirement with `@spec <feature>/FR-###` at file or function level. Tick a task in `tasks.md` only once its requirements are met. |
-| `verify` | `/speckit-xref-check` or `/xref check`, then `/speckit-converge` | Checks the code against the user's words and the spec, then turns what is missing into new tasks. |
+| `analyze` | `/speckit-analyze` | Before the first task and after every spec change: spec, plan and tasks checked against each other. |
+| `implement` | `/speckit-implement` | One phase per run. Call `mcp__speckit-xref__focus` before you start a task. Mark code that implements a requirement with `@spec <feature>/FR-###` at file or function level, and tests with the anchor of what they prove (`FR-###` or a scenario `US1-AS2`). Tick a task only once its tests pass. |
+| `converge` | `/speckit-converge` | Once every task is checked: turns what is missing into new tasks, until the task list stops changing. |
+| `verify` | `/speckit-xref-check` or `/xref check` | Checks the code against the user's words and the spec. |
+
+Each requirement climbs a proof ladder: specified, planned, implemented, tested (a real test anchors it), passing (the test run proved it for its current text). `/xref` and the pane show where each stands.
 
 ## Handling
 
 - **Switch features.** Spec Kit tracks the active feature in `.specify/feature.json`. Write `{"feature_directory": "specs/NNN-name"}` there and the mod follows within seconds. `/speckit-specify` creates a new feature and points the file at it.
 - **The user asks for something the spec lacks or rules out.** The mod logs the request, and the intent check marks it `extends` or `contradicts`. Do not build it silently. Name the conflict, then offer:
-  - fold it into the spec with `/speckit-clarify`;
+  - fold it into the spec with `/speckit-xref-revise` (new requirements get new ids; replaced ones become `SUPERSEDED by FR-00x`, dropped ones `RETIRED`; every change lands in `revisions.md`), or `/speckit-clarify` without the extension;
   - start a new feature with `/speckit-specify`;
   - or record a task.
 
-  Spec Kit leaves the choice to the team. Ask once whether they keep a *living spec* (amend `spec.md`) or work *flow-forward* (a new feature per change), and keep to the answer.
-- **An edit outside the plan.** If the file serves the spec, tie it with `mcp__speckit-xref__link` (a task `T###` or a requirement `FR-###`). Otherwise say so and offer to undo it.
+  Spec Kit leaves the choice to the team. Ask once whether they keep a *living spec* (amend `spec.md`) or work *flow-forward* (a new feature per change), and keep to the answer. A line `Persistence model: flow-back | flow-forward | living` in the constitution tells the autopilot: with flow-forward it asks before a request beyond the spec reaches the spec.
+- **An edit outside the plan.** If the file serves the spec, tie it with `mcp__speckit-xref__link` (a task `T###`, a requirement `FR-###` or a scenario `US1-AS2`). Otherwise say so and offer to undo it. Generated files and caches belong in `.xrefignore` (`unclear: <pattern>` lists a file without calling it drift).
+- **What to commit.** `specs/<feature>/xref.json` is meant to be committed (map, links, accepted files, fingerprints; no timestamps). `.specify/xref/local/` stays local: it holds the person's own words.
 - **Drift.**
   - `/xref` shows the status.
   - `/xref check` runs the intent check now.
@@ -100,16 +111,22 @@ specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/re
 
 The CLI asks for confirmation before installing from a URL. Show the user the URL and let them confirm. After their yes you may pipe `y` into the command.
 
-It adds `/speckit-xref-map`, `/speckit-xref-check` and `/speckit-xref-report`, and hooks after `tasks` and `implement`. For a pull request check in GitHub Actions, check out with `fetch-depth: 0`, then:
+It adds `/speckit-xref-map`, `-check`, `-verify`, `-report` and `-revise`, and hooks after `tasks` and `implement`. The speckit-xref preset (`specify preset add --from …/speckit-xref-preset-v0.1.0.zip`) makes `/speckit-tasks` name files and requirements in every task.
+
+For a pull request check, the GitHub Action checks out with `fetch-depth: 0`, then:
 
 ```yaml
-- name: Spec drift
-  run: python3 .specify/extensions/xref/scripts/python/xref.py check --base origin/${{ github.base_ref || 'main' }} --fail-on red
+- uses: moinsen-dev/speckit-xref/action@v0.4.0
+  with:
+    fail-on: red
 ```
+
+Only deterministic findings fail a build; the intent verdict never does. Without the Action: `python3 .specify/extensions/xref/scripts/python/xref.py check --base origin/main --fail-on red --no-write`.
 
 ## Never
 
 - Run `specify init`, `specify integration install`, or install the extension without the person's go. Switching the autopilot on is no such go: it waits at setup until the person asks for it.
 - Overwrite an existing `spec.md`, `plan.md` or constitution.
-- Tick a task you did not finish.
+- Tick a task you did not finish, or whose tests fail.
+- Approve the spec or the plan on the person's behalf.
 - Paraphrase the user's idea into the spec's `Input` line.

@@ -7,19 +7,29 @@
   },
   "metadata": {
     "description": "speckit-xref: keeps a GitHub Spec Kit feature and its code tied together inside Claude Code.",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "plugins": [
     {
       "name": "speckit-xref",
       "source": "./mod",
-      "description": "The active Spec Kit spec in the system prompt, every edit booked against a task, unplanned edits and requests beyond the spec reported, and an intent check after each turn. Band and pane included.",
-      "version": "0.3.2",
+      "description": "The active Spec Kit spec in the system prompt, every edit booked against a task (Bash writes too), a proof ladder from specified to passing, and an autopilot that runs Spec Kit's whole loop, gated by your spec review and the tests. Band and pane included.",
+      "version": "0.4.0",
       "category": "development",
-      "tags": ["speckit", "spec-kit", "spec-driven-development", "traceability", "drift", "mod"],
+      "tags": [
+        "speckit",
+        "spec-kit",
+        "spec-driven-development",
+        "traceability",
+        "drift",
+        "mod"
+      ],
       "homepage": "https://github.com/moinsen-dev/speckit-xref",
       "license": "MIT",
-      "author": { "name": "Ulrich Diedrichsen", "email": "uli@moinsen.dev" }
+      "author": {
+        "name": "Ulrich Diedrichsen",
+        "email": "uli@moinsen.dev"
+      }
     }
   ]
 }

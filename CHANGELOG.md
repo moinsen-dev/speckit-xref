@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.4.0 — 2026-10-09
+
+Red has to mean something, and "done" has to be proven. Mod 0.4.0, extension 0.2.0, preset 0.1.0, and a GitHub Action, all held to one contract ([`docs/contract-0.4.md`](docs/contract-0.4.md)) whose cases both implementations run (`contract.test.ts`, `xref.py selftest`).
+
+### Proof instead of claims
+
+- **Proof ladder** per requirement: specified → planned → implemented (its task is done and non-test code shows it) → tested (a test with real tests anchors it; `test.todo` does not count) → passing (the test run proved it). Shown in the pane, `/xref`, reports and the PR summary.
+- **Acceptance scenarios** get ids (`US1-AS2`) from Spec Kit's numbered Given/When/Then lines; anchors, links and test names may name them. A story without scenarios is a note.
+- **Test results:** the mod runs the test command after each implement step (option `testCommand`, else plan.md's `**Testing**:` line) and reads JUnit when `junitPath` is set; the extension's `verify --junit` does the same.
+- **Fingerprints:** a requirement's text is hashed when it is mapped, linked or proven. A changed requirement drops back and raises *re-verify*; a test for a deleted requirement is an *orphan test*.
+
+### Trust: fewer false alarms, deterministic CI
+
+- **Noise budget:** lockfiles, build output and generated code never count; manifests, configs, workflows and Markdown are *unclear*, not drift; `.xrefignore` adds your own patterns.
+- **Ledger split:** `specs/<feature>/xref.json` is committed (map, links, accepted files, fingerprints; sorted, no timestamps); `.specify/xref/local/<feature>.json` stays on your machine (your prompts, intent verdicts, test results, the run log). A 0.3 ledger migrates on load.
+- **CI never depends on a model:** `--fail-on` counts only deterministic findings; `--no-write` leaves both files alone; the feature comes from the branch (`NNN-…`) or the diff, and CI refuses to guess among several.
+- **One classification order** for mod and extension (it differed: the extension checked anchors before plans).
+- Bash writes (sed, generators, npm) are booked at the end of the turn.
+
+### Autopilot: autonomy with guard rails
+
+- **Spec gate** (on by default, option `review: spec | spec+plan | none`): the run stops once the spec is written; the pane shows your words beside the requirements, the scope and the assumptions; **Approve spec**, `/xref approve` or the dialog lets it go on. An approval holds for that text only.
+- Spec Kit's whole loop: analyze before the first task and after spec changes, open checklists as a wait point, **one phase per implement step**, converge until the tasks stop changing.
+- **Test-gated progress:** a failing suite becomes a repair step, at most three in a row; the run ends only on a passing suite.
+- Requests beyond the spec become a revise step (`/speckit-xref-revise`); contradictions always stop. A `Persistence model:` line in the constitution (flow-back, flow-forward, living) decides.
+- The ask tool answers in the same turn where you are there (a dialog), and a question that blocks only some stories waits in the pane's **Decide** row while the rest goes on.
+- **Guard rails** while it runs: `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question; a permission prompt sends a notification.
+- **Stop now:** `/xref-stop` and the Stop buttons end the running turn too.
+- Run log, cost and time in the band (`auto ▶ 3/25 · $1.80 · 23m`), an **Away** card, a notification after five minutes of waiting.
+- Off by default: `/xref auto night` (a long run that leaves `briefing.md`), `commitPerTask` (feature branches only), `parallel` (`[P]` tasks to `speckit-xref:task-runner` subagents), and headless runs (`SPECKIT_XREF_AUTOPILOT=on claude -p …`, driven by the Stop hook).
+
+### Visibility
+
+- The band shows the whole question while the autopilot waits, with Resume, Stop and Pane; the pane tab reads `Spec X-Ref ⏸`.
+- States read ok / watch / off-spec with the glyphs ● ▲ ✖; color is only a hint.
+- Drift cards: each unplanned file gets **Link to** (a task picker) and **Accept this**; **Accept all** asks first and lost its hotkey.
+- Phase strip (`✓setup ✓const ✓spec ✓plan ✓tasks ▶impl 7/8 ·verify`), a proof row, a compact pane under 70 columns (`d` for details).
+- Transcript chips on each booked write (`● T006 · FR-003`, `▲ unplanned`); autopilot prompts fold to one line.
+- Spec Kit's own commands get the feature's state appended; a compaction keeps the task, your open requests and the decisions.
+
+### Spec Kit side
+
+- **Extension 0.2.0:** `check` (`--no-write`, `--junit`), `verify`, `summary`, `report` with metrics (unplanned edits caught and how they ended, the blind-accept share, requests that reached the spec), `migrate`, `selftest`; new commands `speckit.xref.verify` and `speckit.xref.revise` (new ids, `SUPERSEDED by`, `RETIRED`, `revisions.md`).
+- **Preset `xref` 0.1.0:** `/speckit-tasks` names every task's files in backticks and its requirements as `(FR-###)`; `/speckit-implement` focuses tasks, writes anchors in code and tests, checks a task off only when its tests pass, and stops after one phase when asked.
+- **GitHub Action** (`moinsen-dev/speckit-xref/action@v0.4.0`): the check on every pull request with a job summary, requirement → tasks → files with their rung.
+
+### Fixed
+
+- Strict mode let an edit through when its own hook failed; it now refuses.
+- The autopilot went on after an API error or a refusal; it now waits.
+- The drift check and the next autopilot step started in the same tick, so a contradiction could arrive too late; the check now runs first and any red stops the run.
+- Turn state lived in module variables and was lost on a reload; it lives in state atoms.
+- In repositories without Spec Kit the tools now wait behind ToolSearch and nothing polls.
+- The pane opened unasked on the main screen; it now opens unasked only in fullscreen.
+- The question classifier no longer runs inside `turn.complete`.
+
 ## 0.3.2 — 2026-10-09
 
 ### Changed
