@@ -7,7 +7,7 @@ Everything lands in one file per feature, `specs/<feature>/xref.json`. The speck
 ## Install
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.1.0/speckit-xref-extension-v0.1.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.1.1/speckit-xref-extension-v0.1.1.zip
 ```
 
 From a checkout: `specify extension add --dev /path/to/speckit-xref/extension`.

@@ -103,6 +103,15 @@ test('anchors in the code count as coverage, and one to a missing requirement is
   expect((await xref($)).text).toContain('anchors 001-magic-link-login/FR-009, which the spec no longer has')
 })
 
+test('without ripgrep, git grep finds anchors in files not committed yet', async ($, on) => {
+  const files = { ...DEMO, 'src/auth/callback.ts': '// @spec 001-magic-link-login/FR-003\n' }
+  const seen = project(on, files, { noRipgrep: true, untracked: ['src/auth/callback.ts'] })
+  await startSession($)
+  expect(seen.ran.some(argv => argv[0] === 'git' && argv[1] === 'grep')).toBe(true)
+  const where = await $.tool.call({ tool: 'mcp__speckit-xref__where', file: 'src/auth/callback.ts' } as never)
+  expect(where.result).toContain('001-magic-link-login/FR-003 (line 1)')
+})
+
 test('after a turn that wrote, the intent check runs on the clock and its verdict reaches band, pane and buttons', async ($, on) => {
   const seen = project(on, { ...DEMO }, { fork: INTENT_REPLY })
   await startSession($)

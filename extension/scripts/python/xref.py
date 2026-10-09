@@ -476,7 +476,7 @@ def scan_anchors(root: Path) -> list[dict]:
     """Every `@spec <id>` comment outside the spec folders: ripgrep, else git grep, else a walk."""
     out = run(["rg", "-n", "--no-heading", "-o", "-e", r"@spec\s+(?:[\w.-]+/)?(?:FR|SC|T)-?\d{3,}", "--glob", "!specs/**", "--glob", "!.specify/**", "."], root)
     if out is None:
-        out = run(["git", "grep", "-n", "-o", "-E", "@spec[[:space:]]+([[:alnum:]_.-]+/)?(FR|SC|T)-?[0-9]{3,}", "--", ".", ":!specs", ":!.specify"], root)
+        out = run(["git", "grep", "--untracked", "-n", "-o", "-E", "@spec[[:space:]]+([[:alnum:]_.-]+/)?(FR|SC|T)-?[0-9]{3,}", "--", ".", ":!specs", ":!.specify"], root)
     anchors: list[dict] = []
     if out is not None:
         for line in out.split("\n"):

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — 2026-10-09
+
+### Fixed
+
+- `@spec` anchors in new, uncommitted files were missed on machines without ripgrep: the `git grep` fallback now searches untracked files too (mod and extension). Found by the first CI run on a runner without `rg`.
+
 ## 0.1.0 — 2026-10-09
 
 First release: a Claude Code mod and a Spec Kit extension that share one ledger per feature, `specs/<feature>/xref.json`.

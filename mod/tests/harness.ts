@@ -19,7 +19,7 @@ export const BAND = {
 
 const USAGE = { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
-type Options = { env?: Record<string, string>; surfaces?: string[]; fork?: string; forkReason?: string; complete?: string; anchors?: string }
+type Options = { env?: Record<string, string>; surfaces?: string[]; fork?: string; forkReason?: string; complete?: string; anchors?: string; noRipgrep?: boolean; untracked?: string[] }
 
 /** Stubs every call the mod makes over an in-memory project; `files` changes as the mod writes. */
 export function project(on: any, files: Record<string, string>, options: Options = {}) {
@@ -60,11 +60,16 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('process.run', ($: any, e: any) => {
     seen.ran.push([...e.argv])
     const ok = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
-    if (e.argv[0] === 'rg') {
+    const grep = e.argv[0] === 'rg' || (e.argv[0] === 'git' && e.argv[1] === 'grep')
+    if (e.argv[0] === 'rg' && options.noRipgrep) return { deny: 'ENOENT' }
+    if (grep) {
       if (options.anchors !== undefined) return ok(options.anchors, options.anchors ? 0 : 1)
+      // git grep searches only what git tracks, unless it is asked for --untracked.
+      const skipUntracked = e.argv[0] === 'git' && !e.argv.includes('--untracked')
       const lines: string[] = []
       for (const [path, text] of Object.entries(files)) {
         if (/^(specs|\.specify)\//.test(path)) continue
+        if (skipUntracked && options.untracked?.includes(path)) continue
         text.split('\n').forEach((line, i) => {
           const m = /@spec\s+\S+/.exec(line)
           if (m) lines.push(`./${path}:${i + 1}:${m[0]}`)

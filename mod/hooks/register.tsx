@@ -167,7 +167,8 @@ async function refresh($: $): Promise<void> {
 async function scanAnchors($: $): Promise<Anchor[] | null> {
   const runs = [
     ['rg', '-n', '--no-heading', '-o', '-e', ANCHOR_RG, '--glob', '!specs/**', '--glob', '!.specify/**', '.'],
-    ['git', 'grep', '-n', '-o', '-E', ANCHOR_GIT, '--', '.', ':!specs', ':!.specify'],
+    // --untracked: a new file the person has not committed yet holds anchors too.
+    ['git', 'grep', '--untracked', '-n', '-o', '-E', ANCHOR_GIT, '--', '.', ':!specs', ':!.specify'],
   ]
   for (const argv of runs) {
     try {

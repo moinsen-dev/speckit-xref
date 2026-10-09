@@ -127,6 +127,16 @@ class XrefCli(unittest.TestCase):
         out = self.xref("check")
         self.assertIn("src/auth/request-link.ts:1 anchors 001-magic-link-login/FR-009, which the spec no longer has", [f["text"] for f in out["findings"]])
 
+    def test_anchors_in_new_uncommitted_files_are_found_without_ripgrep(self) -> None:
+        # A PATH with git but no rg: the git grep fallback has to search untracked files too.
+        tools = Path(tempfile.mkdtemp(prefix="xref-tools-"))
+        self.addCleanup(shutil.rmtree, tools, True)
+        (tools / "git").symlink_to(shutil.which("git"))
+        self.write("src/auth/callback.ts", "// @spec 001-magic-link-login/FR-003\n")
+        out = self.xref("map", env={"PATH": str(tools)})
+        fr3 = next(r for r in out["requirements"] if r["id"] == "FR-003")
+        self.assertEqual(fr3["anchors"], ["src/auth/callback.ts:1"])
+
     def test_record_check_reads_a_chatty_verdict_and_marks_the_logged_request(self) -> None:
         mod_ledger = {
             "schema_version": 1,
