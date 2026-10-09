@@ -33,7 +33,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     touch(path)
   }
   const isDir = (path: string) => path === '' || Object.keys(files).some(k => k.startsWith(path + '/'))
-  const seen = { opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[] }
+  const seen = { opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
 
   on('fs.read', ($: any, e: any) => (rel(e.path) in files ? { value: files[rel(e.path)] } : { deny: 'ENOENT' }))
   on('fs.write', ($: any, e: any) => {
@@ -87,6 +87,7 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('session.surfaces', () => ({ value: options.surfaces ?? ['terminal'] }))
   on('ui.open', ($: any, e: any) => {
     seen.opened.push(e.id)
+    seen.openArgs.push(e)
     return { value: { isPlaced: true } }
   })
   on('ui.panes', () => ({ value: seen.opened.map(id => ({ id, title: 'Spec X-Ref', isShown: true, isFocused: false, isPlaced: true })) }))
@@ -137,8 +138,8 @@ export function project(on: any, files: Record<string, string>, options: Options
   return { files, clock, write, ...seen }
 }
 
-export async function startSession($: any) {
-  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: ROOT })
+export async function startSession($: any, cwd = ROOT) {
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd })
 }
 
 export const COMPOSE = { model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Write'], outputStyle: null, traits: [] } as const

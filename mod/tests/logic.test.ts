@@ -31,6 +31,7 @@ const snap = (): Snapshot => ({
   claudeIntegration: true,
   speckitVersion: '1.1.2',
   tools: { specify: true, uvx: true },
+  folder: 'existing',
   spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!),
   tasks: parseTasks(DEMO[`${FEATURE}/tasks.md`]!),
   constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!),
@@ -217,6 +218,10 @@ describe('workflow', () => {
     expect(phase({ ...s, initialized: false, tools: { specify: false, uvx: true } })).toBe("setup uvx --from 'specify-cli>=1.1,<2' specify init --here --force --non-interactive --integration claude")
     expect(nextStep({ ...s, initialized: false, tools: { specify: false, uvx: false } }, emptyLedger()).needsUser).toBe('Install uv (https://docs.astral.sh/uv/) or the specify CLI (pipx install specify-cli).')
     expect(phase({ ...s, claudeIntegration: false })).toBe('integration specify integration install claude')
+    // Setup and integration write into the repository: the person decides, never the autopilot.
+    expect(nextStep({ ...s, initialized: false }, emptyLedger()).needsUser).toContain('Say "set up Spec Kit here"')
+    expect(nextStep({ ...s, initialized: false, folder: 'empty' }, emptyLedger()).needsUser).toContain('Tell me what you want to build')
+    expect(nextStep({ ...s, claudeIntegration: false }, emptyLedger()).needsUser).toContain('add the Claude integration')
     expect(phase({ ...s, constitution: { principles: [], musts: [] } })).toBe('constitution /speckit-constitution')
     expect(phase({ ...s, featureDir: null, spec: null })).toBe('specify /speckit-specify')
     expect(nextStep({ ...s, featureDir: null, spec: null }, emptyLedger()).needsUser).toContain('Describe the feature')

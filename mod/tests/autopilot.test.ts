@@ -231,17 +231,18 @@ test('Resume after a spent budget starts a new one', async ($, on) => {
   expect(autopilotPrompts(seen).at(-1)).toContain('[speckit-xref autopilot · step 1/1] implement: 4 of 8 tasks open; next T005.')
 })
 
-test('before Spec Kit is set up, the pane offers the autopilot too', async ($, on) => {
+test('before Spec Kit is set up, the pane offers the fitting start on every surface, not the autopilot', async ($, on) => {
   project(on, { 'README.md': '# app\n' })
   await startSession($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
-    expect((await pane.find({ key: 'auto' }))?.props.label).toBe('Start autopilot')
+    expect((await pane.find({ key: 'setup-idea' }))?.props.label).toBe('Start from an idea')
+    expect(await pane.find({ key: 'auto' })).toBeUndefined()
     await pane.unmount()
   }
 })
 
-test('a stray speckit skill is no Claude Code integration: the autopilot installs the real one first', async ($, on) => {
+test('a stray speckit skill is no Claude Code integration: the autopilot waits for the person to add the real one', async ($, on) => {
   const files: Record<string, string> = { ...DEMO }
   for (const key of Object.keys(files)) if (key.startsWith('.claude/skills/') && !key.includes('speckit-clarify')) delete files[key]
   const seen = project(on, files)
@@ -250,11 +251,87 @@ test('a stray speckit skill is no Claude Code integration: the autopilot install
   expect(status.result).toContain('Claude Code integration missing')
   await xref($, 'auto on')
   await seen.clock.advance(0)
-  expect(autopilotPrompts(seen)[0]).toContain("Install Spec Kit's Claude Code integration now: run `uvx --from 'specify-cli>=1.1,<2' specify integration install claude`.")
+  expect(autopilotPrompts(seen)).toHaveLength(0)
+  expect(seen.toasts.at(-1)).toContain('add the Claude integration')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'setup-integration' })
+  expect(seen.submitted.at(-1).text).toContain("Install Spec Kit's Claude Code integration")
 })
 
-test('/xref pane brings the pane forward and names its keys', async ($, on) => {
-  project(on, { ...DEMO })
+test('/xref pane looks first, opens without the keyboard, and says where things stand', async ($, on) => {
+  const seen = project(on, { ...DEMO })
   await startSession($)
-  expect((await xref($, 'pane')).text).toBe('Spec X-Ref pane in front. Keys: p start/stop autopilot · r resume · c check · a accept edits · Esc back to the prompt.')
+  const answer = (await xref($, 'pane')).text
+  expect(answer).toContain('Spec X-Ref pane open. Click its buttons, or ctrl+x tab to give it the keyboard.')
+  expect(answer).toContain('tasks 3/8')
+  expect(seen.openArgs.at(-1).focus).toBeUndefined()
+})
+
+const README_ONLY = { 'README.md': '# idea\n', 'LICENSE': 'MIT\n', '.gitignore': 'node_modules\n' }
+const EXISTING = { 'README.md': '# app\n', 'src/index.ts': 'export {}\n', 'package.json': '{}\n' }
+
+test('an empty folder is told apart from existing code, and the pane offers the fitting start', async ($, on) => {
+  project(on, README_ONLY)
+  await startSession($)
+  expect((await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result).toContain('Folder: empty (only dotfiles, README, license)')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('This folder is empty: a new app, project or problem can start here with Spec Kit.')
+  expect((await pane.find({ key: 'setup-idea' }))?.props.label).toBe('Start from an idea')
+  // Before Spec Kit is there, nothing in the pane starts the autopilot.
+  expect(await pane.find({ key: 'auto' })).toBeUndefined()
+})
+
+test('existing code without Spec Kit: the pane offers to set it up, and a press hands Claude the request', async ($, on) => {
+  const seen = project(on, EXISTING)
+  await startSession($)
+  expect((await xref($)).text).toBe('This folder has code, but no Spec Kit yet (no .specify/). Say "set up Spec Kit here" to bring this project under Spec Kit, or press Set up Spec Kit in the pane.')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'setup-here' })
+  expect(seen.submitted.at(-1).text).toContain('Set Spec Kit up in this existing project with the speckit-xref:speckit skill')
+})
+
+test('the autopilot never sets Spec Kit up by itself; a setup press lets it go on', async ($, on) => {
+  const seen = project(on, EXISTING)
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)).toHaveLength(0)
+  expect(seen.toasts.at(-1)).toContain('Say "set up Spec Kit here"')
+  // "yes, do it" in a repository with code is no product idea, and the autopilot still waits at setup.
+  await type($, 'ja, mach')
+  expect(seen.submitted.at(-1).context.at(-1)).toContain('Set Spec Kit up (speckit-xref:speckit skill')
+  await turn($)
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)).toHaveLength(0)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'setup-here' })
+  expect((await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result).toContain('Autopilot: on, step 0/25')
+})
+
+test('greenfield: the idea from an empty folder carries through setup and constitution into /speckit-specify', async ($, on) => {
+  const seen = project(on, { ...README_ONLY })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await type($, 'A reading list app where I track books and mark them as read.')
+  expect(seen.submitted.at(-1).context.at(-1)).toContain('If this message says what to build, set Spec Kit up now')
+  // Claude sets Spec Kit up in that turn: the template constitution, the integration, the skills.
+  seen.write('.specify/memory/constitution.md', '### [PRINCIPLE_1_NAME]\n')
+  seen.write('.specify/integration.json', JSON.stringify({ integration: 'claude', integration_settings: { claude: { invoke_separator: '-' } } }))
+  seen.write('.claude/skills/speckit-plan/SKILL.md', '---\nname: speckit-plan\n---\n')
+  await turn($)
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)[0]).toContain('Run /speckit-constitution now')
+  seen.write('.specify/memory/constitution.md', DEMO['.specify/memory/constitution.md']!)
+  await turn($)
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)[1]).toContain('Run /speckit-specify A reading list app where I track books and mark them as read. now')
+})
+
+test('Claude started in a subfolder of a Spec Kit project works on that project, not a nested one', async ($, on) => {
+  project(on, { ...DEMO })
+  await startSession($, `${ROOT}/src/auth`)
+  const status = (await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result
+  expect(status).toContain(`Project root: ${ROOT} (every path below is relative to it)`)
+  expect(status).toContain('Phase: implement.')
 })

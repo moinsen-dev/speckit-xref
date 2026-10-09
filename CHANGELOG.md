@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2 — 2026-10-09
+
+### Changed
+
+- The autopilot never sets Spec Kit up by itself. `specify init` and `specify integration install` are wait points: the person asks for them, or presses the pane's setup action, and the autopilot goes on afterwards. A switched-on autopilot is no longer read as approval (found when a stray start in the mod's own repository asked for `specify init`).
+- `/xref pane` looks at the folder first, then opens the pane without taking the keyboard, so the next key cannot press a button, and says where things stand.
+
+### Added
+
+- Folder detection. An empty folder (only dotfiles, a README, a license) is told apart from existing code. The pane offers one fitting start: **Start from an idea**, **Set up Spec Kit here** or **Add Claude integration**. A press is the person's go and hands Claude the request in their words.
+- The project root is the nearest folder upward with `.specify/`, as Spec Kit finds it. Claude started in a subfolder of a Spec Kit project works on that project and is never offered a nested setup.
+- The person's words become the idea for `/speckit-specify` only where the autopilot waits for one (an empty folder, or Spec Kit without a feature); "yes, do it" in a repository with code is no idea. The idea resets when the autopilot starts or stops.
+
 ## 0.3.1 — 2026-10-09
 
 ### Changed

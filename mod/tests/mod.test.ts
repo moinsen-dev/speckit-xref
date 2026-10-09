@@ -28,7 +28,7 @@ test('without a feature it stays quiet: no section, no pane', async ($, on) => {
   expect(seen.opened).toEqual([])
   const composed = await $.prompt.compose(COMPOSE)
   expect(composed.sections.map(s => s.id)).toEqual(['intro'])
-  expect((await xref($)).text).toBe("Spec Kit is not set up in this repository (no .specify/). Next: uvx --from 'specify-cli>=1.1,<2' specify init --here --force --non-interactive --integration claude")
+  expect((await xref($)).text).toBe('This folder is empty: a new app, project or problem can start here with Spec Kit. Tell me what you want to build (an app, a project, a problem): I set Spec Kit up for it and write the spec in your words.')
 })
 
 test('puts the spec into the system prompt and keeps it stable while tasks change', async ($, on) => {
@@ -263,7 +263,7 @@ test('in a repository without Spec Kit the pane points to the setup skill', asyn
   project(on, { 'README.md': '# app\n' })
   await startSession($)
   const status = await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)
-  expect(status.result).toContain('Phase: setup. Spec Kit is not set up in this repository (no .specify/).')
+  expect(status.result).toContain('Phase: setup. This folder is empty: a new app, project or problem can start here with Spec Kit.')
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(toText(await pane.drawn())).toContain("Next: uvx --from 'specify-cli>=1.1,<2' specify init")
+  expect(toText(await pane.drawn())).toContain('[Start from an idea]')
 })

@@ -37,6 +37,8 @@ export type Snapshot = {
   speckitVersion: string | null
   /** What can run Spec Kit's CLI on this machine. */
   tools: { specify: boolean; uvx: boolean }
+  /** The project folder at a glance: nothing but dotfiles and a README (empty), or code already there (existing). */
+  folder: 'empty' | 'existing'
   spec: Spec | null
   tasks: Task[]
   constitution: Constitution | null

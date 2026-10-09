@@ -47,7 +47,22 @@ The pane's **Auto** row switches it:
 - running: **Stop** (`p`);
 - waiting: **Resume** (`r`) and **Stop**. A spent budget restarts on Resume.
 
-Click the buttons, or give the pane the keyboard with `ctrl+x tab` (once more if the band takes it first). `/xref pane` brings the pane forward. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
+Click the buttons, or give the pane the keyboard with `ctrl+x tab` (once more if the band takes it first). `/xref pane` looks at the folder first, opens the pane without taking the keyboard (so the next key never presses a button), and says where things stand.
+
+The autopilot never sets Spec Kit up by itself: `specify init` and `specify integration install` write into the repository, so it waits there for you. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
+
+## Before Spec Kit is there
+
+`/xref pane` and the status tool tell the folder apart, and the pane offers the one fitting start:
+
+| Folder | Pane offers | What Claude then does |
+| --- | --- | --- |
+| empty (only dotfiles, a README, a license) | **Start from an idea** | asks what you want to build, sets Spec Kit up, writes the spec in your words |
+| existing code, no `.specify/` | **Set up Spec Kit here** | runs `specify init`, drafts the constitution from the code, asks which change comes first |
+| Spec Kit without its Claude Code commands | **Add Claude integration** | runs `specify integration install claude` |
+| inside a Spec Kit project | the project itself | the mod looks upward for `.specify/`, as Spec Kit does |
+
+Pressing one of these counts as your go. Without a press or your request nothing is written. A repository without Spec Kit stays quiet otherwise, with no band and no unasked pane.
 
 ## The `speckit` skill
 

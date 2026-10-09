@@ -3,7 +3,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 
 import type { Autopilot, Ledger, Snapshot } from '../types'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
-import { AUTONOMY_RULES, QUESTION_LABELS, autopilotPrompt, endsWithQuestion, idleAutopilot, nextStep, progressKey, specifyCli, stepLine } from './workflow'
+import { AUTONOMY_RULES, QUESTION_LABELS, autopilotPrompt, endsWithQuestion, idleAutopilot, nextStep, progressKey, setupNote, stepLine, takesIdea } from './workflow'
 import {
   acknowledgeAll,
   anchorsIn,
@@ -97,6 +97,32 @@ async function exists($: $, rel: string): Promise<boolean> {
   }
 }
 
+/**
+ * The project root: the nearest folder at or above the working directory that holds `.specify/`, as Spec Kit's
+ * own scripts find it. Claude started in a subfolder of a Spec Kit project must not be offered a nested setup.
+ */
+async function projectRoot($: $, cwd: string): Promise<string> {
+  let dir = cwd.replace(/\/+$/, '') || '/'
+  for (let depth = 0; depth < 16; depth++) {
+    if (await $.fs.exists(`${dir === '/' ? '' : dir}/.specify`).catch(() => false)) return dir
+    const parent = dir.slice(0, dir.lastIndexOf('/')) || '/'
+    if (parent === dir) break
+    dir = parent
+  }
+  return cwd
+}
+
+const IGNORABLE = /^(\.|README|LICENSE|CHANGELOG)/i
+
+/** Empty: nothing at the top but dotfiles, a README, a license or a changelog. */
+async function folderKind($: $): Promise<'empty' | 'existing'> {
+  try {
+    return (await $.fs.list(root)).some(entry => !IGNORABLE.test(entry.name)) ? 'existing' : 'empty'
+  } catch {
+    return 'existing'
+  }
+}
+
 /** Whether a program is on the PATH. */
 async function onPath($: $, program: string): Promise<boolean> {
   try {
@@ -179,6 +205,7 @@ async function scan($: $): Promise<void> {
     claudeIntegration: await hasClaudeIntegration($),
     speckitVersion: speckitVersionOf(initOptions),
     tools: cli,
+    folder: await folderKind($),
     spec: specMd ? parseSpec(specMd) : null,
     tasks: tasksMd ? parseTasks(tasksMd) : [],
     constitution: constitutionMd ? parseConstitution(constitutionMd) : null,
@@ -448,7 +475,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number): Promise<void> {
-  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, max: max ?? defaultMax }))
+  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax }))
   $.clock.after(0, () => void advance($).catch(() => undefined))
 }
 
@@ -459,7 +486,20 @@ async function resumeAutopilot($: $): Promise<void> {
 }
 
 async function turnOffAutopilot($: $): Promise<void> {
-  await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+  await update($, autopilotA, a => ({ ...a, on: false, paused: null, idea: null }))
+}
+
+/** The requests the pane's setup actions hand to Claude, as the person's own words: a press is their consent. */
+const SETUP_ASKS = {
+  idea: 'I want to start something new in this empty folder (an app, a project, or a problem to solve). Ask me what it is, then set Spec Kit up for it with the speckit-xref:speckit skill and write the spec in my own words.',
+  setup: 'Set Spec Kit up in this existing project with the speckit-xref:speckit skill: run specify init, draft the constitution from the code and the README and mark the assumptions, then ask me which change to specify first.',
+  integration: "Install Spec Kit's Claude Code integration in this project (specify integration install claude), so its /speckit-* commands run here.",
+} as const
+
+async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
+  // A press answers what the autopilot waits on: it goes on once Claude has done it.
+  if ((await read($, autopilotA)).paused) await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0 }))
+  void $.prompt.submit({ text: SETUP_ASKS[kind], asUser: true })
 }
 
 /** Stops the autopilot until the person speaks, and says why. */
@@ -526,7 +566,7 @@ async function statusText($: $): Promise<string> {
   if (!snap) return 'Spec X-Ref has not read this project yet.'
   const ledger = await read($, ledgerA)
   const next = nextStep(snap, ledger)
-  if (!snap.featureDir) return `${next.why} Next: ${next.needsUser ?? next.command ?? ''}`
+  if (!snap.featureDir) return [next.why, next.needsUser ?? (next.command ? `Next: ${next.command}` : '')].filter(Boolean).join(' ')
   // The host already names the plugin in front of a command's answer.
   return (turnContext(snap, ledger, await read($, activeA), stepLine(next)) ?? '').replace(/^speckit-xref · /, '')
 }
@@ -545,6 +585,7 @@ async function workflowStatus($: $): Promise<string> {
     `Spec Kit CLI: ${snap.tools.specify ? 'specify is installed' : snap.tools.uvx ? 'not installed; runs through uvx' : 'missing, and no uvx either'}`,
     `Spec Kit: ${snap.initialized ? `set up${snap.speckitVersion ? ` (${snap.speckitVersion})` : ''}` : 'not set up'}${snap.initialized ? ` · Claude Code integration ${snap.claudeIntegration ? `yes, commands as ${speckitCommand(snap, 'plan')}` : 'missing'}` : ''} · extensions: ${snap.extensions.join(', ') || 'none'}`,
     `Autopilot: ${ap.on ? (ap.paused ? `on, waiting: ${ap.paused}` : `on, step ${ap.steps}/${ap.max}`) : 'off (/xref auto on)'}`,
+    ...(snap.initialized ? [] : [`Folder: ${snap.folder === 'empty' ? 'empty (only dotfiles, README, license)' : 'existing code'}`]),
     `Constitution: ${snap.constitution?.principles.length ? `${snap.constitution.principles.length} principles, ${snap.constitution.musts.length} MUST rules` : 'missing or still the template'}`,
     `Active feature: ${snap.featureDir ? `${snap.featureDir}${snap.spec ? ` (${snap.spec.title})` : ''}` : 'none'}`,
   ]
@@ -575,7 +616,7 @@ export const register: Register = (on, options) => {
   defaultMax = maxSteps
 
   on('session.start', async ($, e, next) => {
-    root = e.cwd || (await $.session.cwd())
+    root = await projectRoot($, e.cwd || (await $.session.cwd()))
     lastLevel = 'none'
     turnFiles = []
     askedThisTurn = null
@@ -656,11 +697,16 @@ export const register: Register = (on, options) => {
     if (origin !== undefined && !PERSON.has(origin)) return next(e)
     const ap = await read($, autopilotA)
     const said = e.text.trim()
-    // The person's word ends a pause; before a feature exists, what they ask for is the idea to specify.
-    if (ap.on && (ap.paused || (!snap?.featureDir && said && !said.startsWith('/')))) {
-      await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea: !snap?.featureDir && said && !said.startsWith('/') ? said.slice(0, 600) : a.idea }))
+    const waiting = snap && ap.on ? nextStep(snap, await read($, ledgerA), ap.idea) : null
+    // The person's word ends a pause. It is the idea to specify only where the autopilot waits for exactly that.
+    if (ap.on && (ap.paused || waiting)) {
+      const idea = waiting && takesIdea(waiting, snap!) && said && !said.startsWith('/') ? said.slice(0, 600) : ap.idea
+      await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea }))
     }
-    if (!snap?.featureDir) return next(e)
+    if (!snap?.featureDir) {
+      // Quiet unasked: before Spec Kit is there, a prompt carries a note only while the autopilot is on.
+      return next(waiting ? { ...e, context: [...(e.context ?? []), setupNote(waiting, snap!)] } : e)
+    }
     const text = e.text.trim()
     const active = await read($, activeA)
     if (text && !text.startsWith('/')) {
@@ -753,13 +799,14 @@ export const register: Register = (on, options) => {
         return { text: ap.on ? (ap.paused ? `Autopilot on, waiting for you: ${ap.paused}` : `Autopilot on, step ${ap.steps}/${ap.max}.`) : 'Autopilot off. /xref auto on [steps] starts it.' }
       }
       case 'pane': {
-        // Asked for, the pane comes to the front with the keyboard: p starts or stops the autopilot, r resumes it.
-        const opened = await $.ui.open({ id: PANE, title: TITLE, focus: true })
-        if (!opened.isPlaced) return { text: `The pane is open but waits: ${opened.reason}` }
+        // Look first, so the pane opens on where things stand. No keyboard: the next key must not press a button.
+        await scan($)
+        const opened = await $.ui.open({ id: PANE, title: TITLE })
+        const here = await statusText($)
+        if (!opened.isPlaced) return { text: `The pane is open but waits: ${opened.reason}\n${here}` }
         const pane = (await $.ui.panes()).find(p => p.id === PANE)
-        const keys = 'Keys: p start/stop autopilot · r resume · c check · a accept edits · Esc back to the prompt.'
-        if (pane && !pane.isShown) return { text: `The pane is open behind another tab of the dock: switch to its tab "${TITLE}". ${keys}` }
-        return { text: `Spec X-Ref pane in front${pane?.isFocused ? ' with the keyboard' : ''}. ${keys}` }
+        if (pane && !pane.isShown) return { text: `The pane is open behind another tab of the dock: switch to its tab "${TITLE}".\n${here}` }
+        return { text: `Spec X-Ref pane open. Click its buttons, or ctrl+x tab to give it the keyboard.\n${here}` }
       }
       default:
         await refresh($)
@@ -829,13 +876,31 @@ export const register: Register = (on, options) => {
         </Box>
       </Box>
     )
+    const setupAction = (step: ReturnType<typeof nextStep>, snapshot: Snapshot) =>
+      step.phase === 'setup' && step.command ? (
+        snapshot.folder === 'empty' ? (
+          <Button key="setup-idea" label="Start from an idea" variant="primary" onPress={() => void askClaude($, 'idea')} />
+        ) : (
+          <Button key="setup-here" label="Set up Spec Kit here" variant="primary" onPress={() => void askClaude($, 'setup')} />
+        )
+      ) : step.phase === 'integration' ? (
+        <Button key="setup-integration" label="Add Claude integration" variant="primary" onPress={() => void askClaude($, 'integration')} />
+      ) : null
     if (!snap?.featureDir || !snap.spec) {
       const next = snap ? nextStep(snap, ledger, ap.idea) : null
+      const action = next && snap ? setupAction(next, snap) : null
       return (
         <Box flexDirection="column">
-          <Text dimColor>{next?.why ?? 'No Spec Kit feature found.'}</Text>
+          <Text bold>{next?.why ?? 'No Spec Kit feature found.'}</Text>
+          {snap?.initialized === false ? <Text dimColor>{`Folder: ${root}`}</Text> : null}
           <Text dimColor>{next?.needsUser ?? (next?.command ? `Next: ${next.command}` : 'Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).')}</Text>
-          <Box marginTop={1}>{autoRow}</Box>
+          {action ? (
+            <Box flexDirection="row" marginTop={1}>
+              {action}
+            </Box>
+          ) : null}
+          {/* The autopilot shows here only while it runs; it is started where there is a workflow to run. */}
+          {ap.on ? <Box marginTop={1}>{autoRow}</Box> : null}
         </Box>
       )
     }
@@ -878,6 +943,7 @@ export const register: Register = (on, options) => {
         {row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-')}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
         {row('Next', stepLine(nextStep(snap, ledger, ap.idea)), 'suggestion')}
+        {nextStep(snap, ledger, ap.idea).phase === 'integration' ? <Box marginLeft={8}>{setupAction(nextStep(snap, ledger, ap.idea), snap)}</Box> : null}
         {autoRow}
         {row('Drift', `● ${report.level}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {report.findings

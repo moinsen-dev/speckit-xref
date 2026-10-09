@@ -44,6 +44,12 @@ The autopilot also stops when:
 
 ## Phase `setup`: Spec Kit is not set up yet
 
+The status report says which folder you are in:
+- **Empty** (only dotfiles, a README, a license): the person starts something new. Ask what they want to build (an app, a project, a problem to solve), then set Spec Kit up and specify it in their words.
+- **Existing code**: bring the project under Spec Kit. Draft the constitution from the code and the README, marking assumptions, and make the next change the first feature.
+
+A folder inside a Spec Kit project counts as that project: the mod looks upward for `.specify/`, as Spec Kit does. Never nest a second setup there.
+
 1. **Find the CLI.** The status report says whether `specify` is installed or `uvx` can run it (`uvx --from 'specify-cli>=1.1,<2' specify …`, nothing installed). If neither is there, the person has to install uv (<https://docs.astral.sh/uv/>) or run `pipx install specify-cli`: tell them, then stop.
 2. **Say what it writes, and get the user's go.**
    - It writes `.specify/` (scripts, templates, `memory/constitution.md`, `integration.json`) and `.claude/skills/speckit-*/` (Spec Kit's commands as skills).
@@ -103,7 +109,7 @@ It adds `/speckit-xref-map`, `/speckit-xref-check` and `/speckit-xref-report`, a
 
 ## Never
 
-- Run `specify init`, or install the extension, without the user's go. Switching the autopilot on counts as that go for `specify init`, but not for the extension.
+- Run `specify init`, `specify integration install`, or install the extension without the person's go. Switching the autopilot on is no such go: it waits at setup until the person asks for it.
 - Overwrite an existing `spec.md`, `plan.md` or constitution.
 - Tick a task you did not finish.
 - Paraphrase the user's idea into the spec's `Input` line.

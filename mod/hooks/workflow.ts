@@ -23,14 +23,17 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   const xref = snap.extensions.includes('xref')
   const step = (phase: Phase, command: string | null, why: string, needsUser: string | null = null): Step => ({ phase, command, why, notes, needsUser })
 
+  // Setting Spec Kit up writes into the repository: that is always the person's call, never the autopilot's.
   if (!snap.initialized) {
     if (!snap.tools.specify && !snap.tools.uvx) {
       return step('setup', null, 'Spec Kit is not set up, and neither the specify CLI nor uvx is on this machine.', 'Install uv (https://docs.astral.sh/uv/) or the specify CLI (pipx install specify-cli).')
     }
-    return step('setup', `${specifyCli(snap)} ${INIT}`, 'Spec Kit is not set up in this repository (no .specify/).')
+    return snap.folder === 'empty'
+      ? step('setup', `${specifyCli(snap)} ${INIT}`, 'This folder is empty: a new app, project or problem can start here with Spec Kit.', 'Tell me what you want to build (an app, a project, a problem): I set Spec Kit up for it and write the spec in your words.')
+      : step('setup', `${specifyCli(snap)} ${INIT}`, 'This folder has code, but no Spec Kit yet (no .specify/).', 'Say "set up Spec Kit here" to bring this project under Spec Kit, or press Set up Spec Kit in the pane.')
   }
   if (!snap.claudeIntegration) {
-    return step('integration', `${specifyCli(snap)} integration install claude`, "Spec Kit is set up, but not for Claude Code: its /speckit-* skills are missing.")
+    return step('integration', `${specifyCli(snap)} integration install claude`, "Spec Kit is set up, but not for Claude Code: its /speckit-* skills are missing.", 'Say "add the Claude integration", or press Add Claude integration in the pane.')
   }
   if (!snap.constitution || snap.constitution.principles.length === 0) {
     return step('constitution', speckitCommand(snap, 'constitution'), 'The constitution is missing or still the template.')
@@ -69,6 +72,22 @@ export const stepLine = (s: Step) => (s.command ? `${s.command} · ${s.why}` : s
 
 export const idleAutopilot = (): Autopilot => ({ on: false, paused: null, steps: 0, max: 25, last: null, stalls: 0, lastPhase: null, idea: null })
 
+/** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
+export const takesIdea = (step: Step, snap: Snapshot) => step.phase === 'specify' || (step.phase === 'setup' && snap.folder === 'empty' && step.command !== null)
+
+/** What the model reads beside the person's prompt while the autopilot waits before Spec Kit is there. */
+export function setupNote(step: Step, snap: Snapshot): string {
+  const lines = [`speckit-xref · autopilot waiting · ${step.why}`]
+  if (step.phase === 'setup' && step.command && snap.folder === 'empty') {
+    lines.push(`If this message says what to build, set Spec Kit up now with the speckit-xref:speckit skill (\`${step.command}\`); the autopilot then goes on with the constitution and the spec in the person's words.`)
+  } else if (step.phase === 'setup' && step.command) {
+    lines.push(`Set Spec Kit up (speckit-xref:speckit skill, \`${step.command}\`) only if this message asks for it; otherwise leave the repository as it is.`)
+  } else if (step.phase === 'integration') {
+    lines.push(`Run \`${step.command}\` only if this message asks for it.`)
+  }
+  return lines.join('\n')
+}
+
 /** What has to change between two autopilot steps for the run to count as moving. */
 export function progressKey(snap: Snapshot, ledger: Ledger): string {
   const report = evaluate(snap, ledger)
@@ -97,15 +116,9 @@ export const AUTONOMY_RULES = [
 
 /** The prompt the autopilot submits for one step. */
 export function autopilotPrompt(step: Step, n: number, max: number, context: string | null): string {
-  const run =
-    step.phase === 'setup'
-      ? `Set Spec Kit up now, following the speckit-xref:speckit skill: run \`${step.command}\`. The person switched the autopilot on, which approves it.`
-      : step.phase === 'integration'
-        ? `Install Spec Kit's Claude Code integration now: run \`${step.command}\`.`
-        : `Run ${step.command} now: invoke it through the Skill tool and carry it through.`
   return [
     `[speckit-xref autopilot · step ${n}/${max}] ${step.phase}: ${step.why}`,
-    run,
+    `Run ${step.command} now: invoke it through the Skill tool and carry it through.`,
     ...step.notes.map(note => `Note: ${note}`),
     '',
     ...AUTONOMY_RULES,
