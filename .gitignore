@@ -1,0 +1,16 @@
+# Written by Claude Code each time it loads the mod from this folder
+mod/.claude-plugin/types/
+mod/tsconfig.json
+
+# What the mod and the extension write into the demo while you try them
+examples/demo/specs/*/xref.json
+examples/demo/specs/*/xref-report.md
+
+dist/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+
+# Personal session handoff (project-continuity protocol)
+STATE.md

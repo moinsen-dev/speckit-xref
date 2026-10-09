@@ -1,0 +1,51 @@
+{
+  "name": "speckit-xref",
+  "displayName": "Spec Kit X-Ref",
+  "version": "0.1.0",
+  "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: the spec in the system prompt, every edit booked against a task, and a drift check after each turn.",
+  "author": {
+    "name": "Ulrich Diedrichsen",
+    "email": "uli@moinsen.dev",
+    "url": "https://github.com/moinsen-dev"
+  },
+  "homepage": "https://github.com/moinsen-dev/speckit-xref",
+  "repository": "https://github.com/moinsen-dev/speckit-xref",
+  "license": "MIT",
+  "keywords": [
+    "speckit",
+    "spec-kit",
+    "spec-driven-development",
+    "traceability",
+    "drift",
+    "mod"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Drift mode",
+      "description": "advisory: the mod tells the model and the person about drift. strict: it also refuses edits outside the current task's planned or linked files.",
+      "default": "advisory",
+      "options": [
+        "advisory",
+        "strict"
+      ]
+    },
+    "driftCheck": {
+      "type": "string",
+      "title": "Intent check after each turn",
+      "description": "fork: after a turn that changed files, one tool-less question over the session asks whether the change still matches the user's words and the spec. off: deterministic checks only.",
+      "default": "fork",
+      "options": [
+        "fork",
+        "off"
+      ]
+    },
+    "mapModel": {
+      "type": "string",
+      "title": "Model for mapping and transcript-less checks",
+      "description": "The model that maps requirements to tasks (/xref map) and runs a drift check when there is no transcript to fork yet (an alias such as haiku, or a model id).",
+      "default": "haiku"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "description": "speckit-xref: spec section, edit booking, drift check, band and pane",
+  "modules": ["./register.tsx"]
+}
