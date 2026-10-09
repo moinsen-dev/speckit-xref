@@ -119,4 +119,4 @@ node scripts/build-fixture.mjs            # after changing examples/demo or scri
 
 `examples/demo` is a small Spec Kit project (magic-link login) to try it on. In the desktop app's Code tab, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` under `env` in `~/.claude/settings.json`.
 
-Tested on Claude Code 2.1.294 and Spec Kit 1.1.2. The mods API is early access and can change between releases.
+Tested on Claude Code 2.1.295 and Spec Kit 1.1.2. The mods API is early access and can change between releases.

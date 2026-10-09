@@ -717,9 +717,18 @@ async function pauseAutopilot($: $, reason: string, step?: Step): Promise<void> 
   if (step?.approve && APPROVALS.has(step.approve.key) && interactive) $.clock.after(0, () => void askApproval($, step).catch(() => undefined))
 }
 
+/** A native notification on top of the toast; switched off or without a channel, the band and the toast still say it. */
+async function notify($: $, text: string): Promise<void> {
+  try {
+    await $.ui.notify(text, { title: TITLE })
+  } catch {
+    // Notifications switched off, or no channel: the band and the toast still say it.
+  }
+}
+
 async function remind($: $, reason: string): Promise<void> {
   const ap = await read($, autopilotA)
-  if (ap.on && ap.paused === reason) await $.ui.notify(`Autopilot waits for you: ${reason}`, { title: TITLE }).catch(() => undefined)
+  if (ap.on && ap.paused === reason) await notify($, `Autopilot waits for you: ${reason}`)
 }
 
 async function askApproval($: $, step: Step): Promise<void> {
@@ -742,7 +751,7 @@ async function stopAutopilot($: $, why: string): Promise<void> {
   $.ui.toast(why)
   await retitle($)
   await writeBriefing($, why)
-  await $.ui.notify(why, { title: TITLE }).catch(() => undefined)
+  await notify($, why)
 }
 
 /** The git HEAD, short; empty outside git. */
@@ -1475,7 +1484,7 @@ export const register: Register = (on, options) => {
     const rail = railFor(e.tool, (e.input ?? {}) as Record<string, unknown>)
     if (rail) return { decision: 'deny' as const, reason: `speckit-xref autopilot: ${rail}. Call mcp__${PLUGIN}__ask with the question instead.` }
     // A permission prompt in a run nobody watches would hold it silently: say so where the person will see it.
-    if (verdict.decision === 'ask' && e.tool_use_id) $.clock.after(0, () => void $.ui.notify(`Autopilot waits on a permission prompt for ${e.tool}.`, { title: TITLE }).catch(() => undefined))
+    if (verdict.decision === 'ask' && e.tool_use_id) $.clock.after(0, () => void notify($, `Autopilot waits on a permission prompt for ${e.tool}.`))
     return verdict
   })
 

@@ -26,7 +26,7 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 
 ## Install
 
-**Claude Code mod**, at the prompt of a terminal session (Claude Code 2.1.287 or later):
+**Claude Code mod**, at the prompt of a terminal session (Claude Code 2.1.295 or later):
 
 ```text
 /plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
@@ -95,7 +95,7 @@ When you release, bump the version in all five places: `mod/.claude-plugin/plugi
 
 Design notes, in German: [`docs/research.de.md`](docs/research.de.md).
 
-Tested on Claude Code 2.1.294 and Spec Kit 1.1.2. The Claude Code mods API is early access and can change between releases.
+Tested on Claude Code 2.1.295 and Spec Kit 1.1.2. The Claude Code mods API is early access and can change between releases.
 
 ## License
 
