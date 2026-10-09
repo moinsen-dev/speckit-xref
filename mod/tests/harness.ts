@@ -89,6 +89,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     seen.opened.push(e.id)
     return { value: { isPlaced: true } }
   })
+  on('ui.panes', () => ({ value: seen.opened.map(id => ({ id, title: 'Spec X-Ref', isShown: true, isFocused: false, isPlaced: true })) }))
   on('ui.toast', ($: any, e: any) => {
     seen.toasts.push(e.text)
     return { value: undefined }

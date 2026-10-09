@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 — 2026-10-09
+
+### Changed
+
+- The autopilot's switch moved into the pane's Auto row: **Start autopilot** while off, **Stop** while it runs, **Resume** and **Stop** while it waits (`p`, `r`). Resume after a spent budget starts a new one.
+- `/xref pane` brings the pane forward and says whether it is shown, waits for room, or sits behind another tab.
+- The status tool names the project root, so paths read right when the project is a folder of a larger repository.
+
+### Fixed
+
+- A stray `speckit-*` skill no longer passes for Spec Kit's Claude Code integration: its core commands (`plan` or `implement`) have to be there, otherwise the autopilot installs the integration first. Found when the autopilot asked for `/speckit-implement` in the demo, which had only a stub skill.
+- `examples/demo` is now a project set up with Spec Kit 1.1.2 (`.specify/` and the `/speckit-*` skills), so the autopilot runs there.
+
 ## 0.3.0 — 2026-10-09
 
 ### Added

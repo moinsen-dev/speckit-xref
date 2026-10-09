@@ -2,7 +2,8 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-const root = new URL('../examples/demo/', import.meta.url).pathname
+// Default: examples/demo as it stands. A folder given as the first argument stands in for it (a clean copy).
+const root = process.argv[2] ? `${process.argv[2].replace(/\/$/, '')}/` : new URL('../examples/demo/', import.meta.url).pathname
 const out = new URL('../mod/tests/fixtures/demo.ts', import.meta.url).pathname
 const files = {}
 const walk = dir => {

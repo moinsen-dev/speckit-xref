@@ -228,7 +228,7 @@ test('the status tool tells the model where the project stands and what comes ne
   await startSession($)
   const status = await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)
   expect(status.result).toContain('Spec Kit CLI: not installed; runs through uvx')
-  expect(status.result).toContain('Spec Kit: set up · Claude Code integration yes, commands as /speckit-plan · extensions: xref')
+  expect(status.result).toContain('Spec Kit: set up (1.1.2) · Claude Code integration yes, commands as /speckit-plan · extensions: xref')
   expect(status.result).toContain('Autopilot: off (/xref auto on)')
   expect(status.result).toContain('Constitution: 3 principles, 3 MUST rules')
   expect(status.result).toContain('Artifacts: spec.md yes · plan.md yes · tasks.md 3/8 done · FR covered 4/5 · drift green')

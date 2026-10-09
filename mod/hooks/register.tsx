@@ -68,6 +68,7 @@ let cli = { specify: false, uvx: false }
 // The question the model raised through mcp__speckit-xref__ask during the turn running now.
 let askedThisTurn: string | null = null
 let mapModel = 'haiku'
+let defaultMax = 25
 
 const at = (rel: string) => (rel.startsWith('/') ? rel : `${root}/${rel}`)
 const stamp = async ($: $) => new Date(await $.clock.now()).toISOString()
@@ -175,7 +176,7 @@ async function scan($: $): Promise<void> {
     features: features.map(f => f.dir),
     hasPlan: featureDir ? await exists($, `${featureDir}/plan.md`) : false,
     extensions,
-    claudeIntegration: await hasClaudeIntegration($, integrationJson),
+    claudeIntegration: await hasClaudeIntegration($),
     speckitVersion: speckitVersionOf(initOptions),
     tools: cli,
     spec: specMd ? parseSpec(specMd) : null,
@@ -194,20 +195,13 @@ async function scan($: $): Promise<void> {
   signature = await currentSignature($, featureDir)
 }
 
-/** Spec Kit's Claude Code integration: recorded in integration.json, or its skills or commands are there. */
-async function hasClaudeIntegration($: $, integrationJson: string | null): Promise<boolean> {
-  try {
-    const value = JSON.parse(integrationJson ?? '') as { installed_integrations?: unknown }
-    if (Array.isArray(value.installed_integrations) && value.installed_integrations.includes('claude')) return true
-  } catch {
-    // No integration.json: look for the files themselves.
-  }
-  for (const [dir, prefix] of [['.claude/skills', 'speckit-'], ['.claude/commands', 'speckit.']] as const) {
-    try {
-      if ((await $.fs.list(at(dir))).some(entry => entry.name.startsWith(prefix))) return true
-    } catch {
-      continue
-    }
+/**
+ * Spec Kit's Claude Code integration: its core commands are there, as skills or as commands. integration.json
+ * alone is not enough, and neither is a stray speckit-* skill: the autopilot has to be able to run the next step.
+ */
+async function hasClaudeIntegration($: $): Promise<boolean> {
+  for (const name of ['plan', 'implement']) {
+    if ((await exists($, `.claude/skills/speckit-${name}/SKILL.md`)) || (await exists($, `.claude/commands/speckit.${name}.md`))) return true
   }
   return false
 }
@@ -452,6 +446,22 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
   return `Linked ${rel} to ${id}.`
 }
 
+/** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
+async function startAutopilot($: $, max?: number): Promise<void> {
+  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, max: max ?? defaultMax }))
+  $.clock.after(0, () => void advance($).catch(() => undefined))
+}
+
+/** Goes on after a pause; a run whose budget is spent gets a new one. */
+async function resumeAutopilot($: $): Promise<void> {
+  await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, steps: a.steps >= a.max ? 0 : a.steps }))
+  $.clock.after(0, () => void advance($).catch(() => undefined))
+}
+
+async function turnOffAutopilot($: $): Promise<void> {
+  await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+}
+
 /** Stops the autopilot until the person speaks, and says why. */
 async function pauseAutopilot($: $, reason: string): Promise<void> {
   await update($, autopilotA, a => ({ ...a, paused: reason }))
@@ -478,7 +488,7 @@ async function advance($: $): Promise<void> {
   if (step.needsUser) return pauseAutopilot($, step.needsUser)
   const key = progressKey(snap, ledger)
   const stalls = key === ap.last ? ap.stalls + 1 : 0
-  if (stalls >= 3) return pauseAutopilot($, 'three steps without progress; look at what blocks it, then say go')
+  if (stalls >= 3) return pauseAutopilot($, 'three steps without progress; look at what blocks it, then Resume')
   if (ap.steps >= ap.max) return pauseAutopilot($, `the step budget (${ap.max}) is used up; /xref auto on starts a new one`)
   if (step.phase === 'verify' && ap.lastPhase === 'verify') {
     const level = evaluate(snap, ledger).level
@@ -501,7 +511,7 @@ async function afterTurn($: $, answer: string, isAborted: boolean): Promise<void
   askedThisTurn = null
   const ap = await read($, autopilotA)
   if (!ap.on || ap.paused) return
-  if (isAborted) return pauseAutopilot($, 'you interrupted the turn; say go to go on')
+  if (isAborted) return pauseAutopilot($, 'you interrupted the turn; Resume, or a message from you, goes on')
   if (asked) return pauseAutopilot($, asked)
   if (endsWithQuestion(answer)) {
     // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
@@ -531,6 +541,7 @@ async function workflowStatus($: $): Promise<string> {
   const report = evaluate(snap, ledger)
   const ap = await read($, autopilotA)
   const lines = [
+    `Project root: ${root} (every path below is relative to it)`,
     `Spec Kit CLI: ${snap.tools.specify ? 'specify is installed' : snap.tools.uvx ? 'not installed; runs through uvx' : 'missing, and no uvx either'}`,
     `Spec Kit: ${snap.initialized ? `set up${snap.speckitVersion ? ` (${snap.speckitVersion})` : ''}` : 'not set up'}${snap.initialized ? ` · Claude Code integration ${snap.claudeIntegration ? `yes, commands as ${speckitCommand(snap, 'plan')}` : 'missing'}` : ''} · extensions: ${snap.extensions.join(', ') || 'none'}`,
     `Autopilot: ${ap.on ? (ap.paused ? `on, waiting: ${ap.paused}` : `on, step ${ap.steps}/${ap.max}`) : 'off (/xref auto on)'}`,
@@ -561,6 +572,7 @@ export const register: Register = (on, options) => {
   mapModel = opts.mapModel || 'haiku'
   const autopilotByDefault = opts.autopilot === 'on'
   const maxSteps = typeof opts.autopilotMaxSteps === 'number' && opts.autopilotMaxSteps > 0 ? Math.floor(opts.autopilotMaxSteps) : 25
+  defaultMax = maxSteps
 
   on('session.start', async ($, e, next) => {
     root = e.cwd || (await $.session.cwd())
@@ -728,22 +740,27 @@ export const register: Register = (on, options) => {
       case 'auto': {
         const [mode = '', budget = ''] = rest
         if (mode === 'off') {
-          await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
+          await turnOffAutopilot($)
           return { text: 'Autopilot off.' }
         }
         if (mode === 'on') {
           const max = Number(budget) > 0 ? Math.floor(Number(budget)) : maxSteps
-          await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, max }))
           // The first step starts once this command is done; each later one when a turn ends.
-          $.clock.after(0, () => void advance($).catch(() => undefined))
+          await startAutopilot($, max)
           return { text: `Autopilot on: it works through Spec Kit by itself for up to ${max} steps and stops only for decisions that are yours. /xref auto off stops it; so does Esc.` }
         }
         const ap = await read($, autopilotA)
         return { text: ap.on ? (ap.paused ? `Autopilot on, waiting for you: ${ap.paused}` : `Autopilot on, step ${ap.steps}/${ap.max}.`) : 'Autopilot off. /xref auto on [steps] starts it.' }
       }
-      case 'pane':
-        await $.ui.open({ id: PANE, title: TITLE })
-        return { text: 'Spec X-Ref pane opened.' }
+      case 'pane': {
+        // Asked for, the pane comes to the front with the keyboard: p starts or stops the autopilot, r resumes it.
+        const opened = await $.ui.open({ id: PANE, title: TITLE, focus: true })
+        if (!opened.isPlaced) return { text: `The pane is open but waits: ${opened.reason}` }
+        const pane = (await $.ui.panes()).find(p => p.id === PANE)
+        const keys = 'Keys: p start/stop autopilot · r resume · c check · a accept edits · Esc back to the prompt.'
+        if (pane && !pane.isShown) return { text: `The pane is open behind another tab of the dock: switch to its tab "${TITLE}". ${keys}` }
+        return { text: `Spec X-Ref pane in front${pane?.isFocused ? ' with the keyboard' : ''}. ${keys}` }
+      }
       default:
         await refresh($)
         return { text: await statusText($) }
@@ -792,17 +809,25 @@ export const register: Register = (on, options) => {
     const ledger = await read($, ledgerA)
     const ap = await read($, autopilotA)
     const autoLabel = ap.on ? (ap.paused ? `on · waiting for you: ${ap.paused}` : `on · step ${ap.steps}/${ap.max}`) : 'off'
-    const toggle = (
-      <Button
-        key="auto"
-        label={ap.on ? 'Autopilot off' : 'Autopilot on'}
-        hotkey="p"
-        onPress={() =>
-          void (ap.on
-            ? update($, autopilotA, a => ({ ...a, on: false, paused: null }))
-            : update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null })).then(() => advance($)))
-        }
-      />
+    // The autopilot's switch sits with its state: Start while off, Stop while on, Resume while it waits.
+    const autoRow = (
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          <Box width={8}>
+            <Text bold color="claude">
+              Auto
+            </Text>
+          </Box>
+          <Text wrap="truncate-end" color={ap.paused ? 'warning' : ap.on ? 'suggestion' : 'subtle'}>
+            {autoLabel}
+          </Text>
+        </Box>
+        <Box flexDirection="row" columnGap={1} marginLeft={8}>
+          {!ap.on ? <Button key="auto" label="Start autopilot" hotkey="p" variant="primary" onPress={() => void startAutopilot($)} /> : null}
+          {ap.on && ap.paused ? <Button key="auto-resume" label="Resume" hotkey="r" variant="primary" onPress={() => void resumeAutopilot($)} /> : null}
+          {ap.on ? <Button key="auto-stop" label="Stop" hotkey="p" onPress={() => void turnOffAutopilot($)} /> : null}
+        </Box>
+      </Box>
     )
     if (!snap?.featureDir || !snap.spec) {
       const next = snap ? nextStep(snap, ledger, ap.idea) : null
@@ -810,10 +835,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           <Text dimColor>{next?.why ?? 'No Spec Kit feature found.'}</Text>
           <Text dimColor>{next?.needsUser ?? (next?.command ? `Next: ${next.command}` : 'Ask Claude to set up Spec Kit here (skill speckit-xref:speckit).')}</Text>
-          <Text dimColor>Autopilot {autoLabel}</Text>
-          <Box flexDirection="row" marginTop={1}>
-            {toggle}
-          </Box>
+          <Box marginTop={1}>{autoRow}</Box>
         </Box>
       )
     }
@@ -856,7 +878,7 @@ export const register: Register = (on, options) => {
         {row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-')}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
         {row('Next', stepLine(nextStep(snap, ledger, ap.idea)), 'suggestion')}
-        {row('Auto', autoLabel, ap.paused ? 'warning' : ap.on ? 'suggestion' : 'subtle')}
+        {autoRow}
         {row('Drift', `● ${report.level}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {report.findings
           .filter(f => f.kind !== 'intent')
@@ -876,7 +898,6 @@ export const register: Register = (on, options) => {
           <Button key="check" label="Check now" hotkey="c" onPress={() => void runCheck($, [], mapModel).then(text => $.ui.toast(text))} />
           <Button key="ack" label="Accept edits" hotkey="a" onPress={() => void update($, ledgerA, acknowledgeAll).then(() => persist($))} />
           {report.uncovered.length && snap.tasks.length ? <Button key="map" label="Map FR→tasks" hotkey="m" onPress={() => void runMap($, mapModel).then(text => $.ui.toast(text))} /> : null}
-          {toggle}
         </Box>
       </Box>
     )

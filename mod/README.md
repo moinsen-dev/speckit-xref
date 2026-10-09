@@ -40,7 +40,14 @@ At the prompt of a terminal session:
 
 Claude flags those through the `mcp__speckit-xref__ask` tool. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
 
-It also stops on Esc, after three steps without progress, at the step budget (25 by default) and when every task is checked and verified. The band shows `auto ▶ 3/25` while it runs and `auto ⏸ waiting for you` when it waits. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
+It also stops on Esc, after three steps without progress, at the step budget (25 by default) and when every task is checked and verified. The band shows `auto ▶ 3/25` while it runs and `auto ⏸ waiting for you` when it waits.
+
+The pane's **Auto** row switches it:
+- off: **Start autopilot** (`p`);
+- running: **Stop** (`p`);
+- waiting: **Resume** (`r`) and **Stop**. A spent budget restarts on Resume.
+
+Click the buttons, or give the pane the keyboard with `ctrl+x tab` (once more if the band takes it first). `/xref pane` brings the pane forward. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
 
 ## The `speckit` skill
 

@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "speckit-xref: keeps a GitHub Spec Kit feature and its code tied together inside Claude Code.",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "plugins": [
     {
       "name": "speckit-xref",
       "source": "./mod",
       "description": "The active Spec Kit spec in the system prompt, every edit booked against a task, unplanned edits and requests beyond the spec reported, and an intent check after each turn. Band and pane included.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "category": "development",
       "tags": ["speckit", "spec-kit", "spec-driven-development", "traceability", "drift", "mod"],
       "homepage": "https://github.com/moinsen-dev/speckit-xref",
