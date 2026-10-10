@@ -20,7 +20,7 @@ Spell commands the way the status report does: `/speckit-plan` in the skills lay
 
 ## Autopilot: maximum autonomy
 
-The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`; in a `-p` run, `SPECKIT_XREF_AUTOPILOT=on`). From then on the mod hands the next Spec Kit step to you after every turn: constitution, specify, clarify, the person's review of the spec, plan, tasks, map, analyze, implement one phase at a time, repair when the tests fail, converge, verify. While it runs:
+The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`; in a `-p` run, `SPECKIT_XREF_AUTOPILOT=on`). From then on the mod hands the next Spec Kit step to you after every turn: for a new project validate (the idea, researched) and shape (the first version, settled with the person), then constitution, specify, clarify, the person's review of the spec, plan, tasks, map, analyze and its fixes, implement one phase at a time, repair when the tests fail, converge, verify. While it runs:
 
 - **Never ask whether to continue**, never end with "Next is X, shall I?": end your turn and the autopilot moves on.
 - **Decide what the person left open** from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write (spec, plan, constitution).
@@ -69,6 +69,8 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 
 | Phase | Command | What matters here |
 | --- | --- | --- |
+| `validate` | skill `speckit-xref:validate` | New projects only: research the idea (who has the problem, what exists, what differs, the riskiest assumption) into `.specify/memory/idea-brief.md`. Never invent a source. The person decides Build, Sharpen or Drop; never write that decision. |
+| `shape` | skill `speckit-xref:shape` | New projects only: ask the person what the idea leaves open (first-version scope, platforms, language, design, data) and write `.specify/memory/product-brief.md`. |
 | `constitution` | `/speckit-constitution` | 3 to 7 principles, each a short, checkable MUST rule (tests, dependencies, privacy, …). Ask the person, or on autopilot draft them from the repository and mark them as assumptions. The mod puts every MUST rule into every prompt, so few and sharp beats many. |
 | `specify` | `/speckit-specify <the user's idea>` | Pass the user's words **verbatim**. They become the spec's `Input` line, which every drift check compares the code against. Do not polish them. |
 | `clarify` | `/speckit-clarify` | Settles `[NEEDS CLARIFICATION]` markers before planning. |
@@ -79,7 +81,7 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 | `analyze` | `/speckit-analyze` | Before the first task and after every spec change: spec, plan and tasks checked against each other. |
 | `implement` | `/speckit-implement` | One phase per run. Call `mcp__speckit-xref__focus` before you start a task. Mark code that implements a requirement with `@spec <feature>/FR-###` at file or function level, and tests with the anchor of what they prove (`FR-###` or a scenario `US1-AS2`). Tick a task only once its tests pass. |
 | `converge` | `/speckit-converge` | Once every task is checked: turns what is missing into new tasks, until the task list stops changing. |
-| `verify` | `/speckit-xref-check` or `/xref check` | Checks the code against the user's words and the spec. |
+| `verify` | `/speckit-xref-check`, or by yourself | Checks the code against the user's words and the spec. Without the extension, check by yourself (`/xref check` is the person's command) and add what is missing as tasks. |
 
 Each requirement climbs a proof ladder: specified, planned, implemented, tested (a real test anchors it), passing (the test run proved it for its current text). `/xref` and the pane show where each stands.
 

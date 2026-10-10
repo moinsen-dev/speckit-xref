@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: xref
   name: "Spec X-Ref"
-  version: "0.2.1"
+  version: "0.3.0"
   description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, a coverage ladder proven by tests, intent"
   author: moinsen-dev
   repository: https://github.com/moinsen-dev/speckit-xref
@@ -40,6 +40,12 @@ provides:
     - name: speckit.xref.verify
       file: commands/speckit.xref.verify.md
       description: "Run the tests and record which requirements they prove: passing or failing, per requirement"
+    - name: speckit.xref.validate
+      file: commands/speckit.xref.validate.md
+      description: "Research a new idea before it becomes a spec: who has the problem, what exists, what differs, the riskiest assumption, kill criteria, a score"
+    - name: speckit.xref.shape
+      file: commands/speckit.xref.shape.md
+      description: "Settle the first version with the person (scope, platforms, language, design, data) before the spec"
     - name: speckit.xref.revise
       file: commands/speckit.xref.revise.md
       description: "Fold a change request into the spec: new requirement ids, SUPERSEDED and RETIRED markers, appended tasks, revisions.md"
