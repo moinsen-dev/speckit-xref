@@ -266,6 +266,8 @@ declare module 'claude-code' {
       seenAt: number
       /** The chip under each booked write in the transcript, by tool_use_id: `T006 · FR-004` or `▲ unplanned`. */
       chips: Record<string, string>
+      /** What the person allowed once through the ask tool: a rail's label and until when it holds. */
+      permits: { label: string; until: number }[]
     }
   }
 }
