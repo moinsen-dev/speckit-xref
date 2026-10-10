@@ -1,6 +1,11 @@
 // The ledger's two files (docs/contract-0.4.md §1): what is committed and reviewed, what stays on this machine.
 
 import type { Ledger, Semantic, Unplanned } from '../types'
+import { fingerprint, specFingerprint } from './rules'
+import { parseSpec } from './speckit'
+
+/** 2 (0.5.0): requirement texts include their wrapped continuation lines (docs/contract-0.4.md §6). */
+export const FINGERPRINT_VERSION = 2
 
 export const emptyLedger = (): Ledger => ({
   tasks: {},
@@ -15,11 +20,12 @@ export const emptyLedger = (): Ledger => ({
   approvals: {},
   decisions: [],
   checkpoints: {},
+  fingerprintVersion: FINGERPRINT_VERSION,
   extra: { committed: {}, local: {} },
 })
 
-const COMMITTED_KEYS = new Set(['schema_version', 'feature', 'map', 'links', 'accepted', 'fingerprints'])
-const LOCAL_KEYS = new Set(['schema_version', 'feature', 'touched', 'unplanned', 'intents', 'semantic', 'semanticHistory', 'verification', 'approvals', 'decisions', 'anchors', 'checkpoints'])
+const COMMITTED_KEYS = new Set(['schema_version', 'feature', 'map', 'links', 'accepted', 'fingerprints', 'fingerprintVersion'])
+const LOCAL_KEYS = new Set(['schema_version', 'feature', 'touched', 'unplanned', 'intents', 'semantic', 'semanticHistory', 'verification', 'approvals', 'decisions', 'anchors', 'checkpoints', 'fingerprintVersion'])
 const MAX_HISTORY = 10
 
 /** Where the local half lives: `.specify/xref/local/<feature-slug>.json`. */
@@ -88,6 +94,10 @@ export function migrateV1(v1: Raw): { committed: Raw; local: Raw } {
 export function ledgerFromParts(committedText: string | null, localText: string | null): Ledger {
   let committed = parse(committedText) ?? {}
   let local = parse(localText) ?? {}
+  // A file written before 0.5.0 carries no version: its fingerprints read one physical line per requirement.
+  const versionOf = (half: Raw) => (typeof half.fingerprintVersion === 'number' ? half.fingerprintVersion : 1)
+  const halves = [committedText ? committed : null, localText ? local : null].filter((h): h is Raw => h !== null)
+  const version = halves.length ? Math.min(...halves.map(versionOf)) : FINGERPRINT_VERSION
   if (committedText && committed.schema_version !== 2) {
     const migrated = migrateV1(committed)
     committed = migrated.committed
@@ -127,6 +137,7 @@ export function ledgerFromParts(committedText: string | null, localText: string 
   ledger.approvals = obj(local.approvals) as Ledger['approvals']
   ledger.decisions = arr(local.decisions)
   ledger.checkpoints = obj(local.checkpoints) as Ledger['checkpoints']
+  ledger.fingerprintVersion = version
   ledger.extra = { committed: others(committed, COMMITTED_KEYS), local: others(local, LOCAL_KEYS) }
   return ledger
 }
@@ -164,6 +175,7 @@ export function ledgerToParts(ledger: Ledger, featureDir: string): { committed: 
     links,
     accepted,
     fingerprints: ledger.fingerprints,
+    fingerprintVersion: FINGERPRINT_VERSION,
   })
   const local = {
     ...ledger.extra.local,
@@ -179,6 +191,31 @@ export function ledgerToParts(ledger: Ledger, featureDir: string): { committed: 
     decisions: ledger.decisions,
     anchors: ledger.anchors,
     checkpoints: ledger.checkpoints,
+    fingerprintVersion: FINGERPRINT_VERSION,
   }
   return { committed: JSON.stringify(committed, null, 2) + '\n', local: JSON.stringify(local, null, 2) + '\n' }
+}
+
+/**
+ * §6: a fingerprint stored by the pre-0.5.0 parser (one physical line per requirement) moves to today's text, and so
+ * do the spec approval and the analyze checkpoint taken over that reading. Only a value equal to the old reading of
+ * the same spec moves; any other stays, since it is a real change.
+ */
+export function rebaseline(ledger: Ledger, specMd: string | null): Ledger {
+  if (ledger.fingerprintVersion >= FINGERPRINT_VERSION || !specMd) return { ...ledger, fingerprintVersion: FINGERPRINT_VERSION }
+  const now = parseSpec(specMd)
+  const old = parseSpec(specMd, { wrap: false })
+  const oldText = new Map(old.reqs.map(r => [r.id, r.text]))
+  const nowText = new Map(now.reqs.map(r => [r.id, r.text]))
+  const moved = (id: string, stored: string) => (oldText.has(id) && nowText.has(id) && stored === fingerprint(oldText.get(id)!) ? fingerprint(nowText.get(id)!) : stored)
+  const oldSpec = specFingerprint(old)
+  const nowSpec = specFingerprint(now)
+  return {
+    ...ledger,
+    fingerprints: Object.fromEntries(Object.entries(ledger.fingerprints).map(([id, fp]) => [id, moved(id, fp)])),
+    verification: Object.fromEntries(Object.entries(ledger.verification).map(([id, v]) => [id, { ...v, fingerprint: moved(id, v.fingerprint) }])),
+    approvals: ledger.approvals.spec === oldSpec ? { ...ledger.approvals, spec: nowSpec } : ledger.approvals,
+    checkpoints: ledger.checkpoints.analyze === oldSpec ? { ...ledger.checkpoints, analyze: nowSpec } : ledger.checkpoints,
+    fingerprintVersion: FINGERPRINT_VERSION,
+  }
 }

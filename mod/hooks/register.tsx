@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
 import type { Autopilot, Ledger, RunEntry, Snapshot } from '../types'
-import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, runLogPath } from './ledger'
+import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
 import { LADDER, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
-import { featureFromBranch, fingerprint, hasRealTests, isTestFile, matchesAny, rulesFrom } from './rules'
+import { featureFromBranch, fingerprint, hasRealTests, isTestFile, matchesAny, rulesFrom, specFingerprint } from './rules'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
 import type { Flow, Step } from './workflow'
 import {
@@ -133,6 +133,7 @@ let parallel = false
 let commitPerTask = false
 // When the pane opens without being asked: auto (where it is a sidebar), always (every Spec Kit project), off.
 let paneMode: 'auto' | 'always' | 'off' = 'auto'
+let driftCheckOn = true
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -311,9 +312,10 @@ async function scan($: $): Promise<void> {
     commands: await installedCommands($),
     checklists: featureDir ? await checklists($, featureDir) : [],
     persistence: persistenceModel(constitutionMd),
+    commits: await hasCommits($),
   }
   if (!previous || previous.featureDir !== featureDir) {
-    const ledger = featureDir ? ledgerFromParts(await readText($, `${featureDir}/xref.json`), await readText($, localPath(featureDir))) : emptyLedger()
+    const ledger = featureDir ? rebaseline(ledgerFromParts(await readText($, `${featureDir}/xref.json`), await readText($, localPath(featureDir))), specMd) : emptyLedger()
     const anchors = featureDir ? await scanAnchors($) : null
     await update($, ledgerA, () => (anchors ? { ...ledger, anchors } : ledger))
     await update($, activeA, () => null)
@@ -327,6 +329,17 @@ async function projectTestScript($: $): Promise<string | null> {
   const pkg = await readText($, 'package.json')
   if (!pkg) return null
   return testScriptCommand(pkg, { pnpm: await exists($, 'pnpm-lock.yaml'), yarn: await exists($, 'yarn.lock'), bun: (await exists($, 'bun.lock')) || (await exists($, 'bun.lockb')) })
+}
+
+/** Whether the repository has a commit: true, false (a repository without one), null (no git here). */
+async function hasCommits($: $): Promise<boolean | null> {
+  try {
+    const inside = await $.process.run(['git', 'rev-parse', '--is-inside-work-tree'], { cwd: root, timeoutMs: 3000 })
+    if (inside.exitCode !== 0) return null
+    return (await $.process.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], { cwd: root, timeoutMs: 3000 })).exitCode === 0
+  } catch {
+    return null
+  }
 }
 
 /** Spec Kit's commands installed for Claude Code, by name without prefix: `plan`, `analyze`, `xref-check`. */
@@ -698,8 +711,10 @@ async function retitle($: $): Promise<void> {
 
 /** The requests the pane's setup actions hand to Claude, as the person's own words: a press is their consent. */
 const SETUP_ASKS = {
-  idea: 'I want to start something new in this empty folder (an app, a project, or a problem to solve). Ask me what it is, then set Spec Kit up for it with the speckit-xref:speckit skill and write the spec in my own words.',
+  idea: 'I want to start something new in this empty folder (an app, a project, or a problem to solve). Ask me what it is, then set Spec Kit up for it with the speckit-xref:speckit skill (with a git repository and a first commit, so Spec Kit can open a branch per feature) and write the spec in my own words.',
   setup: 'Set Spec Kit up in this existing project with the speckit-xref:speckit skill: run specify init, draft the constitution from the code and the README and mark the assumptions, then ask me which change to specify first.',
+  commit:
+    "Make the first commit of this repository: first make sure a .gitignore keeps out dependencies, build output and secrets (node_modules/, dist/, .env*, and whatever this stack needs), then git add -A and commit with the message 'Initial commit'. Spec Kit can then open a branch per feature.",
   integration: "Install Spec Kit's Claude Code integration in this project (specify integration install claude), so its /speckit-* commands run here.",
 } as const
 
@@ -718,8 +733,17 @@ async function approve($: $): Promise<string> {
   const snap = await read($, snapshotA)
   if (!snap) return 'Nothing to approve.'
   const ap = await read($, autopilotA)
-  const step = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
-  if (!step.approve || !APPROVALS.has(step.approve.key)) return 'Nothing waits for an approval.'
+  const ledger = await read($, ledgerA)
+  const step = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  if (!step.approve || !APPROVALS.has(step.approve.key)) {
+    // No gate stands, but the spec was never approved (◌spec): the person can approve it now, for this text.
+    if (snap.spec && specReview(snap, ledger) !== 'approved') {
+      await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, spec: specFingerprint(snap.spec!) } }))
+      await persist($)
+      return `Approved the spec of ${snap.featureDir}.`
+    }
+    return 'Nothing waits for an approval.'
+  }
   const { key, value } = step.approve
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
@@ -948,6 +972,11 @@ async function advance($: $): Promise<void> {
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, [point]: value } }))
   }
   if (step.resolves) await update($, ledgerA, l => resolveIntent(l, step.resolves!))
+  // One phase per step: the focus starts on its first open task, wherever earlier edits left it.
+  if (step.phase === 'implement' && snap.phase) {
+    const first = snap.tasks.find(t => t.phase === snap.phase && !t.done)
+    if (first) await update($, activeA, () => first.id)
+  }
   await persist($)
   // The mod maps requirements itself where no extension command does it, then moves on.
   if (step.phase === 'map' && !snap.extensions.includes('xref')) {
@@ -1093,6 +1122,9 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
       }
     }
   }
+  // Verify without the extension: the model checked by itself; the mod's intent check looks at the whole change too.
+  const verified = await read($, snapshotA)
+  if (ap.lastPhase === 'verify' && verified && !verified.extensions.includes('xref') && driftCheckOn) await runCheck($, [], mapModel).catch(() => undefined)
   const snap = await read($, snapshotA)
   if (snap && evaluate(snap, await read($, ledgerA)).level === 'red') return pauseAutopilot($, 'the drift is red; look at the findings in the pane, then Resume')
   await advance($)
@@ -1348,6 +1380,7 @@ export const register: Register = (on, options) => {
   commitPerTask = opts.commitPerTask === 'on'
   paneMode = opts.pane === 'always' || opts.pane === 'off' ? opts.pane : 'auto'
   const driftCheck = opts.driftCheck === 'off' ? 'off' : 'fork'
+  driftCheckOn = driftCheck === 'fork'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -1844,6 +1877,8 @@ export const register: Register = (on, options) => {
         )
       ) : step.phase === 'integration' ? (
         <Button key="setup-integration" label="Add Claude integration" variant="primary" onPress={() => void askClaude($, 'integration')} />
+      ) : step.phase === 'setup' && snapshot.commits === false ? (
+        <Button key="setup-commit" label="First commit" variant="primary" onPress={() => void askClaude($, 'commit')} />
       ) : null
     if (!snap?.featureDir || !snap.spec) {
       const next = snap ? nextStep(snap, ledger, ap.idea, flowOf(ap)) : null
@@ -1954,6 +1989,18 @@ export const register: Register = (on, options) => {
         <Text dimColor wrap="truncate-end">
           {phaseStrip(snap, step, review !== 'none' && specReview(snap, ledger) !== 'approved')}
         </Text>
+        {step.phase !== 'review' && review !== 'none' && specReview(snap, ledger) !== 'approved' ? (
+          <Box flexDirection="row" columnGap={1}>
+            {row('Spec', specReview(snap, ledger) === 'changed' ? 'changed since you approved it' : 'not approved by you yet', 'warning')}
+            <Button key="approve-spec" label="Approve spec" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+          </Box>
+        ) : null}
+        {snap.commits === false ? (
+          <Box flexDirection="row" columnGap={1}>
+            {row('Git', 'no commit yet: no branch per feature', 'warning')}
+            <Button key="setup-commit" label="First commit" onPress={() => void askClaude($, 'commit')} />
+          </Box>
+        ) : null}
         {details ? row('Goal', spec.input ?? (spec.stories.map(s => s.title).join(' · ') || '-')) : null}
         {details ? row('Vision', snap.constitution?.principles.length ? snap.constitution.principles.join(' · ') : 'no constitution yet') : null}
         {row('Now', task ? `${task.id}${task.story ? ` [${task.story}]` : ''} ${task.text}` : snap.tasks.length ? 'every task is checked' : 'no tasks.md yet', 'warning')}

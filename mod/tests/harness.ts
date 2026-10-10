@@ -42,6 +42,8 @@ type Options = {
   branch?: string
   /** The subscription's usage windows, as /usage shows them. */
   rateLimits?: { kind: string; percentUsed: number }[]
+  /** A git repository with (true) or without (false) a commit; absent, no git answers. */
+  commits?: boolean
 }
 
 /** The project of the test running now: its turns start with the prompt submitted last, as the engine's do. */
@@ -116,6 +118,8 @@ export function project(on: any, files: Record<string, string>, options: Options
       const exit = options.tests.exits[Math.min(seen.testRuns.length - 1, options.tests.exits.length - 1)] ?? 0
       return ok(options.tests.output ?? (exit ? 'FAIL tests/auth/token.test.ts' : 'ok'), exit)
     }
+    if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--is-inside-work-tree')) return options.commits === undefined ? { deny: 'ENOENT' } : ok('true\n')
+    if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--verify')) return ok('', options.commits ? 0 : 1)
     if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--abbrev-ref')) return options.branch ? ok(`${options.branch}\n`) : { deny: 'ENOENT' }
     if (e.argv[0] === 'git' && (e.argv[1] === 'add' || e.argv[1] === 'commit')) return ok('')
     if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--cached')) return ok('')

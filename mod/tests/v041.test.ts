@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { localPath } from '../hooks/ledger'
 import { parseSpec } from '../hooks/speckit'
+import { classify, emptyLedger, forkPrompt } from '../hooks/xref'
 import { failureLine, testCommandFrom, testScriptCommand } from '../hooks/workflow'
 import { DEMO } from './fixtures/demo'
 import { BAND, FEATURE, PANE, ROOT, ledgerOf, project, runTurn, startSession, toText, type, xref } from './harness'
@@ -212,4 +213,42 @@ test('the pane names the phase of tasks.md that runs, by its own number, with th
 test('the Tests row names what failed, not the runner\'s last words', () => {
   expect(failureLine('PASS a.test.ts\nFAIL tests/services/inspire.test.ts\nTest Suites: 1 failed, 27 passed, 28 total\nTests:       212 passed, 212 total\nRan all test suites.')).toBe('Test Suites: 1 failed, 27 passed, 28 total')
   expect(failureLine('ok')).toBe('ok')
+})
+
+test('a spec planned without your approval can be approved any time, from the pane', async ($, on) => {
+  const seen = project(on, { ...DEMO })
+  await startSession($)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('Specnot approved by you yet [Approve spec]')
+  await pane.press({ key: 'approve-spec' })
+  expect(ledgerOf(seen.files).approvals.spec).toHaveLength(64)
+  expect(toText(await pane.drawn())).toContain('✓setup ✓const ✓spec ✓plan')
+  expect((await xref($, 'approve')).text).toBe('Nothing waits for an approval.')
+})
+
+test('a file the running phase shares with a later phase stays with the running phase', () => {
+  const T = (id: string, done: boolean, phase: string, paths: string[]) => ({ id, done, phase, paths, reqs: [], parallel: false, story: null, text: id })
+  const tasks = [T('T013', true, 'Phase 2', ['src/services/store.ts']), T('T014', false, 'Phase 2', ['src/x.ts']), T('T044', false, 'Phase 5', ['src/services/store.ts'])]
+  const snap = { tasks, phase: 'Phase 2', rules: { exempt: [], unclear: [] } } as any
+  expect(classify('src/services/store.ts', snap, emptyLedger(), 'T014')).toEqual({ verdict: 'in-scope', task: 'T014' })
+  expect(classify('src/services/store.ts', { ...snap, phase: 'Phase 5' }, emptyLedger(), 'T014')).toEqual({ verdict: 'other-task', task: 'T044' })
+})
+
+test('a repository without a commit waits for the first one before the first feature; the press asks for a .gitignore first', async ($, on) => {
+  const files: Record<string, string> = {}
+  for (const [k, v] of Object.entries(DEMO)) if (!k.startsWith('specs/')) files[k] = v
+  const seen = project(on, files, { commits: false })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(seen.toasts.at(-1)).toContain('Make the first commit')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'setup-commit' })
+  expect(seen.submitted.at(-1).text).toContain('make sure a .gitignore keeps out dependencies')
+})
+
+test('the intent check knows the decisions the person already made', () => {
+  const snap = { featureDir: FEATURE, spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!), tasks: [], rules: { exempt: [], unclear: [] } } as any
+  const ledger = { ...emptyLedger(), decisions: [{ id: 'D1', question: 'A 30-minute window?', options: [], blocks: [], at: '', answer: 'Yes, with a 30-minute window' }] }
+  expect(forkPrompt(snap, ledger, null, [], '')).toContain('- A 30-minute window? → Yes, with a 30-minute window')
 })

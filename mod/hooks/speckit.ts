@@ -12,14 +12,36 @@ export function reqStatus(text: string): ReqStatus {
   return { status: 'active', supersededBy: null }
 }
 
+/**
+ * Markdown as logical lines (docs/contract-0.4.md §5, 0.5.0): an indented line that is no list item, heading,
+ * table row, fence or blank line continues the list item above it, joined with one space. Hard-wrapped bullets
+ * (`- **FR-004**: … verfügbare Zeit\n  (z. B. bis 30 Minuten …)`) are one item again.
+ */
+export function unwrap(markdown: string): string[] {
+  const out: string[] = []
+  let item = false
+  for (const line of markdown.split('\n')) {
+    const body = line.trim()
+    const isItem = /^\s*(?:[-*+]|\d+\.)\s+/.test(line)
+    const continues = item && /^\s+\S/.test(line) && !isItem && !/^(#|\||```|~~~)/.test(body)
+    if (continues) {
+      out[out.length - 1] = `${out[out.length - 1]!.trimEnd()} ${body}`
+      continue
+    }
+    out.push(line)
+    item = isItem
+  }
+  return out
+}
+
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)
 const unbold = (text: string) => text.replace(/\*\*/g, '').replace(/`/g, '').trim()
 
 /** The bullet lines under the first `##`/`###` heading whose text matches `heading`, up to the next heading. */
-function bulletsUnder(markdown: string, heading: RegExp, max: number): string[] {
+function bulletsUnder(lines: string[], heading: RegExp, max: number): string[] {
   const out: string[] = []
   let inside = false
-  for (const line of markdown.split('\n')) {
+  for (const line of lines) {
     const h = /^#{2,4}\s+(.*)$/.exec(line)
     if (h) {
       if (inside) break
@@ -60,13 +82,15 @@ export function inputOf(markdown: string): string | null {
   return text.trim() || null
 }
 
-export function parseSpec(markdown: string): Spec {
+export function parseSpec(markdown: string, opts: { wrap?: boolean } = {}): Spec {
+  // wrap: false reads one physical line per item, as before 0.5.0 (for re-baselining old fingerprints).
+  const lines = opts.wrap === false ? markdown.split('\n') : unwrap(markdown)
   const titleLine = /^#\s+(?:Feature Specification:\s*)?(.+)$/m.exec(markdown)
   const input = inputOf(markdown)
 
   const stories: Story[] = []
   let story: Story | null = null
-  for (const line of markdown.split('\n')) {
+  for (const line of lines) {
     const m = /^###\s+User Story\s+(\d+)\s*[-–—:]\s*(.+?)\s*(?:\(Priority:\s*(P\d+)\))?\s*(?:🎯.*)?$/.exec(line)
     if (m) {
       story = { id: `US${m[1]}`, title: unbold(m[2] ?? ''), priority: m[3] ?? null, scenarios: [] }
@@ -84,7 +108,7 @@ export function parseSpec(markdown: string): Spec {
 
   const reqs: Req[] = []
   const seen = new Set<string>()
-  for (const m of markdown.matchAll(/^\s*[-*]\s*\*\*((FR|SC)-\d{3,})\*\*\s*:?\s*(.*)$/gm)) {
+  for (const m of lines.join('\n').matchAll(/^\s*[-*]\s*\*\*((FR|SC)-\d{3,})\*\*\s*:?\s*(.*)$/gm)) {
     const id = m[1] ?? ''
     if (seen.has(id)) continue
     seen.add(id)
@@ -98,8 +122,8 @@ export function parseSpec(markdown: string): Spec {
     input: input && !/^\$ARGUMENTS$/.test(input) ? clip(input, 2000) : null,
     stories,
     reqs,
-    outOfScope: bulletsUnder(markdown, /out of scope|non-goals?|not in scope/i, 8),
-    assumptions: bulletsUnder(markdown, /^assumptions/i, 6),
+    outOfScope: bulletsUnder(lines, /out of scope|non-goals?|not in scope/i, 8),
+    assumptions: bulletsUnder(lines, /^assumptions/i, 6),
   }
 }
 
@@ -132,7 +156,7 @@ export function extractPaths(text: string): string[] {
 export function parseTasks(markdown: string): Task[] {
   const tasks: Task[] = []
   let phase = ''
-  for (const line of markdown.split('\n')) {
+  for (const line of unwrap(markdown)) {
     const heading = /^##\s+(.+)$/.exec(line)
     if (heading) {
       phase = unbold(heading[1] ?? '')
@@ -161,7 +185,7 @@ export function parseTasks(markdown: string): Task[] {
 export function parseConstitution(markdown: string): Constitution {
   const principles: string[] = []
   const musts: string[] = []
-  for (const line of markdown.split('\n')) {
+  for (const line of unwrap(markdown)) {
     const h = /^###\s+(.+)$/.exec(line)
     // A template never filled in still reads [PRINCIPLE_1_NAME]; it says nothing yet.
     if (h && h[1] && !/\[[A-Z0-9_]+\]/.test(h[1])) principles.push(clip(unbold(h[1]), 80))

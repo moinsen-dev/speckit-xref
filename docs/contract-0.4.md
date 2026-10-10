@@ -111,12 +111,16 @@ Signature: `levelOf(id, snap, ledger)`. The snapshot carries `featureDir`, `task
 
 **Input** (`inputOf`, 0.4.1): the text after `**Input**:` (and an optional `User description:`); when it opens a quote it does not close on that line, the following lines (each right-trimmed, joined with `\n`) belong to it up to the first line ending in `"`, or up to a heading. A leading quote and its closing quote are dropped; the result is trimmed and clipped to 2000.
 
+**Wrapped list items** (`unwrap`, 0.5.0): before any other rule, markdown becomes logical lines. A line that starts with whitespace, is not blank, is no list item itself (`-`, `*`, `+` or `1.` after the indent), no heading (`#`), no table row (`|`) and no fence (```` ``` ````, `~~~`) continues the list item directly above it: it is appended after one space, trimmed. A nested list item stays an item of its own. This applies to requirements, scenarios, the bullets under Out of Scope and Assumptions, tasks and the constitution; the Input line keeps its own rule.
+
 **Task paths** (`extractPaths`, 0.4.1): when a task names any path in backticks, those are its paths; bare words in its prose count only in a task without backticked paths.
 
 A story section starts at its `### User Story N …` heading and ends at the next heading of level 1–3 (`^#{1,3}\s`). Inside it, a line matching `^\s*(\d+)\.\s+(\*\*Given\*\*.*)$` is scenario `USN-AS<number>` (the list number as written, without leading zeros). Its text is group 2 with bold and backticks removed, trimmed, clipped like requirement text (300). `parseSpec` returns `stories[{id, title, priority, scenarios: [{id, text}]}]` and `reqs[{id, kind, text, needsClarification, status, supersededBy}]` (§11). Snapshots in `cases.json` may give reqs without `kind`/`status`: treat them as `FR` and take the status from `reqStatus(text)`. Anchors and links may name scenarios: the anchor regex is
 `@spec\s+((?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))`.
 
 ## 6. Fingerprints
+
+**Fingerprint version** (0.5.0): both ledger halves carry `fingerprintVersion: 2`, which means requirement texts read with wrapped lines. A ledger without it (version 1) is re-baselined on load (`rebaseline(ledger, specMarkdown)`): a stored requirement fingerprint, or a verification's fingerprint, that equals the fingerprint of the same requirement read one physical line per item moves to today's fingerprint; any other value stays, since it is a real change. The mod moves the spec approval and the analyze checkpoint the same way. Writers always store version 2.
 
 `normalizeText`: Unicode NFKC, lower-case, collapse whitespace to one space, trim, drop trailing `.;:!`, trim. `fingerprint(text)` = lower-case hex SHA-256 of the UTF-8 of the normalised text (TypeScript: a pure synchronous SHA-256 in `mod/hooks/rules.ts`, since the mod's sandbox has no WebCrypto guarantee; Python: `hashlib`). The **spec fingerprint** (for the spec gate) is the fingerprint of the `Input` line, then every requirement text in spec order, then every scenario text in story order, joined with `\n` (a missing input is the empty string).
 

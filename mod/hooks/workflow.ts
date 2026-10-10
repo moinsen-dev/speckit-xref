@@ -179,6 +179,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (!snap.constitution || snap.constitution.principles.length === 0) {
     return step('constitution', speckitCommand(snap, 'constitution'), 'The constitution is missing or still the template.')
   }
+  if ((!snap.featureDir || !snap.spec) && snap.commits === false) {
+    // Spec Kit opens a branch per feature only in a repository with a commit to branch from.
+    return step('setup', null, 'The repository has no commit yet: Spec Kit opens a branch per feature only from one.', 'Make the first commit: press First commit in the pane, or ask for it.')
+  }
   if (!snap.featureDir || !snap.spec) {
     return idea
       ? step('specify', `${speckitCommand(snap, 'specify')} ${idea}`, 'No feature yet; the person has said what to build.')
@@ -186,6 +190,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
 
   const spec = snap.spec
+  if (snap.commits === false) notes.push('No commit yet: Spec Kit cannot branch per feature, and commit per task and the GitHub Action need commits (First commit in the pane).')
   const unclear = spec.reqs.filter(r => r.needsClarification).map(r => r.id)
   const specFp = specFingerprint(spec)
   // The one review: where the idea becomes the contract. A project planned before 0.4 counts as reviewed until its spec changes.
@@ -267,7 +272,15 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (has('converge') && ledger.checkpoints.converge !== tasksFp) {
     return step('converge', speckitCommand(snap, 'converge'), 'Every task is checked: find the work the tasks missed.', null, { approve: { key: 'converge', value: tasksFp } })
   }
-  return step('verify', xref ? speckitCommand(snap, 'xref.check') : '/xref check', 'Every task is checked: check the code against the spec.')
+  if (xref) return step('verify', speckitCommand(snap, 'xref.check'), 'Every task is checked: check the code against the spec.')
+  // Without the extension there is no command the model can run: it checks by itself, and the mod's intent check follows.
+  return step('verify', null, 'Every task is checked: check the code against the spec.', null, {
+    prompt: [
+      "Check the code against the spec and against the person's own words (the spec's Input), by yourself: /xref check is the person's command, not one you can run.",
+      'For each requirement name the code and the test that prove it. For each point the person made, say whether the app does it.',
+      "Whatever is missing or differs becomes a new task at the end of tasks.md under '## Phase N: Verification' (the next free T### ids). Then end your turn.",
+    ].join('\n'),
+  })
 }
 
 /** The step as one line, as the pane, /xref and the note on each prompt show it. */

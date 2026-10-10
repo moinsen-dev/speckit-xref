@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ledgerFromParts, ledgerToParts, migrateV1 } from '../hooks/ledger'
+import { ledgerFromParts, ledgerToParts, migrateV1, rebaseline } from '../hooks/ledger'
 import { levelOf, parseJunit, verificationFrom } from '../hooks/proof'
 import { featureFromBranch, fingerprint, globToRegExp, hasRealTests, isTestFile, normalizeText, parseIgnore, reqStatus, rulesFrom } from '../hooks/rules'
 import { parseSpec } from '../hooks/speckit'
@@ -96,7 +96,7 @@ describe('contract: scenarios, test results, ledger files', () => {
       expect(parts.local).toEqual(c.local)
       // Loading the v1 file and writing it again gives the same halves.
       const written = ledgerToParts(ledgerFromParts(JSON.stringify(c.v1), null), c.v1.feature)
-      expect(JSON.parse(written.committed)).toEqual(c.committed)
+      expect(JSON.parse(written.committed)).toEqual({ ...c.committed, fingerprintVersion: 2 })
       const local = JSON.parse(written.local)
       expect({ touched: local.touched, unplanned: local.unplanned, intents: local.intents, anchors: local.anchors }).toEqual({ touched: c.local.touched, unplanned: c.local.unplanned, intents: c.local.intents, anchors: c.local.anchors })
     }
@@ -112,5 +112,18 @@ describe('contract: scenarios, test results, ledger files', () => {
     expect(JSON.parse(once.committed).review).toEqual({ by: 'x' })
     expect(JSON.parse(once.local).run).toEqual({ n: 1 })
     expect(once.committed).not.toContain('updated_at')
+  })
+})
+
+describe('contract: fingerprints across the 0.5.0 parser change', () => {
+  test('a fingerprint the old parser stored moves to the wrapped text; a real change stays', () => {
+    for (const c of CASES.rebaseline) {
+      const ledger = rebaseline(ledgerOf(c.ledger), c.specMarkdown)
+      expect({
+        fingerprints: ledger.fingerprints,
+        verificationFingerprints: Object.fromEntries(Object.entries(ledger.verification).map(([k, v]) => [k, v.fingerprint])),
+        fingerprintVersion: ledger.fingerprintVersion,
+      }).toEqual(c.expected)
+    }
   })
 })

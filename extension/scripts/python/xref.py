@@ -51,10 +51,26 @@ def unbold(text: str) -> str:
     return text.replace("**", "").replace("`", "").strip()
 
 
-def bullets_under(markdown: str, heading: re.Pattern, limit: int) -> list[str]:
+def unwrap(markdown: str) -> list[str]:
+    """Logical lines (§5, 0.5.0): an indented line that is no list item, heading, table row, fence or blank line continues the item above."""
+    out: list[str] = []
+    item = False
+    for line in markdown.split("\n"):
+        body = line.strip()
+        is_item = bool(re.match(r"^\s*(?:[-*+]|\d+\.)\s+", line, A))
+        continues = item and bool(re.match(r"^\s+\S", line, A)) and not is_item and not re.match(r"^(#|\||```|~~~)", body, A)
+        if continues:
+            out[-1] = f"{out[-1].rstrip()} {body}"
+            continue
+        out.append(line)
+        item = is_item
+    return out
+
+
+def bullets_under(lines: list[str], heading: re.Pattern, limit: int) -> list[str]:
     out: list[str] = []
     inside = False
-    for line in markdown.split("\n"):
+    for line in lines:
         h = re.match(r"^#{2,4}\s+(.*)$", line, A)
         if h:
             if inside:
@@ -110,13 +126,15 @@ def input_of(markdown: str) -> str | None:
     return text.strip() or None
 
 
-def parse_spec(markdown: str) -> dict:
+def parse_spec(markdown: str, wrap: bool = True) -> dict:
+    # wrap=False reads one physical line per item, as before 0.5.0 (for re-baselining old fingerprints).
+    lines = unwrap(markdown) if wrap else markdown.split("\n")
     title = re.search(r"^#\s+(?:Feature Specification:\s*)?(.+)$", markdown, re.M | A)
     raw_input = input_of(markdown)
     # A story runs from its heading to the next heading of level 1-3; its numbered Given lines are scenarios USn-ASk.
     stories: list[dict] = []
     story: dict | None = None
-    for line in markdown.split("\n"):
+    for line in lines:
         m = STORY.match(line)
         if m:
             story = {"id": f"US{m.group(1)}", "title": unbold(m.group(2) or ""), "priority": m.group(3), "scenarios": []}
@@ -130,7 +148,7 @@ def parse_spec(markdown: str) -> dict:
             story["scenarios"].append({"id": f"{story['id']}-AS{int(scenario.group(1))}", "text": clip(unbold(scenario.group(2) or ""), 300)})
     reqs: list[dict] = []
     seen: set[str] = set()
-    for m in re.finditer(r"^\s*[-*]\s*\*\*((FR|SC)-\d{3,})\*\*\s*:?\s*(.*)$", markdown, re.M | A):
+    for m in re.finditer(r"^\s*[-*]\s*\*\*((FR|SC)-\d{3,})\*\*\s*:?\s*(.*)$", "\n".join(lines), re.M | A):
         rid = m.group(1)
         if rid in seen:
             continue
@@ -151,8 +169,8 @@ def parse_spec(markdown: str) -> dict:
         "input": clip(raw_input, 2000) if raw_input and raw_input != "$ARGUMENTS" else None,
         "stories": stories,
         "reqs": reqs,
-        "outOfScope": bullets_under(markdown, re.compile(r"out of scope|non-goals?|not in scope", re.I), 8),
-        "assumptions": bullets_under(markdown, re.compile(r"^assumptions", re.I), 6),
+        "outOfScope": bullets_under(lines, re.compile(r"out of scope|non-goals?|not in scope", re.I), 8),
+        "assumptions": bullets_under(lines, re.compile(r"^assumptions", re.I), 6),
     }
 
 
@@ -192,7 +210,7 @@ def extract_paths(text: str) -> list[str]:
 def parse_tasks(markdown: str) -> list[dict]:
     tasks: list[dict] = []
     phase = ""
-    for line in markdown.split("\n"):
+    for line in unwrap(markdown):
         heading = re.match(r"^##\s+(.+)$", line, A)
         if heading:
             phase = unbold(heading.group(1) or "")
@@ -222,7 +240,7 @@ def parse_tasks(markdown: str) -> list[dict]:
 def parse_constitution(markdown: str) -> dict:
     principles: list[str] = []
     musts: list[str] = []
-    for line in markdown.split("\n"):
+    for line in unwrap(markdown):
         h = re.match(r"^###\s+(.+)$", line, A)
         if h and h.group(1) and not re.search(r"\[[A-Z0-9_]+\]", h.group(1), A):
             principles.append(clip(unbold(h.group(1)), 80))
@@ -685,8 +703,10 @@ def apply_mapping(ledger: dict, raw: object, snap: dict, source: str = "llm") ->
 # ---------------------------------------------------------------------------
 # The ledger, v2 (mirror mod/hooks/ledger.ts): committed half and local half
 
-COMMITTED_KEYS = {"schema_version", "feature", "map", "links", "accepted", "fingerprints"}
-LOCAL_KEYS = {"schema_version", "feature", "touched", "unplanned", "intents", "semantic", "semanticHistory", "verification", "approvals", "decisions", "anchors"}
+COMMITTED_KEYS = {"schema_version", "feature", "map", "links", "accepted", "fingerprints", "fingerprintVersion"}
+LOCAL_KEYS = {"schema_version", "feature", "touched", "unplanned", "intents", "semantic", "semanticHistory", "verification", "approvals", "decisions", "anchors", "fingerprintVersion"}
+# 2 (0.5.0): requirement texts include their wrapped continuation lines (§6).
+FINGERPRINT_VERSION = 2
 MAX_HISTORY = 10
 
 
@@ -703,6 +723,7 @@ def empty_ledger() -> dict:
         "verification": {},
         "approvals": {},
         "decisions": [],
+        "fingerprintVersion": FINGERPRINT_VERSION,
         # Top-level keys of either file this script does not know (the mod's run state, say): written back as they were.
         "extra": {"committed": {}, "local": {}},
     }
@@ -770,6 +791,9 @@ def ledger_from_parts(committed: dict | None, local: dict | None) -> dict:
     """The in-memory ledger from both halves (§1); a v1 committed file is migrated on the way in."""
     committed = _obj(committed) if committed is not None else None
     local = _obj(local)
+    # A file written before 0.5.0 carries no version: its fingerprints read one physical line per requirement.
+    versions = [h.get("fingerprintVersion") if isinstance(h.get("fingerprintVersion"), int) else 1 for h in (committed, local or None) if h is not None]
+    version = min(versions) if versions else FINGERPRINT_VERSION
     if committed is not None and committed.get("schema_version") != 2:
         migrated, migrated_local = migrate_v1(committed)
         committed = migrated
@@ -807,6 +831,7 @@ def ledger_from_parts(committed: dict | None, local: dict | None) -> dict:
     ledger["verification"] = _obj(local.get("verification"))
     ledger["approvals"] = _obj(local.get("approvals"))
     ledger["decisions"] = _arr(local.get("decisions"))
+    ledger["fingerprintVersion"] = version
     ledger["extra"] = {
         "committed": {k: v for k, v in committed.items() if k not in COMMITTED_KEYS},
         "local": {k: v for k, v in local.items() if k not in LOCAL_KEYS},
@@ -832,7 +857,7 @@ def ledger_to_parts(ledger: dict, feature_dir: str) -> tuple[dict, dict]:
     links = {file: sorted(set(ids)) for file, ids in links.items()}
     # An accepted file that was linked since is the link's, not an acceptance.
     accepted = sorted({u["file"] for u in ledger["unplanned"] if u.get("acknowledged") and u["file"] not in links})
-    committed = {**ledger["extra"]["committed"], "schema_version": 2, "feature": feature_dir, "map": map_, "links": links, "accepted": accepted, "fingerprints": ledger["fingerprints"]}
+    committed = {**ledger["extra"]["committed"], "schema_version": 2, "feature": feature_dir, "map": map_, "links": links, "accepted": accepted, "fingerprints": ledger["fingerprints"], "fingerprintVersion": FINGERPRINT_VERSION}
     local = {
         **ledger["extra"]["local"],
         "schema_version": 2,
@@ -846,6 +871,7 @@ def ledger_to_parts(ledger: dict, feature_dir: str) -> tuple[dict, dict]:
         "approvals": ledger["approvals"],
         "decisions": ledger["decisions"],
         "anchors": ledger["anchors"],
+        "fingerprintVersion": FINGERPRINT_VERSION,
     }
     return committed, local
 
@@ -983,7 +1009,36 @@ def load_ledger(root: Path, feature_dir: str) -> dict:
             return {}
         return value if isinstance(value, dict) else {}
 
-    return ledger_from_parts(parsed(committed_path(feature_dir)), parsed(local_path(feature_dir)))
+    return rebaseline(ledger_from_parts(parsed(committed_path(feature_dir)), parsed(local_path(feature_dir))), read(root / feature_dir / "spec.md"))
+
+
+def rebaseline(ledger: dict, spec_md: str | None) -> dict:
+    """§6: a fingerprint stored by the pre-0.5.0 parser (one physical line per requirement) moves to today's text.
+
+    Only one that equals the old reading of the same spec moves; any other stays, since it is a real change.
+    """
+    if ledger.get("fingerprintVersion", 1) >= FINGERPRINT_VERSION or not spec_md:
+        ledger["fingerprintVersion"] = FINGERPRINT_VERSION
+        return ledger
+    now, old = parse_spec(spec_md), parse_spec(spec_md, wrap=False)
+    old_text = {r["id"]: r["text"] for r in old["reqs"]}
+    now_text = {r["id"]: r["text"] for r in now["reqs"]}
+
+    def moved(rid: str, stored: str) -> str:
+        if rid in old_text and rid in now_text and stored == fingerprint(old_text[rid]):
+            return fingerprint(now_text[rid])
+        return stored
+
+    ledger["fingerprints"] = {rid: moved(rid, fp) for rid, fp in ledger["fingerprints"].items()}
+    ledger["verification"] = {rid: {**v, "fingerprint": moved(rid, v.get("fingerprint", ""))} if isinstance(v, dict) else v for rid, v in ledger["verification"].items()}
+    old_spec, now_spec = spec_fingerprint(old), spec_fingerprint(now)
+    if ledger["approvals"].get("spec") == old_spec:
+        ledger["approvals"] = {**ledger["approvals"], "spec": now_spec}
+    checkpoints = ledger["extra"]["local"].get("checkpoints")
+    if isinstance(checkpoints, dict) and checkpoints.get("analyze") == old_spec:
+        ledger["extra"]["local"]["checkpoints"] = {**checkpoints, "analyze": now_spec}
+    ledger["fingerprintVersion"] = FINGERPRINT_VERSION
+    return ledger
 
 
 def save_ledger(root: Path, feature_dir: str, ledger: dict) -> None:
@@ -1561,6 +1616,11 @@ def selftest_cases(cases: dict) -> list[tuple[str, bool, str]]:
                 # Compared as JSON values: the committed half as written, the local half as is.
                 check(f"migrateV1: #{i + 1} committed", json.loads(committed_json(committed)), c["committed"])
                 check(f"migrateV1: #{i + 1} local", json.loads(json.dumps(local)), c["local"])
+        elif section == "rebaseline":
+            for c in items:
+                ledger = rebaseline(case_ledger(c["ledger"]), c["specMarkdown"])
+                got = {"fingerprints": ledger["fingerprints"], "verificationFingerprints": {k: v["fingerprint"] for k, v in ledger["verification"].items()}, "fingerprintVersion": ledger["fingerprintVersion"]}
+                check(f"rebaseline: {c['name']}", got, c["expected"])
         else:
             results.append((f"{section}: no adapter in xref.py", False, "unknown section"))
     return results

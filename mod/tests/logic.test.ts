@@ -256,10 +256,12 @@ describe('workflow', () => {
     const done = s.tasks.map(t => ({ ...t, done: true }))
     expect(phase({ ...s, tasks: done })).toBe('converge /speckit-converge')
     const converged = { ...emptyLedger(), checkpoints: { converge: s.tasksFingerprint } }
-    expect(phase({ ...s, tasks: done }, converged)).toBe('verify /xref check')
+    // Without the extension the model checks by itself: there is no command it could run.
+    expect(phase({ ...s, tasks: done }, converged)).toBe('verify -')
+    expect(nextStep({ ...s, tasks: done }, converged).prompt).toContain('/xref check is the person\'s command, not one you can run')
     expect(phase({ ...s, tasks: done, extensions: ['xref'] }, converged)).toBe('verify /speckit-xref-check')
     expect(phase({ ...s, tasks: done, extensions: ['xref'], commandStyle: 'commands' }, converged)).toBe('verify /speckit.xref.check')
-    expect(phase({ ...s, tasks: done, commands: [] })).toBe('verify /xref check')
+    expect(phase({ ...s, tasks: done, commands: [] })).toBe('verify -')
   })
 
   test('asks for the requirement map once when a requirement names no task, and only once', () => {

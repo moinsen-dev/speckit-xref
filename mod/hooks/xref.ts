@@ -123,6 +123,12 @@ export function classify(rel: string, snap: Snapshot, ledger: Ledger, active: st
     case 'planned': {
       const own = active ? snap.tasks.find(t => t.id === active && plans(t, rel)) : undefined
       if (own) return { verdict: 'in-scope', task: own.id }
+      // The phase being worked on comes first: a file it shares with a later phase's task stays with this phase
+      // (the mod's own rule; the shared classifyCore order is unchanged).
+      const inPhase = snap.phase ? snap.tasks.filter(t => t.phase === snap.phase && plans(t, rel)) : []
+      const open = inPhase.find(t => !t.done)
+      if (open) return { verdict: active && open.id !== active ? 'other-task' : 'in-scope', task: open.id }
+      if (inPhase.length) return { verdict: 'in-scope', task: active ?? inPhase[0]!.id }
       return { verdict: active ? 'other-task' : 'in-scope', task: core.task }
     }
     case 'linked':
@@ -372,6 +378,9 @@ export function forkPrompt(snap: Snapshot, ledger: Ledger, active: string | null
     `Requirements:\n${reqs}`,
     `Out of scope: ${spec?.outOfScope.join('; ') || '-'}`,
     `Current task: ${task ? `${task.id} ${task.text}` : '-'}`,
+    ...(ledger.decisions.some(d => d.answer)
+      ? ['Decisions the person already made (settled: never an intent change):', ...ledger.decisions.filter(d => d.answer).slice(-8).map(d => `- ${d.question} → ${d.answer}`)]
+      : []),
     ...(said.length ? ['What the user said in this session, oldest first:', ...said] : []),
     `Changed files: ${changed.join(', ') || '-'}`,
     `Diff (may be cut):\n${diff.slice(0, 6000) || '(no diff available)'}`,

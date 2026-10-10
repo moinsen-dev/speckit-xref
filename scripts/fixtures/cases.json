@@ -2782,5 +2782,38 @@
     ]
    }
   }
+ ],
+ "rebaseline": [
+  {
+   "name": "a pre-0.5.0 fingerprint moves to the wrapped text; a real change stays",
+   "specMarkdown": "# Feature Specification: Wrapped Lines\n\n**Input**: User description: \"Ideas for the day.\"\n\n### User Story 1 - Ideas now (Priority: P1)\n\n1. **Given** a free afternoon and\n   a budget, **When** the person asks, **Then** three ideas appear\n   with a reason each.\n2. **Given** rain, **When** asked, **Then** indoor ideas come first.\n   - a nested bullet is its own item\n\n## Requirements *(mandatory)*\n\n- **FR-001**: System MUST ask at most 3 questions: time available\n  (e.g. up to 30 minutes, 1–2 hours, a weekend), budget and place.\n- **FR-002**: System MUST work offline.\n| a table row | is no continuation |\n\n## Out of Scope\n\n- Booking and payment; the app\n  only inspires.\n\n## Assumptions\n\n- Platform: an Expo app instead of the Astro web app first named (per the\n  person's own input).\n",
+   "ledger": {
+    "fingerprints": {
+     "FR-001": "f08d3cdf8b079ac17ae06248d02d6a8a7ba87696304b3e35aea784ec70102f4f",
+     "FR-002": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "verification": {
+     "FR-001": {
+      "status": "passing",
+      "tests": [
+       "<suite>"
+      ],
+      "at": "",
+      "commit": "",
+      "fingerprint": "f08d3cdf8b079ac17ae06248d02d6a8a7ba87696304b3e35aea784ec70102f4f"
+     }
+    }
+   },
+   "expected": {
+    "fingerprints": {
+     "FR-001": "f4226a9835c1d57e3e95b88fe40c023b884c4490ed941287224e0aed96f17ec1",
+     "FR-002": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "verificationFingerprints": {
+     "FR-001": "f4226a9835c1d57e3e95b88fe40c023b884c4490ed941287224e0aed96f17ec1"
+    },
+    "fingerprintVersion": 2
+   }
+  }
  ]
 }

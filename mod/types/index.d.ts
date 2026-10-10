@@ -73,6 +73,8 @@ export type Snapshot = {
   checklists: { file: string; open: number }[]
   /** What a spec change sets off, from the constitution (flow-back by default). */
   persistence: 'flow-back' | 'flow-forward' | 'living'
+  /** Whether the git repository has a commit; null outside git. */
+  commits?: boolean | null
 }
 
 export type Unplanned = { file: string; at: string; task: string | null; acknowledged: boolean }
@@ -113,6 +115,8 @@ export type Ledger = {
   decisions: Decision[]
   /** Workflow checkpoints: `analyze` (spec fingerprint analyzed), `converge` (tasks fingerprint converged). */
   checkpoints: Record<string, string>
+  /** 2 since 0.5.0: requirement texts include their wrapped lines. An older ledger is re-baselined on load. */
+  fingerprintVersion: number
   /** Keys of either file the mod does not know, written back as they were. */
   extra: { committed: Record<string, unknown>; local: Record<string, unknown> }
 }

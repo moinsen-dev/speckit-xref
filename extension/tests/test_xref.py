@@ -20,6 +20,13 @@ HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "scripts" / "python" / "xref.py"
 DEMO = HERE.parent.parent / "examples" / "demo"
 FEATURE = "specs/001-magic-link-login"
+
+# The script's own functions, for tests that need a value it computes (a fingerprint).
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("xref_script", SCRIPT)
+X = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(X)
 LOCAL = ".specify/xref/local/001-magic-link-login.json"
 # What decides the feature or the CI behaviour; GitHub Actions sets CI and, on pull requests, GITHUB_HEAD_REF.
 SCRUB = ("CI", "GITHUB_HEAD_REF", "SPECIFY_FEATURE", "SPECIFY_FEATURE_DIRECTORY")
@@ -311,6 +318,16 @@ class XrefCli(unittest.TestCase):
         # Outside CI the spec written last stands in.
         self.assertEqual(self.xref("map")["feature"], "specs/002-export")
 
+    def test_a_ledger_from_before_0_5_is_rebaselined_not_flagged(self) -> None:
+        # The requirement wraps: the old parser saw its first line only and stored that fingerprint.
+        spec = self.root / FEATURE / "spec.md"
+        text = spec.read_text().replace("- **FR-002**: System MUST send a single-use link that expires after 15 minutes.", "- **FR-002**: System MUST send a single-use link that expires\n  after 15 minutes.")
+        spec.write_text(text)
+        old = X.fingerprint(X.parse_spec(text, wrap=False)["reqs"][1]["text"])
+        self.write(f"{FEATURE}/xref.json", json.dumps({"schema_version": 2, "feature": FEATURE, "map": {}, "links": {}, "accepted": [], "fingerprints": {"FR-002": old}}))
+        out = self.xref("check", "--no-write")
+        self.assertNotIn("re-verify", [f["kind"] for f in out["findings"]])
+
     def test_ci_takes_a_lone_feature(self) -> None:
         # A PR branch not named NNN-*, feature.json gitignored, one feature: that one, not an error.
         (self.root / ".specify" / "feature.json").unlink(missing_ok=True)
@@ -362,7 +379,7 @@ class XrefCli(unittest.TestCase):
         self.write(f"{FEATURE}/xref.json", json.dumps(v1))
         self.assertTrue(self.xref("migrate")["migrated"])
         committed = self.ledger()
-        self.assertEqual(committed, {"accepted": ["src/x.ts"], "feature": FEATURE, "fingerprints": {}, "links": {"src/ui/theme.ts": ["T004"]}, "map": {"FR-002": ["T004"]}, "schema_version": 2})
+        self.assertEqual(committed, {"accepted": ["src/x.ts"], "feature": FEATURE, "fingerprintVersion": 2, "fingerprints": {}, "links": {"src/ui/theme.ts": ["T004"]}, "map": {"FR-002": ["T004"]}, "schema_version": 2})
         local = self.local()
         self.assertEqual((local["touched"], local["unplanned"], local["intents"][0]["text"]), ({"T004": ["src/auth/token.ts"]}, [{"file": "src/y.ts", "at": "t", "task": None}], "setz T004 um"))
         before = (self.root / FEATURE / "xref.json").read_bytes()
