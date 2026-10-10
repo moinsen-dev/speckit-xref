@@ -478,8 +478,8 @@ MAX_UNPLANNED = 100
 
 
 def is_spec_artifact(rel: str) -> bool:
-    """Spec Kit's own files and the agent's configuration are never drift; CI workflows are code."""
-    return (bool(re.match(r"^(specs|\.specify|\.claude|\.github)/", rel)) and not rel.startswith(".github/workflows/")) or rel in ("CLAUDE.md", "AGENTS.md")
+    """Spec Kit's own files, the design system and the agent's configuration are never drift; CI workflows are code."""
+    return (bool(re.match(r"^(specs|\.specify|\.claude|\.github)/", rel)) and not rel.startswith(".github/workflows/")) or rel in ("CLAUDE.md", "AGENTS.md", "DESIGN.md")
 
 
 def path_matches(rel: str, planned: str) -> bool:

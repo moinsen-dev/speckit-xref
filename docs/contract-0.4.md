@@ -80,7 +80,7 @@ Input: project-relative path, snapshot (tasks with `id`, `done`, `paths`, `reqs`
 
 | # | Verdict | When | Task |
 |---|---|---|---|
-| 1 | `spec` | `isSpecArtifact`: under `specs/`, `.specify/`, `.claude/`, `.github/` except `.github/workflows/`, or `CLAUDE.md` / `AGENTS.md` | null |
+| 1 | `spec` | `isSpecArtifact`: under `specs/`, `.specify/`, `.claude/`, `.github/` except `.github/workflows/`, or `CLAUDE.md` / `AGENTS.md` / `DESIGN.md` (the design system, 0.5.1) | null |
 | 2 | `exempt` | matches an exempt pattern | null |
 | 3 | `task-linked` | `links[path]` contains a task id | that task |
 | 4 | `planned` | a task plans it (`plans`: a file path it names always; a folder only while the task is open) | first open match, else first match |

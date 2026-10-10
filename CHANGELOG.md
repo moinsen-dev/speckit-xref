@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.1 — 2026-10-10
+
+A feature people look at now gets its look before its tasks, and you see it before anything is built. Mod 0.5.1, extension 0.4.0, preset 0.2.0.
+
+### Design
+
+- **Design step** (option `design`, on): after the plan of a feature with a user interface (plan.md's **Project Type**: mobile, web app, desktop …, else its **Target Platform**), Claude writes `DESIGN.md` at the root, the design system in [Google Stitch's format](https://github.com/google-labs-code/design.md) (colours, type, spacing, radii as YAML tokens, the reasons in prose), from the product brief's design direction. Where the app already has a look, it writes that down instead of redesigning it; an existing DESIGN.md keeps its tokens. Then one static HTML mock per screen in `specs/<feature>/design/`, and `screens.md`, which traces each screen to the user stories, scenarios and FRs it serves.
+- **Design review** (new default `review: spec+design`): the autopilot stops at the drawn design. **Open the mocks** (pane, dialog, `/xref web`) shows them on the dashboard; **Approve design** goes on, and a design changed after your approval asks again. Running `/speckit-tasks` yourself approves it too. A feature that changes no screen goes on without a stop. `review` now takes `spec+design`, `spec`, `spec+plan`, `spec+plan+design` or `none`; set `spec` for the 0.5.0 behaviour.
+- The tasks and implement steps build to it: the tokens go into the app's theme, each screen into the story it serves. The preset's `/speckit-tasks` does the same for any agent.
+- The dashboard has a **Design** section: DESIGN.md's colours and fonts, each screen with what it serves and its mock in a sandboxed frame. The pane shows a Design row with a **Mocks** button; the phase strip a `design` column.
+- Extension command `speckit.xref.design` with an optional `after_plan` hook.
+- `DESIGN.md` is a spec artifact (contract §3): editing it is never drift.
+
+### Fixes
+
+- A review sits in the strip's column of what it reviews (`▶plan`, `▶design`, `▶idea`), not under `spec`.
+- The stall check counts a written idea brief, product brief or design as progress.
+- `/speckit-plan` typed at a review of the idea no longer records an approval of it; Build is the way.
+
 ## 0.5.0 — 2026-10-10
 
 A new project now starts at the idea, and everything the run knows is on one page. Mod 0.5.0, extension 0.3.0. Design (a DESIGN.md and screen mocks after the plan) follows in 0.5.1.

@@ -79,9 +79,19 @@ In an empty folder the autopilot does not go straight to a spec:
 
 Options `validate` and `shape` (both `on`) switch the two off; a project that already has a feature skips them.
 
+## A feature's look: Design
+
+A feature with a user interface (plan.md's Project Type says mobile, web app, desktop …) gets its look after the plan and before the tasks:
+
+1. **Design.** Claude writes `DESIGN.md` at the root, the design system in [Google Stitch's format](https://github.com/google-labs-code/design.md) (colours, type, spacing, radii as YAML tokens, the reasons in prose), from the product brief's design direction. Where the app already has a look, it writes that down instead of redesigning it; an existing DESIGN.md is kept. Then one static HTML mock per screen in `specs/<feature>/design/`, and `screens.md`, which says which screen serves which user story and FR.
+2. **Your look.** The autopilot stops: open the mocks (**Open the mocks** in the pane or the dialog, or `/xref web`), then **Approve design**, or say what to change. A design changed after your approval asks again. Running `/speckit-tasks` yourself approves it too.
+3. The tasks then build to it: the tokens go into the app's theme, each screen into the story it serves.
+
+A feature that adds no screen writes "No screen changes" and goes on without a stop. Option `design` (`on`) switches the step off; `review: spec` keeps the step but drops the stop.
+
 ## The dashboard
 
-`/xref web` opens `.specify/xref/local/dashboard.html` in the browser; the autopilot rewrites it after every step and the page reloads itself. It shows what the pane has no room for: your words and the constitution, every tasks.md phase with its progress, a traceability matrix (requirement → tasks → files → tests → rung), drift, decisions, the run log, and spec, plan, tasks and the other Spec Kit documents rendered in place, with every FR and task id linked. It is local and git-ignored: it holds your own words.
+`/xref web` opens `.specify/xref/local/dashboard.html` in the browser; the autopilot rewrites it after every step and the page reloads itself. It shows what the pane has no room for: your words and the constitution, every tasks.md phase with its progress, a traceability matrix (requirement → tasks → files → tests → rung), drift, decisions, the run log, the design (DESIGN.md's colours and fonts, each screen with its mock in place), and spec, plan, tasks and the other Spec Kit documents rendered in place, with every FR and task id linked. It is local and git-ignored: it holds your own words.
 
 ## Before Spec Kit is there
 
@@ -127,7 +137,7 @@ Pressing one of these counts as your go. Without a press or your request nothing
 
 The terminal seats a pane nobody asked for from 144 columns (110 once you have opened it); narrower, it waits and the Pane button opens it.
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec` | `spec+plan` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`).
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec+design` | `spec` | `spec+plan` | `spec+plan+design` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`), `design` (`on` | `off`).
 
 The active feature is found as Spec Kit finds it, then by the git branch (`001-…`), else the spec written last.
 

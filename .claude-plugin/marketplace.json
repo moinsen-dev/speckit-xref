@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "speckit-xref: keeps a GitHub Spec Kit feature and its code tied together inside Claude Code.",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "plugins": [
     {
       "name": "speckit-xref",
       "source": "./mod",
       "description": "The active Spec Kit spec in the system prompt, every edit booked against a task (Bash writes too), a proof ladder from specified to passing, and an autopilot that runs Spec Kit's whole loop, gated by your spec review and the tests. Band and pane included.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "category": "development",
       "tags": [
         "speckit",

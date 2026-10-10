@@ -66,6 +66,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
    - **Optional**: data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
    - **IF EXISTS**: Load `/memory/constitution.md` for project principles and governance constraints
+   - **IF EXISTS**: `design/screens.md` in FEATURE_DIR and `DESIGN.md` at the repo root (the screens this feature adds or changes, their mocks, the design system)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
 
 3. **Execute task generation workflow**:
@@ -74,6 +75,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map interface contracts to user stories
    - If research.md exists: Extract decisions for setup tasks
+   - If design/screens.md exists: build each screen in the user story it serves, to its mock (name the mock's path in the task); if the app has no theme yet, one Foundational task puts DESIGN.md's tokens into it
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story

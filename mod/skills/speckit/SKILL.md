@@ -20,7 +20,7 @@ Spell commands the way the status report does: `/speckit-plan` in the skills lay
 
 ## Autopilot: maximum autonomy
 
-The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`; in a `-p` run, `SPECKIT_XREF_AUTOPILOT=on`). From then on the mod hands the next Spec Kit step to you after every turn: for a new project validate (the idea, researched) and shape (the first version, settled with the person), then constitution, specify, clarify, the person's review of the spec, plan, tasks, map, analyze and its fixes, implement one phase at a time, repair when the tests fail, converge, verify. While it runs:
+The person can let the work run: `/xref auto on [steps]` (or the plugin option `autopilot: on`; in a `-p` run, `SPECKIT_XREF_AUTOPILOT=on`). From then on the mod hands the next Spec Kit step to you after every turn: for a new project validate (the idea, researched) and shape (the first version, settled with the person), then constitution, specify, clarify, the person's review of the spec, plan, design (for a feature with a user interface) and the person's look at it, tasks, map, analyze and its fixes, implement one phase at a time, repair when the tests fail, converge, verify. While it runs:
 
 - **Never ask whether to continue**, never end with "Next is X, shall I?": end your turn and the autopilot moves on.
 - **Decide what the person left open** from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write (spec, plan, constitution).
@@ -76,6 +76,7 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 | `clarify` | `/speckit-clarify` | Settles `[NEEDS CLARIFICATION]` markers before planning. |
 | `plan` | `/speckit-plan <technical choices>` | Stack, storage and structure, as the user decides them. |
 | `review` | the person | The spec gate: the person compares the spec with their words and approves it (pane, `/xref approve`). Never approve it yourself. |
+| `design` | skill `speckit-xref:design` | A feature with a user interface (plan.md's Project Type), before its tasks: `DESIGN.md` at the root (the design system, Google Stitch's format) and one static HTML mock per screen in `specs/<feature>/design/`, traced in `screens.md`. Do not ask the person here; they approve the look at the design review (never approve it yourself). The tasks then build to it. |
 | `tasks` | `/speckit-tasks` | Each task names its files in backticks and the requirements it serves as `(FR-###)` (the speckit-xref preset makes `/speckit-tasks` do this). The mod books edits by those paths, and a task without paths cannot be checked. |
 | `map` | `/speckit-xref-map` or `/xref map` | Records which task serves which requirement, once. Spec Kit does not keep this. |
 | `analyze` | `/speckit-analyze` | Before the first task and after every spec change: spec, plan and tasks checked against each other. |

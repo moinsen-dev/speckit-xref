@@ -57,9 +57,9 @@ export function relPath(file: string, root: string): string {
 
 const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-/** Spec Kit's own files and the agent's configuration are never drift; CI workflows are code. */
+/** Spec Kit's own files, the design system and the agent's configuration are never drift; CI workflows are code. */
 export const isSpecArtifact = (rel: string) =>
-  (/^(specs|\.specify|\.claude|\.github)\//.test(rel) && !/^\.github\/workflows\//.test(rel)) || /^(CLAUDE|AGENTS)\.md$/.test(rel)
+  (/^(specs|\.specify|\.claude|\.github)\//.test(rel) && !/^\.github\/workflows\//.test(rel)) || /^(CLAUDE|AGENTS|DESIGN)\.md$/.test(rel)
 
 export function pathMatches(rel: string, planned: string): boolean {
   const p = planned.replace(/^\.\//, '')

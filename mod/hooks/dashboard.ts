@@ -1,7 +1,8 @@
 // The dashboard: one self-contained HTML page with more than the pane can hold. Pure: register.tsx writes it to
 // .specify/xref/local/dashboard.html after every autopilot step; the person opens it via file://.
 
-import type { Autopilot, Ledger, RunEntry, Snapshot, Task } from '../types'
+import type { Autopilot, Ledger, RunEntry, Screen, Snapshot, Task } from '../types'
+import type { designTokens } from './design'
 import { LADDER, owners } from './proof'
 import type { Rung } from './proof'
 import { isTestFile, localId } from './rules'
@@ -23,6 +24,8 @@ export type DashboardInput = {
   autopilot: Autopilot
   runLog: RunEntry[]
   docs: DashboardDoc[]
+  /** The feature's screens and DESIGN.md's tokens, once the design step has drawn them. */
+  design?: { dir: string; screens: Screen[]; tokens: ReturnType<typeof designTokens>; approved: boolean } | null
   refreshSeconds: number
 }
 
@@ -299,6 +302,32 @@ function workflow(input: DashboardInput): string {
   return section('workflow', 'Workflow', `<p class="strip">${strip}</p>\n<p><span class="label">Next step</span> ${text(input.step.line)}</p>\n${waiting}`)
 }
 
+/** The look: DESIGN.md's colours and fonts, and each screen with its mock in place (a sandboxed frame, no scripts). */
+function design(input: DashboardInput): string {
+  const d = input.design
+  if (!d) return ''
+  const { colors, fonts, name } = d.tokens
+  const swatches = colors.length
+    ? `<div class="swatches">${colors.map(([n, v]) => `<span class="swatch"><span class="chip" style="background:${esc(v)}"></span><code>${esc(n)}</code> <span class="muted">${esc(v)}</span></span>`).join('')}</div>`
+    : '<p class="muted">DESIGN.md names no colours yet.</p>'
+  const type = fonts.length ? `<p><span class="label">Type</span>${fonts.map(f => esc(f)).join(' · ')}</p>` : ''
+  const cards = d.screens.map(sc => {
+    const rel = sc.mock ? `${d.dir}/${sc.mock}` : null
+    const url = rel ? fileUrl(input.root, rel) : null
+    const view = !url
+      ? '<p class="muted">No mock.</p>'
+      : /\.html?$/i.test(sc.mock!)
+        ? `<div class="frame"><iframe src="${esc(url)}" title="${esc(sc.name)}" loading="lazy" sandbox></iframe></div>`
+        : `<img class="mock" src="${esc(url)}" alt="${esc(sc.name)}" loading="lazy">`
+    return (
+      `<figure class="screen"><figcaption><strong>${esc(sc.name)}</strong>${sc.serves.length ? ` <span class="ids">${text(sc.serves.join(' '))}</span>` : ''}` +
+      `${sc.notes ? `<br><span class="muted">${esc(sc.notes)}</span>` : ''}</figcaption>${view}${url ? `<p class="open-file"><a href="${esc(url)}">Open the mock</a></p>` : ''}</figure>`
+    )
+  })
+  const state = `<p class="state"><span class="pill${d.approved ? ' drift-green' : ' wait'}">${d.approved ? '✓ approved by you' : '⏸ not approved yet'}</span>${name ? ` <span class="pill quiet">${esc(name)}</span>` : ''}</p>`
+  return section('design', 'Design', `${state}\n${swatches}\n${type}\n${d.screens.length ? `<div class="screens">${cards.join('')}</div>` : '<p class="muted">No screen changes in this feature.</p>'}`)
+}
+
 function phases(input: DashboardInput): string {
   const { snap, autopilot, step } = input
   const { phases: list, current } = taskPhases(snap.tasks)
@@ -482,7 +511,7 @@ const CSS = `
 --r-specified:#a0a0a8;--r-planned:#8fb0ff;--r-implemented:#c4a2ff;--r-tested:#5fd4dc;--r-passing:#6fd08f}}
 *{box-sizing:border-box}
 body{margin:0 auto;max-width:76rem;padding:0 16px 2rem;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:break-word}
-h1{font-size:1.6rem;margin:.2rem 0}h2{font-size:1.2rem;margin:2rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--line)}h3{font-size:1rem;margin:1.2rem 0 .4rem}
+section,[id^="req-"],[id^="task-"]{scroll-margin-top:3rem}h1{font-size:1.6rem;margin:.2rem 0}h2{font-size:1.2rem;margin:2rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--line)}h3{font-size:1rem;margin:1.2rem 0 .4rem}
 a{color:var(--accent)}a.done{color:var(--ok)}code,pre,.strip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
 code{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:0 .25em}pre{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:.75em}pre code{border:0;padding:0}
 header{padding:1.2rem 0 .6rem}.kicker{margin:0;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}.meta{margin:.2rem 0;color:var(--muted)}
@@ -504,12 +533,16 @@ tr.now td{background:var(--hl)}tr.done td{color:var(--muted)}tr.gone td{color:va
 .legend{display:flex;flex-wrap:wrap;gap:.35rem}.findings{padding-left:1.2em}
 details.doc{border:1px solid var(--line);border-radius:8px;background:var(--card);margin:.6rem 0}details.doc>summary{cursor:pointer;padding:.6em .9em}details.doc>.md,details.doc>.open-file{padding:0 .9em}.open-file{margin:0}
 .md h1{font-size:1.3rem}.md h2{font-size:1.1rem;border:0;margin-top:1.2rem}.md blockquote{border-left:3px solid var(--line);margin:.5em 0;padding:0 1em;color:var(--muted)}.md li.task{list-style:none}.md li.task input{margin:0 .3em 0 -1.2em}
+.swatches{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:.4rem 0}.swatch{display:inline-flex;align-items:center;gap:.35em}.chip{display:inline-block;width:1.4em;height:1.4em;border-radius:4px;border:1px solid var(--line)}
+.screens{display:flex;flex-wrap:wrap;gap:1rem}.screen{margin:0;width:211px}.screen figcaption{font-size:.9em;margin-bottom:.3rem;min-height:2.6em}
+.frame{width:197px;height:424px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#fff}.frame iframe{width:390px;height:844px;border:0;transform:scale(.5);transform-origin:0 0}img.mock{max-width:100%;border:1px solid var(--line);border-radius:10px}
 footer{margin-top:2.5rem;padding-top:.8rem;border-top:1px solid var(--line);color:var(--muted);font-size:.9em}
 `
 
 const NAV = [
   ['goal', 'Goal'],
   ['workflow', 'Workflow'],
+  ['design', 'Design'],
   ['phases', 'Phases'],
   ['matrix', 'Traceability'],
   ['tasks', 'Tasks'],
@@ -535,10 +568,11 @@ export function renderDashboard(input: DashboardInput): string {
     '</head>',
     '<body>',
     header(input),
-    `<nav>${NAV.map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
+    `<nav>${NAV.filter(([id]) => id !== 'design' || input.design).map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
     '<main>',
     goal(input),
     workflow(input),
+    design(input),
     phases(input),
     matrix(input),
     tasks(input),

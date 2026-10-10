@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: xref
   name: "Spec X-Ref"
-  version: "0.3.0"
+  version: "0.4.0"
   description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, a coverage ladder proven by tests, intent"
   author: moinsen-dev
   repository: https://github.com/moinsen-dev/speckit-xref
@@ -46,11 +46,19 @@ provides:
     - name: speckit.xref.shape
       file: commands/speckit.xref.shape.md
       description: "Settle the first version with the person (scope, platforms, language, design, data) before the spec"
+    - name: speckit.xref.design
+      file: commands/speckit.xref.design.md
+      description: "Settle a feature's look after the plan: DESIGN.md (Google Stitch's format) and one HTML mock per screen, traced to its user stories"
     - name: speckit.xref.revise
       file: commands/speckit.xref.revise.md
       description: "Fold a change request into the spec: new requirement ids, SUPERSEDED and RETIRED markers, appended tasks, revisions.md"
 
 hooks:
+  after_plan:
+    command: speckit.xref.design
+    optional: true
+    prompt: "Draw the look (DESIGN.md and a mock per screen) before the tasks?"
+    description: "A feature with a user interface gets its design system and screen mocks"
   after_tasks:
     command: speckit.xref.map
     optional: true

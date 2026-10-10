@@ -80,6 +80,32 @@ export type Snapshot = {
   ideaDecision?: { decision: 'build' | 'drop'; fingerprint: string; at: string } | null
   /** Whether Shape wrote `.specify/memory/product-brief.md`. */
   productBrief?: boolean
+  /** Whether the feature has a user interface, from plan.md's Project Type (else its Target Platform). */
+  ui?: boolean
+  /** The feature's design: DESIGN.md at the root and the screens of `<feature>/design/screens.md`. */
+  design?: Design | null
+}
+
+/** A screen of a feature, as `<feature>/design/screens.md` lists it. */
+export type Screen = {
+  name: string
+  /** The user stories, scenarios and requirements it serves (`US1`, `US1-AS2`, `FR-003`). */
+  serves: string[]
+  /** Its mock, relative to the design folder (`moment.html`). */
+  mock: string | null
+  notes: string
+}
+
+/** What the design step wrote for a feature. */
+export type Design = {
+  /** Whether DESIGN.md (the design system) is at the project root. */
+  system: boolean
+  /** The screens the feature adds or changes; null while screens.md is missing, empty for "No screen changes". */
+  screens: Screen[] | null
+  /** What the step did to DESIGN.md, as screens.md's `**Design system**:` line says. */
+  change: 'created' | 'extended' | 'unchanged' | null
+  /** DESIGN.md and screens.md together: what the person approves at the design review. */
+  fingerprint: string
 }
 
 /** What Validate found out about an idea before it became a spec. */

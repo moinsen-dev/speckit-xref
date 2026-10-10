@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "xref"
   name: "Spec X-Ref"
-  version: "0.1.0"
+  version: "0.2.0"
   description: "Tasks name their files in backticks and their requirements as (FR-###); implement marks code and tests with @spec anchors and checks a task off only when its tests pass"
   author: "moinsen-dev"
   repository: "https://github.com/moinsen-dev/speckit-xref"

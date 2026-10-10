@@ -314,6 +314,69 @@
    }
   },
   {
+   "name": "DESIGN.md at the root is the design system, a spec artifact",
+   "rel": "DESIGN.md",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T001",
+      "done": true,
+      "paths": [
+       "src/auth/",
+       "tests/auth/"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T002",
+      "done": true,
+      "paths": [
+       "src/config/mailer.ts"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T004",
+      "done": false,
+      "paths": [
+       "src/auth/token.ts"
+      ],
+      "reqs": [
+       "FR-002"
+      ]
+     },
+     {
+      "id": "T006",
+      "done": false,
+      "paths": [
+       "src/auth/callback.ts"
+      ],
+      "reqs": [
+       "FR-003"
+      ]
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "spec",
+    "task": null
+   }
+  },
+  {
    "name": "workflow is not a spec artifact but unclear",
    "rel": ".github/workflows/ci.yml",
    "snap": {

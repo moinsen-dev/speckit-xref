@@ -1,6 +1,7 @@
 // Where a project stands in Spec Kit's workflow, the step that comes next, and the autopilot's rules. Pure: register.tsx hands in the snapshot.
 
 import type { Autopilot, IdeaBrief, Ledger, Snapshot, Task } from '../types'
+import { designDue, designNote, designPrompt, designToReview } from './design'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
@@ -14,6 +15,7 @@ export type Phase =
   | 'clarify'
   | 'review'
   | 'plan'
+  | 'design'
   | 'tasks'
   | 'revise'
   | 'map'
@@ -42,12 +44,19 @@ export type Step = {
   resolves?: string
 }
 
+/** Where the autopilot stops for the person: the spec always (unless none), the plan and the design when named. */
+export type Review = 'spec' | 'spec+plan' | 'spec+design' | 'spec+plan+design' | 'none'
+export const REVIEWS: Review[] = ['spec+design', 'spec', 'spec+plan', 'spec+plan+design', 'none']
+export const gatesOf = (review: Review) => ({ spec: review !== 'none', plan: review.includes('plan'), design: review.includes('design') })
+
 /** What the workflow reads beyond the snapshot: the review option, the persistence model, the last test run. */
 export type Flow = {
-  review: 'spec' | 'spec+plan' | 'none'
+  review: Review
   /** Validate and Shape for a new project's first feature (both on unless switched off). */
   validate?: boolean
   shape?: boolean
+  /** The design step for a feature with a user interface (on unless switched off). */
+  design?: boolean
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -223,20 +232,37 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   const specFp = specFingerprint(spec)
   // The one review: where the idea becomes the contract. A project planned before 0.4 counts as reviewed until its spec changes.
   const specApproved = ledger.approvals.spec ? ledger.approvals.spec === specFp : snap.hasPlan
+  const gates = gatesOf(flow.review)
   if (!snap.hasPlan && unclear.length) return step('clarify', speckitCommand(snap, 'clarify'), `${unclear.join(', ')} still marked NEEDS CLARIFICATION; settle them before planning.`)
-  if (flow.review !== 'none' && !specApproved) {
+  if (gates.spec && !specApproved) {
     return step('review', null, `The spec of ${snap.featureDir} is written: ${spec.reqs.filter(r => r.kind === 'FR').length} requirements, ${spec.outOfScope.length} out of scope, ${spec.assumptions.length} assumptions.`,
       'Review the spec against your words, then press Approve spec in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'spec', value: specFp } })
   }
   if (!snap.hasPlan) return step('plan', speckitCommand(snap, 'plan'), 'The spec is written; plan.md is missing.')
-  if (flow.review === 'spec+plan' && snap.planFingerprint) {
+  if (gates.plan && snap.planFingerprint) {
     const planApproved = ledger.approvals.plan ? ledger.approvals.plan === snap.planFingerprint : snap.tasks.length > 0
     if (!planApproved) {
       return step('review', null, `The plan of ${snap.featureDir} is written.`, 'Review plan.md, then press Approve plan in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'plan', value: snap.planFingerprint } })
     }
   }
+  // A feature people look at gets its look before its tasks: a design system and a mock per screen, then the person's eye.
+  if (flow.design !== false && snap.ui && snap.tasks.length === 0) {
+    if (designDue(snap.design)) {
+      return step('design', null, `${snap.featureDir} has a user interface: settle its look before the tasks (DESIGN.md and a mock per screen).`, null, { prompt: designPrompt(snap) })
+    }
+    const design = snap.design!
+    if (gates.design && designToReview(design) && ledger.approvals.design !== design.fingerprint) {
+      const screens = design.screens?.length ?? 0
+      return step('review', null, `The design of ${snap.featureDir} is drafted: ${screens} screen${screens === 1 ? '' : 's'}${design.change === 'created' ? ', a new DESIGN.md' : design.change === 'extended' ? ', DESIGN.md extended' : ''}.`,
+        'Look at DESIGN.md and the mocks (/xref web or Mocks in the pane opens them in the browser), then press Approve design in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'design', value: design.fingerprint } })
+    }
+  }
+  const drawn = snap.featureDir && snap.design?.screens?.length ? designNote(snap.featureDir) : null
   if (unclear.length) notes.push(`${unclear.join(', ')} still marked NEEDS CLARIFICATION (${speckitCommand(snap, 'clarify')}).`)
-  if (snap.tasks.length === 0) return step('tasks', speckitCommand(snap, 'tasks'), 'The plan is written; tasks.md is missing.')
+  if (snap.tasks.length === 0) {
+    if (drawn) notes.push(drawn)
+    return step('tasks', speckitCommand(snap, 'tasks'), 'The plan is written; tasks.md is missing.')
+  }
 
   // A request beyond the spec reaches the spec before more code does; a contradiction is always the person's.
   const changes = ledger.semantic?.changes ?? []
@@ -289,6 +315,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     // One phase per step (Spec Kit's own advice for larger features): the budget and the stall check then measure real work.
     const phase = snap.phase
     const command = speckitCommand(snap, 'implement')
+    if (drawn) notes.push(drawn)
     const ids = (phase ? open.filter(t => t.phase === phase) : open).map(t => t.id)
     return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, {
       prompt: phase
@@ -420,6 +447,9 @@ export function progressKey(snap: Snapshot, ledger: Ledger): string {
     snap.spec?.reqs.length ?? 0,
     snap.spec?.reqs.filter(r => r.needsClarification).length ?? 0,
     snap.hasPlan,
+    !!snap.ideaBrief,
+    !!snap.productBrief,
+    snap.design ? `${snap.design.system}:${snap.design.screens?.length ?? '-'}` : '-',
     `${report.done}/${report.tasks}`,
     snap.tasksFingerprint ?? '-',
     mapped,
@@ -459,17 +489,23 @@ export const QUESTION_LABELS = ['needs a decision only the person can make', 'as
 export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): string {
   // The idea column shows only for a project that started at an idea (Validate, Shape).
   const ideas = !!snap.ideaBrief || !!snap.productBrief || step.phase === 'validate' || step.phase === 'shape'
+  // The design column shows for a feature with screens, and while its design is drawn or reviewed.
+  const drawn = !!snap.design?.screens?.length || step.phase === 'design' || step.approve?.key === 'design'
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
     ...(ideas ? [['idea', ['validate', 'shape']] as [string, Phase[]]] : []),
     ['const', ['constitution']],
     ['spec', ['specify', 'clarify', 'review', 'revise']],
     ['plan', ['plan']],
+    ...(drawn ? [['design', ['design']] as [string, Phase[]]] : []),
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge']],
     ['verify', ['verify']],
   ]
-  const at = order.findIndex(([, phases]) => phases.includes(step.phase))
+  // A review sits in the column of what it reviews.
+  const reviewed: Record<string, Phase> = { idea: 'validate', plan: 'plan', design: 'design' }
+  const phase = step.phase === 'review' && step.approve ? (reviewed[step.approve.key] ?? 'review') : step.phase
+  const at = order.findIndex(([, phases]) => phases.includes(phase))
   const done = snap.tasks.filter(t => t.done).length
   return order
     .map(([label], i) => {

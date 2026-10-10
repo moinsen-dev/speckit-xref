@@ -4,14 +4,16 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
+import { DESIGN_FILE, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
 import { LADDER, isActive, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
 import type { Rung } from './proof'
 import { featureFromBranch, fingerprint, hasRealTests, isTestFile, matchesAny, rulesFrom, specFingerprint } from './rules'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
-import type { Flow, Step } from './workflow'
+import type { Flow, Review, Step } from './workflow'
 import {
   AUTONOMY_RULES,
+  REVIEWS,
   QUESTION_LABELS,
   autopilotPrompt,
   endsWithQuestion,
@@ -82,6 +84,7 @@ type Options = {
   pane: string
   validate: string
   shape: string
+  design: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -132,7 +135,7 @@ let mapModel = 'haiku'
 let defaultMax = 25
 let testCommandOption = ''
 let junitPath = ''
-let review: Flow['review'] = 'spec'
+let review: Review = 'spec+design'
 // Read by the strict guard's fallback, which has to be a top-level function.
 let strict = false
 let parallel = false
@@ -142,6 +145,7 @@ let paneMode: 'auto' | 'always' | 'off' = 'auto'
 let driftCheckOn = true
 let validateOn = true
 let shapeOn = true
+let designOn = true
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -266,7 +270,7 @@ async function resolveFeature($: $, features?: { dir: string; time: number }[], 
 
 async function currentSignature($: $, featureDir: string | null): Promise<string> {
   const files = ['.specify/feature.json', '.specify/memory/constitution.md', '.specify/integration.json', '.specify/extensions.yml']
-  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json')
+  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json', DESIGN_FILE, screensPath(featureDir))
   const times = await Promise.all(files.map(f => mtime($, f)))
   return [featureDir ?? '-', ...times].join('|')
 }
@@ -276,7 +280,7 @@ async function scan($: $): Promise<void> {
   const features = await listFeatures($)
   const branch = await currentBranch($)
   const featureDir = await resolveFeature($, features, branch)
-  const [specMd, tasksMd, planMd, constitutionMd, integrationJson, initOptions, ignoreText] = await Promise.all([
+  const [specMd, tasksMd, planMd, constitutionMd, integrationJson, initOptions, ignoreText, designMd, screensMd] = await Promise.all([
     featureDir ? readText($, `${featureDir}/spec.md`) : null,
     featureDir ? readText($, `${featureDir}/tasks.md`) : null,
     featureDir ? readText($, `${featureDir}/plan.md`) : null,
@@ -284,6 +288,8 @@ async function scan($: $): Promise<void> {
     readText($, '.specify/integration.json'),
     readText($, '.specify/init-options.json'),
     readText($, '.xrefignore'),
+    readText($, DESIGN_FILE),
+    featureDir ? readText($, screensPath(featureDir)) : null,
   ])
   let extensions: string[] = []
   try {
@@ -323,6 +329,8 @@ async function scan($: $): Promise<void> {
     persistence: persistenceModel(constitutionMd),
     commits: await hasCommits($),
     ...(await ideaState($)),
+    ui: uiFromPlan(planMd),
+    design: featureDir ? designState(designMd, screensMd) : null,
   }
   if (!previous || previous.featureDir !== featureDir) {
     const ledger = featureDir ? rebaseline(ledgerFromParts(await readText($, `${featureDir}/xref.json`), await readText($, localPath(featureDir))), specMd) : emptyLedger()
@@ -445,6 +453,8 @@ async function dashboardDocs($: $, featureDir: string): Promise<DashboardDoc[]> 
       // The feature has none.
     }
   }
+  await add(screensPath(featureDir), 'Screens')
+  await add(DESIGN_FILE, 'Design system')
   await add('.specify/memory/constitution.md', 'Constitution')
   await add(IDEA_BRIEF, 'Idea brief')
   await add(PRODUCT_BRIEF, 'Product brief')
@@ -474,6 +484,9 @@ async function writeDashboard($: $): Promise<string | null> {
     autopilot: ap,
     runLog: await runLog($),
     docs: await dashboardDocs($, snap.featureDir),
+    design: snap.design?.screens
+      ? { dir: designDir(snap.featureDir), screens: snap.design.screens, tokens: designTokens((await readText($, DESIGN_FILE)) ?? ''), approved: ledger.approvals.design === snap.design.fingerprint }
+      : null,
     refreshSeconds: 5,
   })
   try {
@@ -483,6 +496,16 @@ async function writeDashboard($: $): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/** Writes the dashboard and opens it in the default browser; where nothing opens it, the path is the way in. */
+async function openDashboard($: $): Promise<string> {
+  await scan($)
+  const path = await writeDashboard($)
+  if (!path) return 'No Spec Kit feature yet: the dashboard starts with the first spec.'
+  const opener = (await $.process.run(['uname'], { cwd: root, timeoutMs: 3000 }).catch(() => null))?.stdout.trim() === 'Darwin' ? 'open' : 'xdg-open'
+  const opened = await $.process.run([opener, path], { cwd: root, timeoutMs: 5000 }).then(r => r.exitCode === 0).catch(() => false)
+  return `${opened ? 'Dashboard opened' : 'Dashboard written'}: file://${path}\nIt reloads itself and is rewritten after every step. Local only: it holds your own words.`
 }
 
 /** Whether the repository has a commit: true, false (a repository without one), null (no git here). */
@@ -812,7 +835,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
@@ -878,11 +901,11 @@ async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
   void $.prompt.submit({ text: SETUP_ASKS[kind], asUser: true })
 }
 
-/** Approvals only the person gives: the spec, the plan, open checklists. The autopilot records checkpoints, never these. */
-const APPROVALS = new Set(['idea', 'spec', 'plan', 'checklists'])
+/** Approvals only the person gives: the idea, the spec, the plan, the design, open checklists. The autopilot records checkpoints, never these. */
+const APPROVALS = new Set(['idea', 'spec', 'plan', 'design', 'checklists'])
 const CHECKPOINTS = new Set(['analyze', 'converge'])
 
-/** The person approves what the autopilot waits on (spec, plan, open checklists); the run goes on. */
+/** The person approves what the autopilot waits on (spec, plan, design, open checklists); the run goes on. */
 async function approve($: $): Promise<string> {
   const snap = await read($, snapshotA)
   if (!snap) return 'Nothing to approve.'
@@ -907,10 +930,12 @@ async function approve($: $): Promise<string> {
 }
 
 /**
- * The person's own command for the next phase is their approval of the review that stands before it: running
- * `/speckit-plan` approves the spec, `/speckit-tasks` the plan. The autopilot never runs past a review, so it never
- * approves this way; a plugin's or the model's call is no command of the person's.
+ * The person's own command for a later phase is their approval of the review that stands before it: running
+ * `/speckit-plan` approves the spec, `/speckit-tasks` the plan or the design. The autopilot never runs past a review,
+ * so it never approves this way; a plugin's or the model's call is no command of the person's.
  */
+const COMMAND_ORDER: Record<string, number> = { plan: 1, tasks: 2, implement: 3 }
+const GATE_ORDER: Record<string, number> = { spec: 1, plan: 2, design: 2, checklists: 3 }
 async function approveByCommand($: $, text: string): Promise<void> {
   const m = /(?:^|\s)\/?speckit[-.](plan|tasks|implement)\b/.exec(text)
   if (!m) return
@@ -919,7 +944,7 @@ async function approveByCommand($: $, text: string): Promise<void> {
   const ap = await read($, autopilotA)
   const step = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
   const key = step.phase === 'review' ? step.approve?.key : null
-  if (!key || !step.approve || (key === 'plan' && m[1] === 'plan')) return
+  if (!key || !step.approve || !GATE_ORDER[key] || COMMAND_ORDER[m[1]!]! < GATE_ORDER[key]!) return
   const { value } = step.approve
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
@@ -965,13 +990,20 @@ async function askApproval($: $, step: Step): Promise<void> {
     else if (answer.trim()) void $.prompt.submit({ text: `About the idea: ${answer}`, asUser: true })
     return
   }
-  const yes = key === 'spec' ? 'Approve spec' : key === 'plan' ? 'Approve plan' : 'Proceed anyway'
-  const question = key === 'checklists' ? `${step.why} Go on implementing anyway?` : `${step.why} Approve the ${key} as the contract?`
+  const yes = key === 'checklists' ? 'Proceed anyway' : `Approve ${key}`
+  const question =
+    key === 'checklists' ? `${step.why} Go on implementing anyway?` : key === 'design' ? `${step.why} Approve the design for the tasks?` : `${step.why} Approve the ${key} as the contract?`
+  // The terminal cannot show a mock: the browser can, and the question comes back once it is open.
+  const look = 'Open the mocks'
   let answer: string
   try {
-    answer = await $.ui.ask(question, [yes, 'Not yet'])
+    answer = await $.ui.ask(question, key === 'design' ? [yes, look, 'Not yet'] : [yes, 'Not yet'])
   } catch {
     return
+  }
+  if (answer === look) {
+    $.ui.toast(await openDashboard($))
+    return askApproval($, step)
   }
   if (answer === yes) await approve($)
   // Anything typed under "Other" is what to change: it goes to Claude as the person's words.
@@ -1499,6 +1531,12 @@ async function workflowStatus($: $): Promise<string> {
       `Spec review: ${state === 'approved' ? 'approved by the person' : state === 'changed' ? 'the spec changed since the person approved it' : review === 'none' ? 'off (review: none)' : 'not approved by the person (do not say it is)'}`,
     )
   }
+  if (snap.featureDir && snap.ui) {
+    const d = snap.design
+    lines.push(
+      `Design: ${!d || d.screens === null ? `not drawn yet (${screensPath(snap.featureDir)} is missing)` : `${d.system ? DESIGN_FILE : 'no DESIGN.md'}, ${d.screens.length} screens${ledger.approvals.design === d.fingerprint ? ', approved by the person' : review.includes('design') ? ', not approved by the person (do not say it is)' : ''}`}`,
+    )
+  }
   if (snap.featureDir) {
     lines.push(`Artifacts: spec.md ${snap.spec ? 'yes' : 'no'} · plan.md ${snap.hasPlan ? 'yes' : 'no'} · tasks.md ${snap.tasks.length ? `${report.done}/${report.tasks} done` : 'no'} · FR covered ${report.covered}/${report.total} · drift ${report.level}`)
   }
@@ -1553,7 +1591,7 @@ export const register: Register = (on, options) => {
   const mode = opts.mode === 'strict' ? 'strict' : 'advisory'
   strict = mode === 'strict'
   junitPath = typeof opts.junitPath === 'string' ? opts.junitPath.trim() : ''
-  review = opts.review === 'none' || opts.review === 'spec+plan' ? opts.review : 'spec'
+  review = REVIEWS.find(r => r === opts.review) ?? 'spec+design'
   parallel = opts.parallel === 'on'
   commitPerTask = opts.commitPerTask === 'on'
   paneMode = opts.pane === 'always' || opts.pane === 'off' ? opts.pane : 'auto'
@@ -1561,6 +1599,7 @@ export const register: Register = (on, options) => {
   driftCheckOn = driftCheck === 'fork'
   validateOn = opts.validate !== 'off'
   shapeOn = opts.shape !== 'off'
+  designOn = opts.design !== 'off'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -1898,15 +1937,8 @@ export const register: Register = (on, options) => {
         return { text: await focus($, rest[0] ?? '') }
       case 'approve':
         return { text: await approve($) }
-      case 'web': {
-        await scan($)
-        const path = await writeDashboard($)
-        if (!path) return { text: 'No Spec Kit feature yet: the dashboard starts with the first spec.' }
-        // Opened in the default browser; where nothing opens it, the path is the way in.
-        const opener = (await $.process.run(['uname'], { cwd: root, timeoutMs: 3000 }).catch(() => null))?.stdout.trim() === 'Darwin' ? 'open' : 'xdg-open'
-        const opened = await $.process.run([opener, path], { cwd: root, timeoutMs: 5000 }).then(r => r.exitCode === 0).catch(() => false)
-        return { text: `${opened ? 'Dashboard opened' : 'Dashboard written'}: file://${path}\nIt reloads itself and is rewritten after every step. Local only: it holds your own words.` }
-      }
+      case 'web':
+        return { text: await openDashboard($) }
       case 'auto': {
         const [mode = '', budget = ''] = rest
         if (mode === 'off') {
@@ -2158,11 +2190,23 @@ export const register: Register = (on, options) => {
     const reviewCard =
       step.phase === 'review' && step.approve ? (
         <Box flexDirection="column" marginTop={1}>
-          {row('Review', step.approve.key === 'plan' ? 'plan.md is written: read it, then approve it as the plan.' : 'Is this what you meant? Approve it as the contract.', 'warning')}
+          {row(
+            'Review',
+            step.approve.key === 'plan'
+              ? 'plan.md is written: read it, then approve it as the plan.'
+              : step.approve.key === 'design'
+                ? 'The look is drafted: open the mocks, then approve it for the tasks.'
+                : 'Is this what you meant? Approve it as the contract.',
+            'warning',
+          )}
           {/* The way on first: on a short pane the card's details may run past the bottom. */}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
-            <Button key="approve" label={step.approve.key === 'plan' ? 'Approve plan' : 'Approve spec'} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+            <Button key="approve" label={`Approve ${step.approve.key}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+            {step.approve.key === 'design' ? <Button key="mocks" label="Open the mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} /> : null}
           </Box>
+          {step.approve.key === 'design'
+            ? (snap.design?.screens ?? []).slice(0, 8).map(sc => row('', `${sc.name}${sc.serves.length ? ` · ${sc.serves.join(' ')}` : ''}${sc.mock ? '' : ' · no mock'}`))
+            : null}
           {step.approve.key === 'spec' ? row('', `You said: "${short((spec.input ?? '-').replace(/\s+/g, ' '), width * 2)}"`, 'subtle') : null}
           {step.approve.key === 'spec' ? spec.reqs.filter(r => r.kind === 'FR' && r.status === 'active').slice(0, 8).map(r => row('', `${r.id} ${r.text}`)) : null}
           {step.approve.key === 'spec' && spec.outOfScope.length ? row('', `Out of scope: ${spec.outOfScope.join(' · ')}`, 'subtle') : null}
@@ -2231,6 +2275,18 @@ export const register: Register = (on, options) => {
         {details ? row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-') : null}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
         {phaseRow(snap, row)}
+        {details && snap.design?.screens?.length && step.approve?.key !== 'design' ? (
+          <Box flexDirection="row" columnGap={1}>
+            {row(
+              'Design',
+              `${snap.design.system ? DESIGN_FILE : 'no DESIGN.md'} · ${snap.design.screens.length} screens · ${
+                ledger.approvals.design === snap.design.fingerprint ? 'approved by you' : ledger.approvals.design ? 'changed since you approved it' : 'not reviewed'
+              }`,
+              'subtle',
+            )}
+            <Button key="design-mocks" label="Mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} />
+          </Box>
+        ) : null}
         {details ? row('Proof', ladder, 'subtle') : null}
         {row('Next', stepLine(step), 'suggestion')}
         {step.phase === 'integration' ? <Box marginLeft={8}>{setupAction(step, snap)}</Box> : null}

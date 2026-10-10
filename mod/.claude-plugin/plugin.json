@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: a new idea researched and shaped with you, the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, a local dashboard, and an autopilot gated by your decisions and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
@@ -65,12 +65,14 @@
     },
     "review": {
       "type": "string",
-      "title": "Spec gate",
-      "description": "spec: the autopilot stops once at the written spec until you approve it (the pane, /xref approve or the dialog). spec+plan: also at the plan. none: no review, for maximum autonomy.",
-      "default": "spec",
+      "title": "Review gates",
+      "description": "Where the autopilot stops until you approve (the pane, /xref approve or the dialog). spec+design: at the written spec, and at the design (DESIGN.md and the mocks) of a feature with a user interface. spec: only at the spec. spec+plan / spec+plan+design: also at the plan. none: no review, for maximum autonomy.",
+      "default": "spec+design",
       "options": [
+        "spec+design",
         "spec",
         "spec+plan",
+        "spec+plan+design",
         "none"
       ]
     },
@@ -131,6 +133,16 @@
       "type": "string",
       "title": "Shape the first version",
       "description": "on: before a new project's first spec, Claude asks you what the idea leaves open (first-version scope, platforms, language, design, data) and records it in .specify/memory/product-brief.md, so the spec treats it as decided. off: the spec decides and calls it assumptions.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "design": {
+      "type": "string",
+      "title": "Design step",
+      "description": "on: a feature with a user interface (plan.md's Project Type) gets its look after the plan and before the tasks: DESIGN.md at the root (Google Stitch's format) and a static HTML mock per screen in specs/<feature>/design/, shown on the dashboard. off: the tasks follow the plan directly.",
       "default": "on",
       "options": [
         "on",
