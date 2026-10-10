@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: a new idea researched and shaped with you, the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, a local dashboard, and an autopilot gated by your decisions and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
@@ -147,6 +147,16 @@
       "options": [
         "on",
         "off"
+      ]
+    },
+    "allowPush": {
+      "type": "string",
+      "title": "Push from the autopilot",
+      "description": "off: pushing is the person's call; the autopilot asks, and your yes in that dialog allows the one push. on: the autopilot may push a feature branch by itself once the tests are green (never main, master or trunk, never --force, never a deletion).",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
       ]
     }
   }

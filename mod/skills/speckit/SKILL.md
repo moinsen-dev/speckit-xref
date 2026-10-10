@@ -77,6 +77,8 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 | `plan` | `/speckit-plan <technical choices>` | Stack, storage and structure, as the user decides them. |
 | `review` | the person | The spec gate: the person compares the spec with their words and approves it (pane, `/xref approve`). Never approve it yourself. |
 | `design` | skill `speckit-xref:design` | A feature with a user interface (plan.md's Project Type), before its tasks: `DESIGN.md` at the root (the design system, Google Stitch's format) and one static HTML mock per screen in `specs/<feature>/design/`, traced in `screens.md`. Do not ask the person here; they approve the look at the design review (never approve it yourself). The tasks then build to it. |
+| `done` | the person | Every task is checked, converged and verified, and nothing changed since: ask what comes next (a new feature, a change, a bug) instead of verifying again. |
+| `bug` | `/speckit-bug-*` or by hand | Reproduce the bug with a failing test named after the requirement it breaks, fix it, record it in `.specify/bugs/<slug>/`, and append a checked task under `## Phase N: Fixes`. |
 | `tasks` | `/speckit-tasks` | Each task names its files in backticks and the requirements it serves as `(FR-###)` (the speckit-xref preset makes `/speckit-tasks` do this). The mod books edits by those paths, and a task without paths cannot be checked. |
 | `map` | `/speckit-xref-map` or `/xref map` | Records which task serves which requirement, once. Spec Kit does not keep this. |
 | `analyze` | `/speckit-analyze` | Before the first task and after every spec change: spec, plan and tasks checked against each other. |

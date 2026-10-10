@@ -143,7 +143,7 @@ test('once every task is checked and verified, the autopilot ends the run', asyn
   await turn($)
   await seen.clock.advance(0)
   expect(autopilotPrompts(seen)).toHaveLength(2)
-  expect(seen.toasts.at(-1)).toBe(`Autopilot done: every task of ${FEATURE} is checked, the tests pass and the drift is green.`)
+  expect(seen.toasts.at(-1)).toBe(`Autopilot done: every task of ${FEATURE} is checked, the tests pass and the drift is green. Next: Say what comes next (a new feature, a change to this one, or a bug), or press New feature, Change or Bug in the pane.`)
   expect((await xref($, 'auto')).text).toBe('Autopilot off. /xref auto on [steps] starts it.')
 })
 

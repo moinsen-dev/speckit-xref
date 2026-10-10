@@ -84,7 +84,25 @@ export type Snapshot = {
   ui?: boolean
   /** The feature's design: DESIGN.md at the root and the screens of `<feature>/design/screens.md`. */
   design?: Design | null
+  /** tasks.md's Goal, Independent Test and Checkpoint per `##` phase. */
+  phaseNotes?: Record<string, PhaseNote>
+  /** quickstart.md's table rows that name a story, scenario or requirement. */
+  quickstart?: QuickRow[]
+  /** `.specify/memory/runbook.md`: what earlier steps learned about the project's environment. */
+  runbook?: string | null
+  /** git HEAD and a fingerprint of the uncommitted changes, for the verification that marks a feature done. */
+  head?: string | null
+  tree?: string | null
 }
+
+/** A phase of tasks.md: what it is for, how it is tested on its own, and when it is done. */
+export type PhaseNote = { goal: string | null; test: string | null; checkpoint: string | null }
+
+/** A runnable check of quickstart.md and the ids it names. */
+export type QuickRow = { ids: string[]; text: string }
+
+/** What comes after a done feature, in the person's words. */
+export type NextWork = { kind: 'feature' | 'change' | 'bug'; text: string }
 
 /** A screen of a feature, as `<feature>/design/screens.md` lists it. */
 export type Screen = {
@@ -201,6 +219,9 @@ export type Autopilot = {
   remediations?: number
   /** Why the test command could not run (not found, not executable): no failure, no repair step. */
   testNote?: string | null
+  /** After a done feature: what the person said comes next, and the kind they chose before saying it. */
+  next?: NextWork | null
+  nextKind?: NextWork['kind'] | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

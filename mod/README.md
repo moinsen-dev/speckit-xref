@@ -46,11 +46,18 @@ It stops only for what is yours:
 - **the spec gate:** once the spec is written, the pane shows your words beside the requirements, the out-of-scope list and the assumptions Claude added. **Approve spec** (in the pane or the band, `/xref approve`, the dialog, or running `/speckit-plan` yourself) lets it go on; the plugin option `review` sets `spec+plan` or `none`. An approval holds for that text: a changed spec asks again;
 - a `[NEEDS CLARIFICATION]` question, or open checklist items;
 - a request that contradicts the spec (one that only extends it becomes a revise step);
-- destructive or irreversible actions: while it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question.
+- destructive or irreversible actions: while it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question. Your **yes** in that dialog allows exactly that action once; `allowPush: on` lets it push a feature branch by itself once the tests are green (never main, never `--force`).
 
 Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question opens as a dialog and the run goes on with your answer in the same turn. A question that blocks only some stories waits in the pane's **Decide** row while the rest goes on. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
 
 **Tests gate the progress.** After each implement step the mod runs the test command: the `testCommand` option, else the project's `test` script (`npm test`, or pnpm, yarn, bun), else what plan.md's `**Testing**:` line names. A command that is not there counts as "could not run", not as a failure. A failure becomes a repair step, at most three in a row; then it is your call. A passing suite proves every requirement with a real test (with `junitPath`, each one by the tests that name or anchor it). The run ends only when the suite passes once more.
+
+**Each phase gets its brief.** An implement step does not just say "run /speckit-implement": it hands over the phase's goal, its **Independent Test** and **Checkpoint** from tasks.md, the acceptance scenarios it has to prove (tests named after `US2-AS1`), the quickstart rows and the screens that show them, and the last test run. What a step learns about the environment (a port, a flag, a permission's name) goes into `.specify/memory/runbook.md`, and every later step starts from it.
+
+**After done comes the next thing.** A feature that passed converge, verify and the tests stays done while its spec, its tasks and the working tree stay as they are: the next start does not verify again, it asks what comes next. Press **New feature**, **Change** or **Bug** in the pane and say it in your own words, or type it, or `/xref next feature|change|bug <words>`:
+- a new feature goes to `/speckit-specify` and becomes the next feature;
+- a change reaches the spec first (new requirements, appended tasks), then gets built;
+- a bug is reproduced with a failing test, fixed and recorded (with Spec Kit's bug extension where it is installed), with a task of its own in the trace.
 
 It also stops on Esc or `/xref-stop` (both end the running turn), on an API error or a refusal, when the drift turns red, after three steps without progress, at the step budget (25 by default) and when the feature is done. After five minutes of waiting it sends a notification. The band shows `auto ▶ 3/25 · 5h 34% · 7d 12% · 23m` while it runs (on a subscription, the usage windows; with an API key, `/cost`'s dollars) and the whole question when it waits; the pane tab reads `Spec X-Ref ⏸`. Back at the keyboard, the pane's **Away** card says what happened.
 
@@ -137,7 +144,7 @@ Pressing one of these counts as your go. Without a press or your request nothing
 
 The terminal seats a pane nobody asked for from 144 columns (110 once you have opened it); narrower, it waits and the Pane button opens it.
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec+design` | `spec` | `spec+plan` | `spec+plan+design` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`), `design` (`on` | `off`).
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec+design` | `spec` | `spec+plan` | `spec+plan+design` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`), `design` (`on` | `off`), `allowPush` (`off` | `on`).
 
 The active feature is found as Spec Kit finds it, then by the git branch (`001-…`), else the spec written last.
 

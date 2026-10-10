@@ -241,9 +241,9 @@ test('a night run ends with a briefing for the morning', async ($, on) => {
   }
   expect(seen.files['.specify/xref/local/briefing.md']).toContain('Ended: Autopilot done')
   expect(seen.notified.at(-1)).toContain('Autopilot done')
-  // Handing over converge recorded its checkpoint; no approval was written on the person's behalf.
+  // Handing over converge and verify recorded their checkpoints; no approval was written on the person's behalf.
   const ledger = ledgerOf(seen.files)
-  expect(Object.keys(ledger.checkpoints)).toEqual(['converge'])
+  expect(Object.keys(ledger.checkpoints).sort()).toEqual(['converge', 'verify'])
   expect(ledger.approvals).toEqual({})
   expect(seen.files[localPath(FEATURE)]).toContain('"checkpoints"')
 })

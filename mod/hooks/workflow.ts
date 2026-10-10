@@ -1,6 +1,7 @@
 // Where a project stands in Spec Kit's workflow, the step that comes next, and the autopilot's rules. Pure: register.tsx hands in the snapshot.
 
-import type { Autopilot, IdeaBrief, Ledger, Snapshot, Task } from '../types'
+import type { Autopilot, IdeaBrief, Ledger, NextWork, Snapshot, Task } from '../types'
+import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
@@ -26,6 +27,8 @@ export type Phase =
   | 'repair'
   | 'converge'
   | 'verify'
+  | 'bug'
+  | 'done'
 export type Step = {
   phase: Phase
   command: string | null
@@ -42,6 +45,8 @@ export type Step = {
   approve?: { key: string; value: string }
   /** The request a revise step folds into the spec: handing the step over takes it off the list. */
   resolves?: string
+  /** The step carries out what the person said comes after a done feature: handing it over takes that off the list. */
+  consumes?: boolean
 }
 
 /** Where the autopilot stops for the person: the spec always (unless none), the plan and the design when named. */
@@ -57,6 +62,9 @@ export type Flow = {
   shape?: boolean
   /** The design step for a feature with a user interface (on unless switched off). */
   design?: boolean
+  /** After a done feature: what comes next in the person's words, or the kind they chose before saying it. */
+  next?: NextWork | null
+  nextKind?: NextWork['kind'] | null
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -298,6 +306,9 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       ].join('\n'),
     })
   }
+  // What earlier steps learned about the environment reaches every step that runs code.
+  const runbook = runbookNote(snap.runbook)
+  if (runbook && (open.length || (flow.lastTest && !flow.lastTest.ok))) notes.push(runbook)
   if (flow.lastTest && !flow.lastTest.ok) {
     if ((flow.repairs ?? 0) > MAX_REPAIRS) {
       return step('repair', null, `The tests still fail after ${MAX_REPAIRS} repairs.`, `The tests still fail after ${MAX_REPAIRS} attempts: look at the failure in the pane and decide how to go on.`)
@@ -319,7 +330,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     const ids = (phase ? open.filter(t => t.phase === phase) : open).map(t => t.id)
     return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, {
       prompt: phase
-        ? `Run ${command} now through the Skill tool, scoped by its argument to one phase: "Only the phase '${phase}' (${ids.join(', ')}); stop when it is done." Carry that phase through.`
+        ? [
+            `Run ${command} now through the Skill tool, scoped by its argument to one phase: "Only the phase '${phase}' (${ids.join(', ')}); stop when it is done." Carry that phase through.`,
+            ...phaseBrief(snap, phase, flow.lastTest ?? null),
+          ].join('\n')
         : undefined,
     })
   }
@@ -327,9 +341,26 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (has('converge') && ledger.checkpoints.converge !== tasksFp) {
     return step('converge', speckitCommand(snap, 'converge'), 'Every task is checked: find the work the tasks missed.', null, { approve: { key: 'converge', value: tasksFp } })
   }
-  if (xref) return step('verify', speckitCommand(snap, 'xref.check'), 'Every task is checked: check the code against the spec.')
+  // A verification that still holds for this spec, these tasks and this tree means done: what comes next is the person's.
+  const verified = verifyKey(snap, tasksFp)
+  if (ledger.checkpoints.verify === verified) {
+    const next = flow.next
+    const quote = next ? `"${next.text.length > 80 ? next.text.slice(0, 79) + '…' : next.text}"` : ''
+    if (next?.kind === 'feature') return step('specify', `${speckitCommand(snap, 'specify')} ${next.text}`, `${snap.featureDir} is done; the person named the next feature: ${quote}.`, null, { consumes: true })
+    if (next?.kind === 'change') {
+      const revise = xref && has('xref-revise') ? speckitCommand(snap, 'xref.revise') : null
+      return step('revise', null, `${snap.featureDir} is done; the person asks for a change: ${quote}.`, null, { consumes: true, prompt: changePrompt(snap, next.text, revise) })
+    }
+    if (next?.kind === 'bug') {
+      if (runbook) notes.push(runbook)
+      return step('bug', null, `A bug in ${snap.featureDir}: ${quote}.`, null, { consumes: true, prompt: bugPrompt(snap, next.text, name => speckitCommand(snap, name), has) })
+    }
+    return step('done', null, `${snap.featureDir} is done: every task is checked, converged and verified.`, doneAsk(flow.nextKind))
+  }
+  if (xref) return step('verify', speckitCommand(snap, 'xref.check'), 'Every task is checked: check the code against the spec.', null, { approve: { key: 'verify', value: verified } })
   // Without the extension there is no command the model can run: it checks by itself, and the mod's intent check follows.
   return step('verify', null, 'Every task is checked: check the code against the spec.', null, {
+    approve: { key: 'verify', value: verified },
     prompt: [
       "Check the code against the spec and against the person's own words (the spec's Input), by yourself: /xref check is the person's command, not one you can run.",
       'For each requirement name the code and the test that prove it. For each point the person made, say whether the app does it.',
@@ -416,6 +447,8 @@ export const idleAutopilot = (): Autopilot => ({
   remediate: false,
   remediations: 0,
   testNote: null,
+  next: null,
+  nextKind: null,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
@@ -464,6 +497,7 @@ export function progressKey(snap: Snapshot, ledger: Ledger): string {
 export const AUTONOMY_RULES = [
   'Autopilot is on. Carry the step through without asking whether to continue: when you end your turn, the autopilot moves on by itself.',
   'Decide what the person left open, from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write.',
+  "When you get past a problem of the environment (a port, a flag, a permission's name, a tool's quirk), add one line on it to .specify/memory/runbook.md, so later steps start from it. When you commit, commit the feature's xref.json with it.",
   'Stop only for what only the person can decide: the product idea, a [NEEDS CLARIFICATION] question, a conflict between their request and the spec, anything destructive or irreversible, credentials or payments. Then call mcp__speckit-xref__ask with the question (and the user stories it blocks, if any); if it answers with the person\'s choice, go on with it, otherwise put the question in your answer and end your turn.',
 ]
 
@@ -499,13 +533,14 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ['plan', ['plan']],
     ...(drawn ? [['design', ['design']] as [string, Phase[]]] : []),
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
-    ['impl', ['implement', 'repair', 'converge']],
+    ['impl', ['implement', 'repair', 'converge', 'bug']],
     ['verify', ['verify']],
   ]
   // A review sits in the column of what it reviews.
   const reviewed: Record<string, Phase> = { idea: 'validate', plan: 'plan', design: 'design' }
   const phase = step.phase === 'review' && step.approve ? (reviewed[step.approve.key] ?? 'review') : step.phase
-  const at = order.findIndex(([, phases]) => phases.includes(phase))
+  // Done: every column is behind it.
+  const at = phase === 'done' ? order.length : order.findIndex(([, phases]) => phases.includes(phase))
   const done = snap.tasks.filter(t => t.done).length
   return order
     .map(([label], i) => {

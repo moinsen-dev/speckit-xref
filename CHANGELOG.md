@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.2 — 2026-10-10
+
+The autopilot no longer ends at "done", and it hands each step what it needs to know. Mod 0.5.2; extension 0.4.0 and preset 0.2.0 unchanged.
+
+### After done comes the next thing
+
+- A feature that passed converge, verify and the tests **stays done** while its spec, its tasks and the working tree (git HEAD and the uncommitted changes) stay as they are. Starting the autopilot again no longer verifies once more: it asks what comes next. In the live run a finished feature was verified three times in a row, the third time with "nothing changed since the last check".
+- **New feature, Change, Bug** in the pane, your own words in the prompt (a small model tells the three apart, and a question stays a question), or `/xref next feature|change|bug <words>`:
+  - a new feature goes to `/speckit-specify` and becomes the next feature;
+  - a change reaches the spec first, then its appended tasks are built;
+  - a bug is reproduced with a failing test, fixed, recorded under `.specify/bugs/<slug>/` (Spec Kit's bug extension where it is installed) and gets a task of its own.
+
+### Each step gets its brief
+
+- An implement step hands over the phase's goal, its **Independent Test** and **Checkpoint** from tasks.md, the acceptance scenarios it has to prove (tests named after `US2-AS1`), the quickstart rows and the design's screens that show them, and the last test run; it ends by checking the checkpoint. Before, a step said only "run /speckit-implement for this phase", and the per-story checkpoints of tasks.md were never handed over.
+- `.specify/memory/runbook.md`: a step that gets past a problem of the environment adds one line, and every later step that runs code starts from it.
+- In a `-p` run the first prompt is the first step: handed over with its full prompt and logged.
+
+### Your yes counts
+
+- The rails' question for an action (`git push`, `reset --hard`, …) now goes through `mcp__speckit-xref__ask` with `allow`; your **yes** allows exactly that action once, for ten minutes. Before, a yes in the dialog changed nothing and the push stayed refused.
+- Option `allowPush` (off): on lets the autopilot push a feature branch by itself once the tests are green; never main, master or trunk, never `--force`, never a deletion.
+- The rules ask Claude to commit the feature's `xref.json` with its own commits.
+
 ## 0.5.1 — 2026-10-10
 
 A feature people look at now gets its look before its tasks, and you see it before anything is built. Mod 0.5.1, extension 0.4.0, preset 0.2.0.
