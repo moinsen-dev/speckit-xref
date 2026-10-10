@@ -104,6 +104,8 @@ export type Design = {
   screens: Screen[] | null
   /** What the step did to DESIGN.md, as screens.md's `**Design system**:` line says. */
   change: 'created' | 'extended' | 'unchanged' | null
+  /** What git shows for DESIGN.md since the last commit, where the mod could look: the check on that claim. */
+  verified?: 'created' | 'extended' | 'unchanged' | null
   /** DESIGN.md and screens.md together: what the person approves at the design review. */
   fingerprint: string
 }

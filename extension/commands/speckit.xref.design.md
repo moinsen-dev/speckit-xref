@@ -25,7 +25,7 @@ Do not ask the person in this step. Decide what is open and write it down as an 
 
 - **No DESIGN.md, UI code exists**: write down the look that is there (its colours, fonts, spacing, radii) instead of redesigning it. Record "Design system: created".
 - **No DESIGN.md, no UI yet**: create it from the product brief's direction. Record "Design system: created".
-- **DESIGN.md exists**: keep it. Add a token only where this feature needs one and nothing fits; record "Design system: extended" and name the token in screens.md, else "unchanged".
+- **DESIGN.md exists**: keep it. Add a token only where this feature needs one and nothing fits. Record "Design system: extended" only if you changed DESIGN.md's tokens in this step, naming each token and its value in screens.md; otherwise record "unchanged". git shows whether DESIGN.md changed: the line must match it.
 
 The format (Google Stitch's DESIGN.md, https://github.com/google-labs-code/design.md): YAML frontmatter with the tokens, then the reasons in prose.
 

@@ -4,7 +4,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
-import { DESIGN_FILE, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
+import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
 import { LADDER, isActive, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
 import type { Rung } from './proof'
@@ -332,6 +332,8 @@ async function scan($: $): Promise<void> {
     ui: uiFromPlan(planMd),
     design: featureDir ? designState(designMd, screensMd) : null,
   }
+  // At the design review the mod checks screens.md's word on DESIGN.md against git, where there is a commit to compare with.
+  if (snapshot.design?.screens && tasks.length === 0 && snapshot.commits) snapshot.design.verified = await designGit($)
   if (!previous || previous.featureDir !== featureDir) {
     const ledger = featureDir ? rebaseline(ledgerFromParts(await readText($, `${featureDir}/xref.json`), await readText($, localPath(featureDir))), specMd) : emptyLedger()
     const anchors = featureDir ? await scanAnchors($) : null
@@ -506,6 +508,16 @@ async function openDashboard($: $): Promise<string> {
   const opener = (await $.process.run(['uname'], { cwd: root, timeoutMs: 3000 }).catch(() => null))?.stdout.trim() === 'Darwin' ? 'open' : 'xdg-open'
   const opened = await $.process.run([opener, path], { cwd: root, timeoutMs: 5000 }).then(r => r.exitCode === 0).catch(() => false)
   return `${opened ? 'Dashboard opened' : 'Dashboard written'}: file://${path}\nIt reloads itself and is rewritten after every step. Local only: it holds your own words.`
+}
+
+/** What git shows for DESIGN.md since the last commit; null where git cannot say. */
+async function designGit($: $): Promise<'created' | 'extended' | 'unchanged' | null> {
+  try {
+    const ran = await $.process.run(['git', 'status', '--porcelain', '--', DESIGN_FILE], { cwd: root, timeoutMs: 3000 })
+    return ran.exitCode === 0 ? designChangeFromGit(ran.stdout) : null
+  } catch {
+    return null
+  }
 }
 
 /** Whether the repository has a commit: true, false (a repository without one), null (no git here). */

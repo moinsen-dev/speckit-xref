@@ -12,6 +12,7 @@ A feature people look at now gets its look before its tasks, and you see it befo
 - The dashboard has a **Design** section: DESIGN.md's colours and fonts, each screen with what it serves and its mock in a sandboxed frame. The pane shows a Design row with a **Mocks** button; the phase strip a `design` column.
 - Extension command `speckit.xref.design` with an optional `after_plan` hook.
 - `DESIGN.md` is a spec artifact (contract §3): editing it is never drift.
+- The review states what git shows for DESIGN.md, not only what screens.md claims: in the first live run Claude wrote "Design system: extended" without touching the file, and the line now says so.
 
 ### Fixes
 

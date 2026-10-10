@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { renderDashboard } from '../hooks/dashboard'
-import { designState, designTokens, parseScreens, uiFromPlan } from '../hooks/design'
+import { designChangeFromGit, designChangeLine, designState, designToReview, designTokens, parseScreens, uiFromPlan } from '../hooks/design'
 import { emptyLedger, evaluate, isSpecArtifact } from '../hooks/xref'
 import { idleAutopilot, nextStep, phaseStrip, progressKey } from '../hooks/workflow'
 import { parseConstitution, parseSpec } from '../hooks/speckit'
@@ -163,6 +163,20 @@ test('a design changed after the approval is shown again; a feature without scre
   // The strip shows the design column and the review in it; a drawn design is progress for the stall check.
   expect(phaseStrip(drawn, gate)).toContain('✓plan ▶design ·tasks')
   expect(progressKey(snapOf(null, null), emptyLedger())).not.toBe(progressKey(drawn, emptyLedger()))
+})
+
+test('screens.md\'s word on DESIGN.md is checked against git: a claim git does not back is named at the review', () => {
+  expect(designChangeFromGit('')).toBe('unchanged')
+  expect(designChangeFromGit(' M DESIGN.md\n')).toBe('extended')
+  expect(designChangeFromGit('?? DESIGN.md\n')).toBe('created')
+  expect(designChangeFromGit('A  DESIGN.md\n')).toBe('created')
+  const design = { ...designState(DESIGN, SCREENS.replace('created', 'extended (token onAccent added)')), verified: 'unchanged' as const }
+  expect(designChangeLine(design)).toBe(' (screens.md says "extended", but git shows DESIGN.md unchanged)')
+  expect(designChangeLine({ ...design, verified: 'extended' })).toBe(', DESIGN.md extended')
+  expect(designChangeLine({ ...design, verified: null })).toBe(', DESIGN.md extended')
+  // Without screens, only a change git shows makes a review.
+  expect(designToReview({ ...design, screens: [] })).toBe(false)
+  expect(designToReview({ ...design, screens: [], verified: 'created' })).toBe(true)
 })
 
 test('the design is never drift: DESIGN.md and the feature\'s design folder are spec artifacts', () => {

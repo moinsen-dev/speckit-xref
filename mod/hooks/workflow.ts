@@ -1,7 +1,7 @@
 // Where a project stands in Spec Kit's workflow, the step that comes next, and the autopilot's rules. Pure: register.tsx hands in the snapshot.
 
 import type { Autopilot, IdeaBrief, Ledger, Snapshot, Task } from '../types'
-import { designDue, designNote, designPrompt, designToReview } from './design'
+import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
@@ -253,7 +253,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     const design = snap.design!
     if (gates.design && designToReview(design) && ledger.approvals.design !== design.fingerprint) {
       const screens = design.screens?.length ?? 0
-      return step('review', null, `The design of ${snap.featureDir} is drafted: ${screens} screen${screens === 1 ? '' : 's'}${design.change === 'created' ? ', a new DESIGN.md' : design.change === 'extended' ? ', DESIGN.md extended' : ''}.`,
+      return step('review', null, `The design of ${snap.featureDir} is drafted: ${screens} screen${screens === 1 ? '' : 's'}${designChangeLine(design)}.`,
         'Look at DESIGN.md and the mocks (/xref web or Mocks in the pane opens them in the browser), then press Approve design in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'design', value: design.fingerprint } })
     }
   }

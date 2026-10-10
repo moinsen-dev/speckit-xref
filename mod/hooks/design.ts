@@ -79,11 +79,25 @@ export function designState(designMd: string | null, screensMd: string | null): 
   }
 }
 
+/** What `git status --porcelain -- DESIGN.md` says happened to it since the last commit. */
+export function designChangeFromGit(porcelain: string): 'created' | 'extended' | 'unchanged' {
+  const code = porcelain.split('\n').find(l => l.trim())?.slice(0, 2) ?? ''
+  return !code ? 'unchanged' : /\?\?|A/.test(code) ? 'created' : 'extended'
+}
+
+/** What the person is told about DESIGN.md at the review: what git shows, and where screens.md claims otherwise. */
+export function designChangeLine(design: Design): string {
+  const shown = design.verified ?? design.change
+  const said = shown === 'created' ? ', a new DESIGN.md' : shown === 'extended' ? ', DESIGN.md extended' : ''
+  const differs = design.verified && design.change && design.verified !== design.change
+  return differs ? `${said} (screens.md says "${design.change}", but git shows DESIGN.md ${design.verified === 'unchanged' ? 'unchanged' : design.verified})` : said
+}
+
 /** Whether the design step still has to run: no screens.md yet, or screens without a design system to draw on. */
 export const designDue = (design: Design | null | undefined) => !design || design.screens === null || (design.screens.length > 0 && !design.system)
 
 /** Whether there is something for the person to look at: screens, or a design system this step wrote or extended. */
-export const designToReview = (design: Design) => (design.screens?.length ?? 0) > 0 || design.change === 'created' || design.change === 'extended'
+export const designToReview = (design: Design) => (design.screens?.length ?? 0) > 0 || (design.verified ?? design.change) === 'created' || (design.verified ?? design.change) === 'extended'
 
 /** DESIGN.md's tokens the dashboard shows: its name, its colours (name and value), its font families. */
 export function designTokens(designMd: string): { name: string | null; colors: [string, string][]; fonts: string[] } {
