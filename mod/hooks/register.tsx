@@ -24,7 +24,10 @@ import {
   stepLine,
   takesIdea,
   couldNotRun,
+  phaseLabel,
+  phaseNumber,
   specReview,
+  taskPhases,
   tasksFingerprint,
   testCommandFrom,
   testScriptCommand,
@@ -1111,6 +1114,24 @@ export function compactPrompt(text: string): string | null {
 }
 
 /** What this run cost so far and how long it took: ` · $1.80 · 23m`. */
+/** The band's word on tasks.md's phases: `P3/7 · ` while one is open. */
+function bandPhase(snap: Snapshot): string {
+  const { phases, current } = taskPhases(snap.tasks)
+  return phases.length > 1 && current >= 0 ? `P${phaseNumber(phases[current]!.title, current)} · ` : ''
+}
+
+/** The pane's Phase row: which of tasks.md's phases runs, how far it is, and the ones around it (`✓1 ✓2 ▶3 ·4`). */
+function phaseRow<T>(snap: Snapshot, row: (label: string, text: string, color?: Color) => T): T | null {
+  const { phases, current } = taskPhases(snap.tasks)
+  if (phases.length < 2) return null
+  const n = (i: number) => phaseNumber(phases[i]!.title, i)
+  const strip = phases.map((p, i) => (p.done === p.total ? `✓${n(i)}` : i === current ? `▶${n(i)}` : `·${n(i)}`)).join(' ')
+  if (current < 0) return row('Phase', `${strip} · every phase is done`, 'success')
+  const p = phases[current]!
+  // Numbers first: on a narrow pane the row cuts its end, and the title is the part that can go.
+  return row('Phase', `${n(current)} · ${p.done}/${p.total} · ${strip} · ${phaseLabel(p.title)}`)
+}
+
 /**
  * What this run used so far and how long it took. On a subscription the usage windows are what limits it
  * (` · 5h 34% · 7d 12% · 23m`); `$` is /cost's list-price estimate, what an API key is billed (` · $1.80 · 23m`).
@@ -1735,7 +1756,7 @@ export const register: Register = (on, options) => {
         <Text bold>xref </Text>
         <Text wrap="truncate-end">
           {report
-            ? `${task ? `${task.id} · ` : ''}tasks ${report.done}/${report.tasks} · FR ${report.covered}/${report.total} · ${state.word}${report.findings.length ? ` (${report.findings.length})` : ''}`
+            ? `${task ? `${task.id} · ` : ''}${bandPhase(snap!)}tasks ${report.done}/${report.tasks} · FR ${report.covered}/${report.total} · ${state.word}${report.findings.length ? ` (${report.findings.length})` : ''}`
             : snap
               ? nextStep(snap, ledger, ap.idea, flowOf(ap)).phase
               : ''}
@@ -1938,6 +1959,7 @@ export const register: Register = (on, options) => {
         {details && task && (task.paths.length || reqs.length) ? row('', [task.paths.join(', '), reqs.join(' ')].filter(Boolean).join(' · '), 'subtle') : null}
         {details ? row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-') : null}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
+        {phaseRow(snap, row)}
         {details ? row('Proof', ladder, 'subtle') : null}
         {row('Next', stepLine(step), 'suggestion')}
         {step.phase === 'integration' ? <Box marginLeft={8}>{setupAction(step, snap)}</Box> : null}

@@ -201,3 +201,10 @@ test('on a subscription the band shows the usage windows, not a list price', asy
   expect(band).toContain('auto ▶ 1/25 · 5h 34% · 7d 12% · 0m')
   expect(band).not.toContain('$')
 })
+
+test('the pane names the phase of tasks.md that runs, by its own number, with the ones around it', async ($, on) => {
+  project(on, { ...DEMO })
+  await startSession($)
+  const drawn = toText(await (await $.ui.mount({ ...PANE, surface: 'terminal' })).drawn())
+  expect(drawn).toContain('Phase3 · 1/3 · ✓1 ▶3 ·4 ·5 · US1 Request a login link (P1) MVP')
+})

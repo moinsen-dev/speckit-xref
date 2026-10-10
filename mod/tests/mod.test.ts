@@ -75,7 +75,7 @@ test('books a planned edit to its task and flags an unplanned one to the model a
   expect(ledger.unplanned.map((u: any) => u.file)).toEqual(['src/ui/theme.ts'])
   expect((await xref($)).text).toContain('drift yellow')
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(toText(await band.drawn())).toContain('▲ xref T006 · tasks 3/8 · FR 4/5 · watch (1)')
+  expect(toText(await band.drawn())).toContain('▲ xref T006 · P3 · tasks 3/8 · FR 4/5 · watch (1)')
 })
 
 test('linking the file through the tool clears the drift', async ($, on) => {
@@ -189,7 +189,7 @@ test('a change to tasks.md outside the session reaches the band within one refre
   seen.write(`${FEATURE}/tasks.md`, seen.files[`${FEATURE}/tasks.md`]!.replace('- [ ] T004', '- [x] T004'))
   await seen.clock.advance(4000)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(toText(await band.drawn())).toContain('xref T005 · tasks 4/8')
+  expect(toText(await band.drawn())).toContain('xref T005 · P3 · tasks 4/8')
 })
 
 test('with the intent check switched off, a turn that wrote asks no model', { options: { driftCheck: 'off' } }, async ($, on) => {

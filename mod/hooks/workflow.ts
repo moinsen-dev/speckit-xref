@@ -112,6 +112,33 @@ export function specReview(snap: Snapshot, ledger: Ledger): 'approved' | 'change
   return ledger.approvals.spec === specFingerprint(snap.spec) ? 'approved' : 'changed'
 }
 
+/** tasks.md's `##` phases in order, each with its tasks done and in all, and which one is open now. */
+export type TaskPhase = { title: string; done: number; total: number }
+export function taskPhases(tasks: Task[]): { phases: TaskPhase[]; current: number } {
+  const phases: TaskPhase[] = []
+  for (const t of tasks) {
+    const title = t.phase || 'Tasks'
+    let p = phases.find(x => x.title === title)
+    if (!p) phases.push((p = { title, done: 0, total: 0 }))
+    p.total += 1
+    if (t.done) p.done += 1
+  }
+  return { phases, current: phases.findIndex(p => p.done < p.total) }
+}
+
+/** A phase's number as tasks.md writes it (`Phase 3: …` is 3, even with no Phase 2), else its place in the file. */
+export const phaseNumber = (title: string, index: number) => Number(/^Phase\s+(\d+)/i.exec(title)?.[1] ?? index + 1)
+
+/** `Phase 3: User Story 1 – Inspiration für den Moment (Priority: P1) 🎯 MVP` → `US1 Inspiration für den Moment (P1) MVP`. */
+export function phaseLabel(title: string): string {
+  return title
+    .replace(/^Phase\s+\d+\s*[:.–-]\s*/i, '')
+    .replace(/User Story\s+(\d+)\s*[–—:-]\s*/i, 'US$1 ')
+    .replace(/\(Priority:\s*(P\d+)\)/i, '($1)')
+    .replace(/🎯\s*/g, '')
+    .trim()
+}
+
 /** The first `##` phase of tasks.md that still has an open task: what one implement step covers. */
 export const openPhase = (tasks: Task[]) => tasks.find(t => !t.done)?.phase || null
 
