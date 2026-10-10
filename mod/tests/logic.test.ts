@@ -76,7 +76,9 @@ describe('Spec Kit readers', () => {
   })
 
   test('finds paths in free text without mistaking abbreviations or routes for files', () => {
-    expect(extractPaths('Add handler (e.g. see docs) in `lib/a.dart`, then update README.md')).toEqual(['lib/a.dart', 'README.md'])
+    // A task that names files in backticks names all of them: "iOS/Android/Web" in its prose is no path.
+    expect(extractPaths('Add handler (e.g. see docs) in `lib/a.dart`, then update README.md')).toEqual(['lib/a.dart'])
+    expect(extractPaths('Expo-App anlegen, Plattformen iOS/Android/Web aktivieren in `package.json`, `app.json`')).toEqual(['package.json', 'app.json'])
     expect(extractPaths('Implement POST /auth/link handler in src/auth/request-link.ts')).toEqual(['src/auth/request-link.ts'])
     expect(extractPaths('Update README.md, then CHANGELOG.md.')).toEqual(['README.md', 'CHANGELOG.md'])
     expect(extractPaths('Something in "quoted/path.txt" and (src/x.py)')).toEqual(['quoted/path.txt', 'src/x.py'])

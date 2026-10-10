@@ -42,6 +42,16 @@ type Options = {
   branch?: string
 }
 
+/** The project of the test running now: its turns start with the prompt submitted last, as the engine's do. */
+export let lastSeen: { submitted: any[] } = { submitted: [] }
+
+/** A turn as the engine runs one: it starts with the prompt waiting (the autopilot's step, or the person's), then ends. */
+export async function runTurn($: any, answer = 'Done with this step.', reason = 'answer') {
+  const turnId = `t-${Math.random()}`
+  await $.turn.start({ text: lastSeen.submitted.at(-1)?.text ?? '', turnId })
+  await $.turn.complete({ reason, answer, durationMs: 1000, isAborted: reason === 'aborted', turnId })
+}
+
 /** Stubs every call the mod makes over an in-memory project; `files` changes as the mod writes. */
 export function project(on: any, files: Record<string, string>, options: Options = {}) {
   const rel = (path: string) => (path === ROOT ? '' : path.startsWith(ROOT + '/') ? path.slice(ROOT.length + 1) : path)
@@ -195,6 +205,7 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('ui.render', ($: any, e: any) => ({ type: 'Text', props: {}, children: [e.component === 'UserMessage' ? e.props.text : 'drawn beneath'] }))
   on('session.start', () => ({ cwd: ROOT }))
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 10) })
+  lastSeen = seen
   return { files, clock, write, ...seen }
 }
 

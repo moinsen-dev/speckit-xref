@@ -2,13 +2,12 @@ import { expect, test } from 'claude-code/testing'
 
 import { localPath } from '../hooks/ledger'
 import { DEMO } from './fixtures/demo'
-import { BAND, FEATURE, PANE, ROOT, ledgerOf, project, startSession, toText, type, xref } from './harness'
+import { BAND, FEATURE, PANE, ROOT, ledgerOf, project, runTurn, startSession, toText, type, xref } from './harness'
 
 // 0.4.0: proof instead of claims, a spec gate, test-gated progress, guard rails, and the fixes the review found.
 
 const autopilotPrompts = (seen: { submitted: any[] }) => seen.submitted.map(e => e.text as string).filter(t => t.startsWith('[speckit-xref autopilot'))
-const turn = ($: any, answer = 'Done with this step.', reason = 'answer') =>
-  $.turn.complete({ reason, answer, durationMs: 1000, isAborted: reason === 'aborted', turnId: `t-${Math.random()}` })
+const turn = ($: any, answer = 'Done with this step.', reason = 'answer') => runTurn($, answer, reason)
 const tick = (task: string) => (seen: any) => seen.write(`${FEATURE}/tasks.md`, seen.files[`${FEATURE}/tasks.md`]!.replace(`- [ ] ${task}`, `- [x] ${task}`))
 
 /** The demo before planning: a settled spec, no plan, no tasks. */
@@ -184,7 +183,7 @@ test('files Bash changed during a turn are booked like any write', async ($, on)
   await $.turn.start({ text: 'regenerate the theme', turnId: 'turn-7' })
   seen.write('src/ui/theme.ts', 'export const dark = true\n')
   changed = ['src/auth/token.ts', 'src/ui/theme.ts']
-  await turn($)
+  await $.turn.complete({ reason: 'answer', answer: 'Done.', durationMs: 1000, isAborted: false, turnId: 'turn-7' })
   await seen.clock.advance(0)
   // The file dirty before the turn and unchanged since is not this turn's.
   expect(ledgerOf(seen.files).unplanned.map((u: any) => u.file)).toEqual(['src/ui/theme.ts'])
@@ -255,8 +254,14 @@ test('a request beyond the spec becomes one revise step, not a loop', async ($, 
   await startSession($)
   await xref($, 'auto on')
   await seen.clock.advance(0)
+  // Step 1 runs; the person types during it, so their message waits behind it.
+  await $.turn.start({ text: autopilotPrompts(seen)[0]!, turnId: 'step-1' })
   await type($, 'also send the link by SMS')
   await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/src/auth/token.ts`, old_string: 'a', new_string: 'b' })
+  await $.turn.complete({ reason: 'answer', answer: 'Done.', durationMs: 1000, isAborted: false, turnId: 'step-1' })
+  await seen.clock.advance(10)
+  // The person's message is next, not a second step: one prompt at a time.
+  expect(autopilotPrompts(seen)).toHaveLength(1)
   await turn($)
   await seen.clock.advance(10)
   const prompts = autopilotPrompts(seen)

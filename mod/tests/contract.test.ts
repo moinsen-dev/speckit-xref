@@ -27,6 +27,7 @@ function snapOf(raw: any): Snapshot {
     tasks: raw.tasks.map((t: any) => ({ parallel: false, story: null, text: t.id, phase: '', ...t })),
     spec: { title: 'x', input: null, stories: (raw.stories ?? []).map((s: any) => ({ title: s.id, priority: null, ...s })), reqs, outOfScope: [], assumptions: [] },
     realTests: raw.realTests ?? [],
+    rules: rulesFrom(null),
   } as unknown as Snapshot
 }
 

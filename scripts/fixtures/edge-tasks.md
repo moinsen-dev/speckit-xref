@@ -13,3 +13,5 @@
 - [ ] T006 Something in "quoted/path.txt" and (src/x.py)
 - [ ] T007 Create package.json (justified in plan.md, see spec.md) and docs/plan.md
 - [ ] T6 too short an id
+- [ ] T090 Expo-App anlegen, Plattformen iOS/Android/Web aktivieren in `package.json`, `app.json` (FR-024)
+- [ ] T091 Update README.md and docs/guide.md without backticks

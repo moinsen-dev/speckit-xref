@@ -143,6 +143,11 @@ export type Autopilot = {
   scope: string | null
   /** The tasks checked when the last step was handed over: commit per task commits what came after. */
   doneAtStep?: string[]
+  /** The last analysis asked to fix something: the next step is its remediation (at most twice a run). */
+  remediate?: boolean
+  remediations?: number
+  /** Why the test command could not run (not found, not executable): no failure, no repair step. */
+  testNote?: string | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */
@@ -169,8 +174,10 @@ declare module 'claude-code' {
       asked: string | null
       /** The files written during the running turn, by tools or found changed at its end. */
       turnFiles: string[]
-      /** The running turn's id and start, for Stop and for finding Bash writes. */
-      turn: { id: string; startedAt: number; dirty: string[] } | null
+      /** The running turn's id and start, whether the autopilot handed it over, and the files dirty before it. */
+      turn: { id: string; startedAt: number; dirty: string[]; auto: boolean } | null
+      /** Prompts waiting for the session to be idle: the autopilot's next step, or the person's own message. */
+      queue: { auto: boolean; person: boolean }
       /** The pane's detail view on narrow widths. */
       details: boolean
       /** When the person last spoke: the "since you left" card counts from here. */

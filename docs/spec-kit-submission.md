@@ -10,11 +10,11 @@ opens a draft PR that adds the entry to `extensions/catalog.community.json` and
 | --- | --- |
 | Extension ID | `xref` |
 | Extension Name | `Spec X-Ref` |
-| Version | `0.2.0` |
+| Version | `0.2.1` |
 | Description | `Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, coverage, intent` |
 | Author | `moinsen-dev` |
 | Repository URL | `https://github.com/moinsen-dev/speckit-xref` |
-| Download URL | `https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-extension-v0.2.0.zip` |
+| Download URL | `https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-extension-v0.2.1.zip` |
 | License | `MIT` |
 | Homepage | `https://github.com/moinsen-dev/speckit-xref` |
 | Documentation URL | `https://github.com/moinsen-dev/speckit-xref/blob/main/extension/README.md` |

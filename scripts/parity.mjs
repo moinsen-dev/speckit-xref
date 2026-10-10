@@ -13,6 +13,7 @@ const files = [
   ['tasks', `${demo}/specs/001-magic-link-login/tasks.md`],
   ['constitution', `${demo}/.specify/memory/constitution.md`],
   ['spec', `${root}scripts/fixtures/edge-spec.md`],
+  ['spec', `${root}scripts/fixtures/multiline-spec.md`],
   ['tasks', `${root}scripts/fixtures/edge-tasks.md`],
   ...process.argv.slice(2).map(f => [/tasks/.test(f) ? 'tasks' : /constitution/.test(f) ? 'constitution' : 'spec', f]),
 ]

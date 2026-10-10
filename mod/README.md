@@ -39,18 +39,18 @@ At the prompt of a terminal session:
 
 ## Autopilot
 
-`/xref auto on [steps]` lets the work run: after every turn the mod hands the next Spec Kit step to Claude by itself, so nobody has to answer "next is X, shall I go on?". It follows Spec Kit's whole loop: constitution, specify, clarify, **your review of the spec**, plan, tasks, map, analyze, implement **one phase per step**, converge until the tasks stop changing, verify.
+`/xref auto on [steps]` lets the work run: after every turn the mod hands the next Spec Kit step to Claude by itself, so nobody has to answer "next is X, shall I go on?". It follows Spec Kit's whole loop: constitution, specify, clarify, **your review of the spec**, plan, tasks, map, analyze (and the fixes it finds), implement **one phase per step**, converge until the tasks stop changing, verify. One step at a time: started while a turn runs, or while you type, the next step waits until the session is free.
 
 It stops only for what is yours:
 - the product idea;
-- **the spec gate:** once the spec is written, the pane shows your words beside the requirements, the out-of-scope list and the assumptions Claude added. **Approve spec** (or `/xref approve`, or the dialog) lets it go on; the plugin option `review` sets `spec+plan` or `none`. An approval holds for that text: a changed spec asks again;
+- **the spec gate:** once the spec is written, the pane shows your words beside the requirements, the out-of-scope list and the assumptions Claude added. **Approve spec** (in the pane or the band, `/xref approve`, the dialog, or running `/speckit-plan` yourself) lets it go on; the plugin option `review` sets `spec+plan` or `none`. An approval holds for that text: a changed spec asks again;
 - a `[NEEDS CLARIFICATION]` question, or open checklist items;
 - a request that contradicts the spec (one that only extends it becomes a revise step);
 - destructive or irreversible actions: while it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question.
 
 Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question opens as a dialog and the run goes on with your answer in the same turn. A question that blocks only some stories waits in the pane's **Decide** row while the rest goes on. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
 
-**Tests gate the progress.** After each implement step the mod runs the test command (the `testCommand` option, else derived from plan.md's `**Testing**:` line). A failure becomes a repair step, at most three in a row; then it is your call. A passing suite proves every requirement with a real test (with `junitPath`, each one by the tests that name or anchor it). The run ends only when the suite passes once more.
+**Tests gate the progress.** After each implement step the mod runs the test command: the `testCommand` option, else the project's `test` script (`npm test`, or pnpm, yarn, bun), else what plan.md's `**Testing**:` line names. A command that is not there counts as "could not run", not as a failure. A failure becomes a repair step, at most three in a row; then it is your call. A passing suite proves every requirement with a real test (with `junitPath`, each one by the tests that name or anchor it). The run ends only when the suite passes once more.
 
 It also stops on Esc or `/xref-stop` (both end the running turn), on an API error or a refusal, when the drift turns red, after three steps without progress, at the step budget (25 by default) and when the feature is done. After five minutes of waiting it sends a notification. The band shows `auto ▶ 3/25 · $1.80 · 23m` while it runs and the whole question when it waits; the pane tab reads `Spec X-Ref ⏸`. Back at the keyboard, the pane's **Away** card says what happened.
 

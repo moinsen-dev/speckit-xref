@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.1 — 2026-10-10
+
+Fixes from the first live greenfield run (an Expo app, the autopilot from tasks into phase 1). Mod 0.4.1, extension 0.2.1.
+
+### Autonomy
+
+- **One step at a time.** Starting or resuming the autopilot while a turn runs, or typing while a step works, no longer leaves a second step queued behind the first: the next step goes out only when the session is free and no prompt is waiting. Before, a pause could come one step too late.
+- **The test command is the project's.** A `test` script in `package.json` comes first (`npm test`, or pnpm, yarn, bun by lockfile; a watch-mode script never counts), then plan.md's Testing line, where a backticked span counts only when it is a command (`jest-expo` is a package, not a command).
+- **A command that is not there is no failing test.** Exit 126/127 or "command not found" no longer start repair steps; the pane and a toast say the tests could not run.
+- **Analyze is followed through.** An analysis that finds something no longer ends in a "shall I apply the changes?" the autopilot reads as small talk: a remediate step applies its fixes before the next task (twice a run at most), and product decisions go to you.
+- **Scaffold files are no drift.** Images, icons, fonts, `assets/` and tooling dotfiles (`.gitignore`, `.prettierignore`, …) are *unclear*, not unplanned, and rules apply to what was booked before they changed: a scaffold no longer turns the drift red after phase 1.
+
+### The spec gate
+
+- The review card puts **Approve spec** first, before the requirements; at a review pause the band offers **Approve** instead of Resume.
+- Your own `/speckit-plan` (typed, or in a message) approves the spec it plans, and `/speckit-tasks` the plan; the model's calls never do.
+- A spec planned without your approval shows as `◌spec`, and the status tool tells the model it is not approved.
+
+### Reading Spec Kit
+
+- A multi-line `**Input**` is your whole text, without the quotes (before, the first line and a stray quote).
+- A task that names files in backticks names all of them: prose such as "iOS/Android/Web" is no path.
+- The run log names a task only for steps that work on tasks.
+
+Known limit: Claude Code 2.1.296's terminal draws a plugin's prompt framed and in full, so the one-line fold of autopilot prompts shows only where a surface honours the rewrite.
+
 ## 0.4.0 — 2026-10-09
 
 Red has to mean something, and "done" has to be proven. Mod 0.4.0, extension 0.2.0, preset 0.1.0, and a GitHub Action, all held to one contract ([`docs/contract-0.4.md`](docs/contract-0.4.md)) whose cases both implementations run (`contract.test.ts`, `xref.py selftest`).

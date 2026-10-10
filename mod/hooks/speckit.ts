@@ -34,10 +34,35 @@ function bulletsUnder(markdown: string, heading: RegExp, max: number): string[] 
   return out
 }
 
+/**
+ * The person's words: the `**Input**` line, and the lines after it while the quote it opened is still open
+ * (Spec Kit writes `User description: "$ARGUMENTS"`, and the arguments may span lines). The quotes are dropped.
+ */
+export function inputOf(markdown: string): string | null {
+  const lines = markdown.split('\n')
+  const at = lines.findIndex(l => /^\*\*Input\*\*:/.test(l))
+  if (at === -1) return null
+  let text = lines[at]!.replace(/^\*\*Input\*\*:\s*(?:User description:\s*)?/, '').trim()
+  if (!text) return null
+  if (text.startsWith('"') && !(text.length > 1 && text.endsWith('"'))) {
+    for (let i = at + 1; i < lines.length; i++) {
+      const line = lines[i]!.trimEnd()
+      if (/^#{1,6}\s/.test(line)) break
+      text += '\n' + line
+      if (line.endsWith('"')) break
+    }
+  }
+  text = text.trim()
+  if (text.startsWith('"')) {
+    text = text.slice(1)
+    if (text.endsWith('"')) text = text.slice(0, -1)
+  }
+  return text.trim() || null
+}
+
 export function parseSpec(markdown: string): Spec {
   const titleLine = /^#\s+(?:Feature Specification:\s*)?(.+)$/m.exec(markdown)
-  const inputLine = /^\*\*Input\*\*:\s*(?:User description:\s*)?(.+)$/m.exec(markdown)
-  const input = inputLine?.[1] ? inputLine[1].trim().replace(/^"(.*)"$/, '$1').trim() : null
+  const input = inputOf(markdown)
 
   const stories: Story[] = []
   let story: Story | null = null
@@ -70,7 +95,7 @@ export function parseSpec(markdown: string): Spec {
 
   return {
     title: titleLine?.[1]?.trim() ?? 'Untitled feature',
-    input: input && !/^\$ARGUMENTS$/.test(input) ? clip(input, 600) : null,
+    input: input && !/^\$ARGUMENTS$/.test(input) ? clip(input, 2000) : null,
     stories,
     reqs,
     outOfScope: bulletsUnder(markdown, /out of scope|non-goals?|not in scope/i, 8),
@@ -92,6 +117,8 @@ export function extractPaths(text: string): string[] {
     if (path.includes('/') || PATH_EXT.test(path)) found.add(path)
   }
   for (const m of text.matchAll(/`([^`]+)`/g)) keep(m[1] ?? '')
+  // A task that names its files in backticks (the xref preset's rule) names all of them: the rest is prose.
+  if (found.size) return [...found]
   const bare = text.replace(/`[^`]*`/g, ' ')
   for (const m of bare.matchAll(/(?:^|[\s("'])((?:\.\/)?(?:[\w@.-]+\/)+[\w@.\[\]-]*|[\w-]+\.[a-z][a-z0-9]{0,5})(?=[\s,;:)"']|\.(?:\s|$)|$)/gi)) {
     const token = m[1] ?? ''

@@ -23,8 +23,11 @@ import {
   setupNote,
   stepLine,
   takesIdea,
+  couldNotRun,
+  specReview,
   tasksFingerprint,
   testCommandFrom,
+  testScriptCommand,
 } from './workflow'
 import {
   acknowledgeAll,
@@ -102,6 +105,7 @@ const turnA = atom({ plugin: 'speckit-xref', key: 'turn' } as const, null)
 const detailsA = atom({ plugin: 'speckit-xref', key: 'details' } as const, false)
 const seenAtA = atom({ plugin: 'speckit-xref', key: 'seenAt' } as const, 0)
 const chipsA = atom({ plugin: 'speckit-xref', key: 'chips' } as const, {} as Record<string, string>)
+const queueA = atom({ plugin: 'speckit-xref', key: 'queue' } as const, { auto: false, person: false })
 
 // The module's own: they start over on a reload, and session.start or register fills them again.
 let root = ''
@@ -244,7 +248,7 @@ async function resolveFeature($: $, features?: { dir: string; time: number }[], 
 
 async function currentSignature($: $, featureDir: string | null): Promise<string> {
   const files = ['.specify/feature.json', '.specify/memory/constitution.md', '.specify/integration.json', '.specify/extensions.yml']
-  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore')
+  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json')
   const times = await Promise.all(files.map(f => mtime($, f)))
   return [featureDir ?? '-', ...times].join('|')
 }
@@ -291,7 +295,8 @@ async function scan($: $): Promise<void> {
     rules: rulesFrom(ignoreText),
     realTests: previous?.featureDir === featureDir ? previous.realTests : [],
     planFingerprint: planMd ? fingerprint(planMd) : null,
-    testCommand: testCommandOption || testCommandFrom(planMd),
+    // The option, else the project's own test script, else what plan.md's Testing line implies.
+    testCommand: testCommandOption || (await projectTestScript($)) || testCommandFrom(planMd),
     branch,
     phase: openPhase(tasks),
     tasksFingerprint: tasksFingerprint(tasks),
@@ -308,6 +313,12 @@ async function scan($: $): Promise<void> {
   }
   await update($, snapshotA, () => snapshot)
   signature = await currentSignature($, featureDir)
+}
+
+async function projectTestScript($: $): Promise<string | null> {
+  const pkg = await readText($, 'package.json')
+  if (!pkg) return null
+  return testScriptCommand(pkg, { pnpm: await exists($, 'pnpm-lock.yaml'), yarn: await exists($, 'yarn.lock'), bun: (await exists($, 'bun.lock')) || (await exists($, 'bun.lockb')) })
 }
 
 /** Spec Kit's commands installed for Claude Code, by name without prefix: `plan`, `analyze`, `xref-check`. */
@@ -626,13 +637,13 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, remediate: ap.remediate })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
   const cost = await sessionCost($)
   const now = await $.clock.now()
-  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null }))
+  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null }))
   await update($, seenAtA, () => now)
   await retitle($)
   $.clock.after(0, () => void advance($).catch(() => undefined))
@@ -649,6 +660,7 @@ async function resumeAutopilot($: $): Promise<void> {
 async function turnOffAutopilot($: $): Promise<void> {
   const wasOn = (await read($, autopilotA)).on
   await update($, autopilotA, a => ({ ...a, on: false, paused: null, idea: null }))
+  await update($, queueA, q => ({ ...q, auto: false }))
   await retitle($)
   const turn = await read($, turnA)
   if (wasOn && turn) await $.turn.abort({ turnId: turn.id }).catch(() => undefined)
@@ -705,6 +717,26 @@ async function approve($: $): Promise<string> {
   await persist($)
   if (ap.on && ap.paused) await resumeAutopilot($)
   return key === 'checklists' ? 'Going on despite the open checklist items.' : `Approved the ${key} of ${snap.featureDir}.`
+}
+
+/**
+ * The person's own command for the next phase is their approval of the review that stands before it: running
+ * `/speckit-plan` approves the spec, `/speckit-tasks` the plan. The autopilot never runs past a review, so it never
+ * approves this way; a plugin's or the model's call is no command of the person's.
+ */
+async function approveByCommand($: $, text: string): Promise<void> {
+  const m = /(?:^|\s)\/?speckit[-.](plan|tasks|implement)\b/.exec(text)
+  if (!m) return
+  const snap = await read($, snapshotA)
+  if (!snap) return
+  const ap = await read($, autopilotA)
+  const step = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
+  const key = step.phase === 'review' ? step.approve?.key : null
+  if (!key || !step.approve || (key === 'plan' && m[1] === 'plan')) return
+  const { value } = step.approve
+  await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
+  await persist($)
+  $.ui.toast(`Approved the ${key}: you ran /speckit-${m[1]}.`)
 }
 
 /** Stops the autopilot until the person speaks, says why, and asks again after five minutes. */
@@ -774,12 +806,16 @@ async function runTests($: $): Promise<{ ran: boolean; ok: boolean; output: stri
   let exitCode: number
   let output: string
   try {
-    const ran = await $.process.run(['sh', '-c', snap.testCommand], { cwd: root, timeoutMs: 600_000 })
+    // CI=true: test runners run once and never wait for a key.
+    const ran = await $.process.run(['sh', '-c', snap.testCommand], { cwd: root, timeoutMs: 600_000, env: { CI: 'true' } })
     exitCode = ran.exitCode
     output = `${ran.stdout}\n${ran.stderr}`.trim().slice(-4000)
-  } catch (error) {
-    return { ran: false, ok: true, output: String(error) }
+  } catch {
+    // No shell here, or the suite outlived ten minutes: the run goes on without a verdict.
+    return { ran: false, ok: true, output: '' }
   }
+  // A command that is not there is no failing test: no repair step, a note for the person instead.
+  if (couldNotRun(exitCode, output)) return { ran: false, ok: true, output: `${snap.testCommand}: ${output.split('\n').filter(Boolean).at(-1) ?? `exit ${exitCode}`}` }
   const at = await stamp($)
   const commit = await head($)
   const current = Object.fromEntries((snap.spec?.reqs ?? []).map(r => [r.id, fingerprint(r.text)]))
@@ -859,6 +895,9 @@ async function writeBriefing($: $, why: string): Promise<void> {
 async function advance($: $): Promise<void> {
   const ap = await read($, autopilotA)
   if (!ap.on || ap.paused) return
+  // One step at a time: while a turn runs, or a prompt waits for the session, the next step waits for its end.
+  const queue = await read($, queueA)
+  if (interactive && ((await read($, turnA)) || queue.auto || queue.person)) return
   await scan($)
   const snap = await read($, snapshotA)
   if (!snap) return
@@ -884,7 +923,17 @@ async function advance($: $): Promise<void> {
     }
     return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked and the drift is ${report.level}. No test command is known, so "done" rests on the checkboxes.`)
   }
-  await update($, autopilotA, a => ({ ...a, steps: a.steps + 1, last: key, stalls, lastPhase: step.phase, idea: step.phase === 'specify' ? null : a.idea, scope: step.phase === 'implement' ? snap.phase : a.scope }))
+  await update($, autopilotA, a => ({
+    ...a,
+    steps: a.steps + 1,
+    last: key,
+    stalls,
+    lastPhase: step.phase,
+    idea: step.phase === 'specify' ? null : a.idea,
+    scope: step.phase === 'implement' ? snap.phase : a.scope,
+    remediate: step.phase === 'remediate' ? false : a.remediate,
+    remediations: (a.remediations ?? 0) + (step.phase === 'remediate' ? 1 : 0),
+  }))
   // Handing a step over is its checkpoint (analyze, converge); a revise takes the request it folds in off the list.
   if (step.approve) {
     const { key: point, value } = step.approve
@@ -906,6 +955,7 @@ async function advance($: $): Promise<void> {
     pendingPrompt = text
     return
   }
+  await update($, queueA, q => ({ ...q, auto: true }))
   void $.prompt.submit({ text })
 }
 
@@ -970,21 +1020,32 @@ async function commitTasks($: $): Promise<string | null> {
 type TurnEnd = { answer: string; reason: string; isAborted: boolean; durationMs: number; usage?: { input_tokens?: number; output_tokens?: number } }
 
 /** After a turn: the autopilot pauses where the model or the person needs the person, and moves on otherwise. */
-async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
+async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Promise<void> {
   const asked = await read($, askedA)
   await update($, askedA, () => null)
   const ap = await read($, autopilotA)
   if (!ap.on) return
+  // The person's own turn in the middle of a run: no step of the autopilot's, nothing to log or test.
+  if (!wasAuto) {
+    if (ap.paused) return
+    if (asked) return pauseAutopilot($, asked)
+    if (endsWithQuestion(e.answer)) {
+      const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
+      if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
+    }
+    return advance($)
+  }
   if (ap.lastPhase && ap.steps > 0) {
     const snap = await read($, snapshotA)
     const outcome = e.isAborted ? 'interrupted' : e.reason !== 'answer' ? e.reason : asked ? 'asked the person' : 'answered'
     // The tasks this step checked off, else the one it was on.
     const checked = snap ? snap.tasks.filter(t => t.done && !(ap.doneAtStep ?? []).includes(t.id)).map(t => t.id) : []
+    const working = ap.lastPhase === 'implement' || ap.lastPhase === 'repair' || ap.lastPhase === 'converge'
     await logRun($, {
       at: await stamp($),
       step: ap.steps,
       phase: ap.lastPhase,
-      task: checked.length ? checked.join(', ') : snap ? (currentTask(snap, await read($, activeA))?.id ?? null) : null,
+      task: !working ? null : checked.length ? checked.join(', ') : snap ? (currentTask(snap, await read($, activeA))?.id ?? null) : null,
       files,
       durationMs: e.durationMs || (stepStartedAt ? (await $.clock.now()) - stepStartedAt : 0),
       tokens: (e.usage?.input_tokens ?? 0) + (e.usage?.output_tokens ?? 0),
@@ -996,7 +1057,11 @@ async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
   // An API error or a refusal is no answer: going on would hand the next step to a turn that never did this one.
   if (e.reason !== 'answer') return pauseAutopilot($, `the turn ended with ${e.reason === 'refusal' ? 'a refusal' : 'an error'}; Resume tries again`)
   if (asked) return pauseAutopilot($, asked)
-  if (endsWithQuestion(e.answer)) {
+  // An analysis that found something ends by offering its fixes: the next step applies them (twice a run at most).
+  const findings = ap.lastPhase === 'analyze' && (endsWithQuestion(e.answer) || /\b(CRITICAL|HIGH|MEDIUM)\b/.test(e.answer))
+  if (findings && (ap.remediations ?? 0) < 2) {
+    await update($, autopilotA, a => ({ ...a, remediate: true }))
+  } else if (endsWithQuestion(e.answer)) {
     // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
     const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
     if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
@@ -1004,9 +1069,14 @@ async function afterTurn($: $, e: TurnEnd, files: string[]): Promise<void> {
   // Code changed: the tests say whether the step holds. A failure becomes a repair step, at most three in a row.
   if (ap.lastPhase === 'implement' || ap.lastPhase === 'repair' || ap.lastPhase === 'converge') {
     const tests = await runTests($)
+    if (!tests.ran && tests.output) {
+      // Said once per run, where the person looks; the run goes on without a test gate.
+      if (!ap.testNote) $.ui.toast(`Autopilot: the test command could not run (${tests.output.slice(0, 200)}). Set testCommand in /config.`)
+      await update($, autopilotA, a => ({ ...a, testNote: tests.output.slice(0, 300) }))
+    }
     if (tests.ran) {
       const when = await stamp($)
-      await update($, autopilotA, a => ({ ...a, lastTest: { ok: tests.ok, at: when, output: tests.output }, repairs: tests.ok ? 0 : a.repairs + 1 }))
+      await update($, autopilotA, a => ({ ...a, testNote: null, lastTest: { ok: tests.ok, at: when, output: tests.output }, repairs: tests.ok ? 0 : a.repairs + 1 }))
       if (tests.ok) {
         const committed = await commitTasks($)
         if (committed) $.ui.toast(`Autopilot: ${committed}`)
@@ -1170,9 +1240,16 @@ async function workflowStatus($: $): Promise<string> {
     `Active feature: ${snap.featureDir ? `${snap.featureDir}${snap.spec ? ` (${snap.spec.title})` : ''}` : 'none'}`,
   ]
   if (snap.features.length > 1) lines.push(`All features: ${snap.features.join(', ')} (switch by writing {"feature_directory": "<dir>"} to .specify/feature.json)`)
+  if (snap.featureDir && snap.spec) {
+    const state = specReview(snap, ledger)
+    lines.push(
+      `Spec review: ${state === 'approved' ? 'approved by the person' : state === 'changed' ? 'the spec changed since the person approved it' : review === 'none' ? 'off (review: none)' : 'not approved by the person (do not say it is)'}`,
+    )
+  }
   if (snap.featureDir) {
     lines.push(`Artifacts: spec.md ${snap.spec ? 'yes' : 'no'} · plan.md ${snap.hasPlan ? 'yes' : 'no'} · tasks.md ${snap.tasks.length ? `${report.done}/${report.tasks} done` : 'no'} · FR covered ${report.covered}/${report.total} · drift ${report.level}`)
   }
+  if (snap.featureDir) lines.push(`Test command: ${snap.testCommand ?? 'none known (the testCommand option, a test script in package.json, or plan.md\'s Testing line names one)'}`)
   lines.push(`Phase: ${next.phase}. ${next.why}`, `Next: ${next.command ?? next.needsUser ?? ''}`)
   if (next.needsUser) lines.push(`Needs the person: ${next.needsUser}`)
   if (next.notes.length) lines.push('Notes:', ...next.notes.map(n => `- ${n}`))
@@ -1325,10 +1402,13 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     const result = await next(e)
+    // Whose turn this is: the autopilot's step, or a message of the person's. Either leaves the queue.
+    const auto = e.text.includes('[speckit-xref autopilot')
+    await update($, turnA, () => ({ id: e.turnId, startedAt: 0, dirty: [], auto }))
+    await update($, queueA, q => (auto ? { ...q, auto: false } : { ...q, person: false }))
     if (!root || !(await read($, snapshotA))?.featureDir) return result
     // What the working tree looked like before: a file that changes during the turn without a Write or Edit came from Bash.
     const dirty = await changedFiles($)
-    await update($, turnA, () => ({ id: e.turnId, startedAt: 0, dirty: [] }))
     const hashes = await hashFiles($, dirty)
     await update($, turnA, t => (t && t.id === e.turnId ? { ...t, dirty: dirty.map(f => `${f}:${hashes[f] ?? ''}`) } : t))
     return result
@@ -1353,6 +1433,9 @@ export const register: Register = (on, options) => {
     const ap = await read($, autopilotA)
     const said = e.text.trim()
     await update($, seenAtA, () => Date.now())
+    // Typed while a turn runs, the message waits for the session: the autopilot's next step waits behind it.
+    if (await read($, turnA)) await update($, queueA, q => ({ ...q, person: true }))
+    await approveByCommand($, said)
     const waiting = snap && ap.on ? nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap)) : null
     // The person's word ends a pause. It is the idea to specify only where the autopilot waits for exactly that.
     if (ap.on && (ap.paused || waiting)) {
@@ -1416,6 +1499,9 @@ export const register: Register = (on, options) => {
     if (e.agentId || !root) return result
     await bookShellWrites($)
     const files = await read($, turnFilesA)
+    const turn = await read($, turnA)
+    // A turn the engine raised no turn.start for (a test's) counts as the autopilot's, as before 0.4.1.
+    const wasAuto = turn ? turn.auto : true
     await update($, turnFilesA, () => [])
     await update($, turnA, () => null)
     await refresh($)
@@ -1431,7 +1517,7 @@ export const register: Register = (on, options) => {
     $.clock.after(0, () =>
       void (async () => {
         if (check) await runCheck($, files, mapModel).catch(() => undefined)
-        await afterTurn($, end, files)
+        await afterTurn($, end, files, wasAuto)
       })().catch(() => undefined),
     )
     return result
@@ -1465,6 +1551,13 @@ export const register: Register = (on, options) => {
     if (!snap?.featureDir) return result
     const note = turnContext(snap, await read($, ledgerA), await read($, activeA))
     return note ? { ...result, additionalContext: [...(result.additionalContext ?? []), note] } : result
+  })
+
+  // The person running a Spec Kit command by itself (`/speckit-plan`) approves the review before it.
+  on('command.run', async ($, e, next) => {
+    const origin = (e.origin as { kind?: string } | undefined)?.kind
+    if (origin === undefined || PERSON.has(origin)) await approveByCommand($, `/${e.command}`).catch(() => undefined)
+    return next(e)
   })
 
   // A stop that cannot wait for the turn: the autopilot goes off and its running step ends now.
@@ -1581,6 +1674,8 @@ export const register: Register = (on, options) => {
       </Box>
     )
   })
+  // The documented way to fold a row. Claude Code 2.1.296's terminal still draws a plugin's own prompt framed and in
+  // full (checked live): the fold shows where a surface honours the rewrite.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     const line = e.props.isExpanded ? null : compactPrompt(e.props.text)
     return next(line ? { ...e, props: { ...e.props, text: line } } : e)
@@ -1619,6 +1714,8 @@ export const register: Register = (on, options) => {
       </Box>
     )
     // Waiting for the person is the one state that must not be missed: the whole question, and the way on.
+    const waitingOn = ap.on && ap.paused && snap ? nextStep(snap, ledger, ap.idea, flowOf(ap)).approve : undefined
+    const approval = waitingOn && APPROVALS.has(waitingOn.key) ? waitingOn.key : null
     const mine = ap.on && ap.paused ? (
       <Box key="speckit-xref-band" flexDirection="column">
         {line}
@@ -1628,7 +1725,11 @@ export const register: Register = (on, options) => {
           </Text>
         </Box>
         <Box flexDirection="row" columnGap={1}>
-          <Button key="band-resume" label="Resume" variant="primary" onPress={() => void resumeAutopilot($)} />
+          {approval ? (
+            <Button key="band-approve" label={approval === 'checklists' ? 'Proceed anyway' : `Approve ${approval}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+          ) : (
+            <Button key="band-resume" label="Resume" variant="primary" onPress={() => void resumeAutopilot($)} />
+          )}
           <Button key="band-stop" label="Stop" onPress={() => void turnOffAutopilot($)} />
           <Button key="band-pane" label="Pane" onPress={() => void $.ui.open({ id: PANE, title: `${TITLE} ⏸` })} />
         </Box>
@@ -1742,13 +1843,14 @@ export const register: Register = (on, options) => {
       step.phase === 'review' && step.approve ? (
         <Box flexDirection="column" marginTop={1}>
           {row('Review', step.approve.key === 'plan' ? 'plan.md is written: read it, then approve it as the plan.' : 'Is this what you meant? Approve it as the contract.', 'warning')}
-          {step.approve.key === 'spec' ? row('', `You said: "${spec.input ?? '-'}"`, 'subtle') : null}
-          {step.approve.key === 'spec' ? spec.reqs.filter(r => r.kind === 'FR' && r.status === 'active').slice(0, 8).map(r => row('', `${r.id} ${r.text}`)) : null}
-          {step.approve.key === 'spec' && spec.outOfScope.length ? row('', `Out of scope: ${spec.outOfScope.join(' · ')}`, 'subtle') : null}
-          {step.approve.key === 'spec' && spec.assumptions.length ? row('', `Assumed: ${spec.assumptions.join(' · ')}`, 'warning') : null}
+          {/* The way on first: on a short pane the card's details may run past the bottom. */}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
             <Button key="approve" label={step.approve.key === 'plan' ? 'Approve plan' : 'Approve spec'} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
           </Box>
+          {step.approve.key === 'spec' ? row('', `You said: "${short((spec.input ?? '-').replace(/\s+/g, ' '), width * 2)}"`, 'subtle') : null}
+          {step.approve.key === 'spec' ? spec.reqs.filter(r => r.kind === 'FR' && r.status === 'active').slice(0, 8).map(r => row('', `${r.id} ${r.text}`)) : null}
+          {step.approve.key === 'spec' && spec.outOfScope.length ? row('', `Out of scope: ${spec.outOfScope.join(' · ')}`, 'subtle') : null}
+          {step.approve.key === 'spec' ? spec.assumptions.map(a => row('', `Assumed: ${a}`, 'warning')) : null}
         </Box>
       ) : step.phase === 'checklists' && step.approve ? (
         <Box flexDirection="row" columnGap={1} marginLeft={8}>
@@ -1792,7 +1894,7 @@ export const register: Register = (on, options) => {
           {spec.title}
         </Text>
         <Text dimColor wrap="truncate-end">
-          {phaseStrip(snap, step)}
+          {phaseStrip(snap, step, review !== 'none' && specReview(snap, ledger) !== 'approved')}
         </Text>
         {details ? row('Goal', spec.input ?? (spec.stories.map(s => s.title).join(' · ') || '-')) : null}
         {details ? row('Vision', snap.constitution?.principles.length ? snap.constitution.principles.join(' · ') : 'no constitution yet') : null}
@@ -1822,6 +1924,7 @@ export const register: Register = (on, options) => {
         )}
         {autoRow}
         {ap.lastTest && !ap.lastTest.ok ? row('Tests', `fail · ${short(ap.lastTest.output.split('\n').filter(Boolean).at(-1) ?? '', width)}`, 'error') : null}
+        {ap.testNote ? row('Tests', `could not run · ${short(ap.testNote, width)} · set testCommand in /config`, 'warning') : null}
         {row('Drift', `${state.glyph} ${state.word}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {details ? driftCards : report.findings.length ? row('', `${report.findings.length} findings · d shows them`, 'subtle') : null}
         {details ? report.notes.map(n => row('', `· ${n}`, 'subtle')) : null}

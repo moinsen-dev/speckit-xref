@@ -208,7 +208,9 @@ const proofSnap = (snap: Snapshot) => ({ featureDir: snap.featureDir, tasks: sna
 export function evaluate(snap: Snapshot, ledger: Ledger, opts: { semantic?: boolean } = {}): Report {
   const semanticOn = opts.semantic ?? true
   const findings: Finding[] = []
-  const open = ledger.unplanned.filter(u => !u.acknowledged)
+  // Rules apply to what was booked before they changed: a file now exempt or unclear is no drift any more.
+  const quiet = [...(snap.rules?.exempt ?? []), ...(snap.rules?.unclear ?? [])]
+  const open = ledger.unplanned.filter(u => !u.acknowledged && !matchesAny(u.file, quiet))
   for (const u of open) findings.push({ kind: 'unplanned', level: 'yellow', file: u.file, text: `${u.file} is not planned for any task` })
   if (open.length >= 3) findings.push({ kind: 'unplanned', level: 'red', text: `${open.length} edits outside the planned files` })
 

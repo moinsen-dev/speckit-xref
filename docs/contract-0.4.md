@@ -67,7 +67,7 @@ The in-memory ledger keeps the v1 shape (`tasks{touched,linked}`, `requirements{
 
 **Default exempt** (never drift, not shown): `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Gemfile.lock`, `go.sum`, `composer.lock`, `Podfile.lock`, `pubspec.lock`, `node_modules/`, `/dist/`, `/build/`, `/coverage/`, `/.next/`, `/out/`, `/target/`, `__snapshots__/`, `*.min.js`, `*.map`, `*.generated.*`, `*.g.dart`.
 
-**Default unclear** (not drift, listed as "unclear"): `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pubspec.yaml`, `Gemfile`, `requirements*.txt`, `*.config.*`, `tsconfig*.json`, `.eslintrc*`, `.prettierrc*`, `Dockerfile`, `docker-compose*.yml`, `/.github/workflows/`, `.env.example`, `*.md`.
+**Default unclear** (not drift, listed as "unclear"): `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pubspec.yaml`, `Gemfile`, `requirements*.txt`, `*.config.*`, `tsconfig*.json`, `.eslintrc*`, `.prettierrc*`, `Dockerfile`, `docker-compose*.yml`, `/.github/workflows/`, `.env.example`, `*.md`, and (0.4.1) tooling dotfiles and media: `.*ignore`, `.editorconfig`, `.nvmrc`, `.node-version`, `.tool-versions`, `/assets/`, `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.webp`, `*.svg`, `*.ico`, `*.icns`, `*.ttf`, `*.otf`, `*.woff`, `*.woff2`, `*.mp3`, `*.wav`, `*.mp4`, `*.lottie`.
 
 **Test files** (`isTestFile`): `*.test.*`, `*.spec.*`, `test_*.py`, `*_test.py`, `*_test.go`, `*_test.dart`, `/tests/`, `/test/`, `__tests__/`.
 
@@ -109,6 +109,10 @@ Signature: `levelOf(id, snap, ledger)`. The snapshot carries `featureDir`, `task
 
 ## 5. Acceptance scenarios
 
+**Input** (`inputOf`, 0.4.1): the text after `**Input**:` (and an optional `User description:`); when it opens a quote it does not close on that line, the following lines (each right-trimmed, joined with `\n`) belong to it up to the first line ending in `"`, or up to a heading. A leading quote and its closing quote are dropped; the result is trimmed and clipped to 2000.
+
+**Task paths** (`extractPaths`, 0.4.1): when a task names any path in backticks, those are its paths; bare words in its prose count only in a task without backticked paths.
+
 A story section starts at its `### User Story N …` heading and ends at the next heading of level 1–3 (`^#{1,3}\s`). Inside it, a line matching `^\s*(\d+)\.\s+(\*\*Given\*\*.*)$` is scenario `USN-AS<number>` (the list number as written, without leading zeros). Its text is group 2 with bold and backticks removed, trimmed, clipped like requirement text (300). `parseSpec` returns `stories[{id, title, priority, scenarios: [{id, text}]}]` and `reqs[{id, kind, text, needsClarification, status, supersededBy}]` (§11). Snapshots in `cases.json` may give reqs without `kind`/`status`: treat them as `FR` and take the status from `reqStatus(text)`. Anchors and links may name scenarios: the anchor regex is
 `@spec\s+((?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))`.
 
@@ -125,7 +129,7 @@ Order: `--feature` (extension) → `SPECIFY_FEATURE_DIRECTORY` → `.specify/fea
 ## 8. Drift level and exit codes
 
 `evaluate(snap, ledger, { semantic })`:
-- Deterministic findings, in this order: each open unplanned file → `unplanned` yellow, then with three or more one more `unplanned` red; each anchor of this feature to an id that the spec, the tasks and the scenarios lack, or to a retired/superseded requirement → `orphan-test` yellow when the file `isTestFile`, else `dangling` yellow; each requirement whose stored fingerprint differs → `re-verify` yellow.
+- Deterministic findings, in this order: each open unplanned file (one the snapshot's rules now mark exempt or unclear no longer counts: rules apply to what was booked before they changed) → `unplanned` yellow, then with three or more one more `unplanned` red; each anchor of this feature to an id that the spec, the tasks and the scenarios lack, or to a retired/superseded requirement → `orphan-test` yellow when the file `isTestFile`, else `dangling` yellow; each requirement whose stored fingerprint differs → `re-verify` yellow.
 - `Report` adds `levels` (count per ladder level over active FRs) and `notes` (spec gaps that do not raise the level: a user story without acceptance scenarios: `US2 has no acceptance scenarios`).
 - With `semantic: true` (the live mod), the LLM verdict and intent changes count as before. **The extension's `--fail-on` always evaluates with `semantic: false`**; reports may show the LLM verdict as advice.
 

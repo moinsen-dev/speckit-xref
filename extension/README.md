@@ -7,7 +7,7 @@ The speckit-xref Claude Code mod (`../mod`) keeps the same ledger live while Cla
 ## Install
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-extension-v0.2.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-extension-v0.2.1.zip
 ```
 
 From a checkout: `specify extension add --dev /path/to/speckit-xref/extension`.

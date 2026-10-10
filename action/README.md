@@ -18,14 +18,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the diff needs the base commit
-      - uses: moinsen-dev/speckit-xref/action@v0.4.0
+      - uses: moinsen-dev/speckit-xref/action@v0.4.1
 ```
 
 With test results:
 
 ```yaml
       - run: npx vitest run --reporter=junit --outputFile="$RUNNER_TEMP/junit.xml"
-      - uses: moinsen-dev/speckit-xref/action@v0.4.0
+      - uses: moinsen-dev/speckit-xref/action@v0.4.1
         if: ${{ !cancelled() }}   # write the summary even when a test failed
         with:
           junit: ${{ runner.temp }}/junit.xml

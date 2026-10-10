@@ -1,12 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import { DEMO } from './fixtures/demo'
-import { BAND, FEATURE, PANE, ROOT, endTurn, project, startSession, toText, type, xref } from './harness'
+import { BAND, FEATURE, PANE, ROOT, endTurn, project, runTurn, startSession, toText, type, xref } from './harness'
 
 const autopilotPrompts = (seen: { submitted: any[] }) => seen.submitted.map(e => e.text as string).filter(t => t.startsWith('[speckit-xref autopilot'))
 
-const turn = ($: any, answer = 'Done with this step.', isAborted = false) =>
-  $.turn.complete({ reason: isAborted ? 'aborted' : 'answer', answer, durationMs: 1000, isAborted, turnId: `t-${Math.random()}` })
+const turn = ($: any, answer = 'Done with this step.', isAborted = false) => runTurn($, answer, isAborted ? 'aborted' : 'answer')
 
 const band = async ($: any) => toText(await (await $.ui.mount({ ...BAND, surface: 'terminal' })).drawn())
 

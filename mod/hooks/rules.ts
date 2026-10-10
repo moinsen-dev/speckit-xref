@@ -80,6 +80,8 @@ export const DEFAULT_EXEMPT = [
 export const DEFAULT_UNCLEAR = [
   'package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'pubspec.yaml', 'Gemfile', 'requirements*.txt', '*.config.*', 'tsconfig*.json', '.eslintrc*', '.prettierrc*', 'Dockerfile', 'docker-compose*.yml',
   '/.github/workflows/', '.env.example', '*.md',
+  // Tooling dotfiles and media: a scaffold writes many of them, and none implements a requirement.
+  '.*ignore', '.editorconfig', '.nvmrc', '.node-version', '.tool-versions', '/assets/', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.svg', '*.ico', '*.icns', '*.ttf', '*.otf', '*.woff', '*.woff2', '*.mp3', '*.wav', '*.mp4', '*.lottie',
 ]
 const TEST_GLOBS = ['*.test.*', '*.spec.*', 'test_*.py', '*_test.py', '*_test.go', '*_test.dart', '/tests/', '/test/', '__tests__/']
 

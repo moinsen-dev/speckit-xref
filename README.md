@@ -35,13 +35,13 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-extension-v0.2.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-extension-v0.2.1.zip
 ```
 
 **Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.
 
 ```bash
-specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.0/speckit-xref-preset-v0.1.0.zip
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-preset-v0.1.0.zip
 ```
 
 **GitHub Action**, in a workflow on `pull_request` (see [`action/`](action/)):
@@ -49,7 +49,7 @@ specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/d
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.4.0
+- uses: moinsen-dev/speckit-xref/action@v0.4.1
 ```
 
 ## Try it

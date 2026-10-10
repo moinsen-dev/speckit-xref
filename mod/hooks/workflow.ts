@@ -16,6 +16,7 @@ export type Phase =
   | 'revise'
   | 'map'
   | 'analyze'
+  | 'remediate'
   | 'checklists'
   | 'implement'
   | 'repair'
@@ -44,6 +45,8 @@ export type Flow = {
   review: 'spec' | 'spec+plan' | 'none'
   lastTest?: Autopilot['lastTest']
   repairs?: number
+  /** The last analysis found something to fix: the next step applies its remediation. */
+  remediate?: boolean
 }
 
 const INIT = 'init --here --force --non-interactive --integration claude'
@@ -60,11 +63,14 @@ export function persistenceModel(constitutionMd: string | null): Persistence {
   return value.startsWith('living') ? 'living' : value === 'flow-forward' ? 'flow-forward' : 'flow-back'
 }
 
+/** What a backticked span must start with to be a command rather than a package or a tool name (`jest-expo`). */
+const RUNNER = /^(?:npm|npx|pnpm|yarn|bun|bunx|deno|node|pytest|python3?|uv|poetry|cargo|go|flutter|dart|make|mvn|gradle|\.\/gradlew|dotnet|bundle|rake|rspec|mix|swift|xcodebuild|vitest|jest|phpunit|composer)(?=\s|$)/
+
 /** The test command plan.md's `**Testing**:` line implies: a backticked command as written, else the framework's usual one. */
 export function testCommandFrom(planMd: string | null): string | null {
   const line = /^\*\*Testing\*\*:\s*(.+)$/m.exec(planMd ?? '')?.[1]?.trim()
   if (!line || /NEEDS CLARIFICATION|^\[/.test(line)) return null
-  const ticked = /`([^`]+)`/.exec(line)?.[1]
+  const ticked = [...line.matchAll(/`([^`]+)`/g)].map(m => m[1]!.trim()).find(t => RUNNER.test(t))
   if (ticked) return ticked
   const known: [RegExp, string][] = [
     [/vitest/i, 'npx vitest run'],
@@ -79,6 +85,31 @@ export function testCommandFrom(planMd: string | null): string | null {
     [/npm test|node:test|mocha/i, 'npm test'],
   ]
   return known.find(([re]) => re.test(line))?.[1] ?? null
+}
+
+/**
+ * The project's own test script, when package.json has one: what `npm test` runs is what the project means by
+ * "the tests". A watch-mode script would never end, and npm's placeholder fails on purpose: neither counts.
+ */
+export function testScriptCommand(packageJson: string | null, lockfiles: { pnpm: boolean; yarn: boolean; bun: boolean }): string | null {
+  let script: unknown
+  try {
+    script = (JSON.parse(packageJson ?? '') as { scripts?: Record<string, unknown> }).scripts?.test
+  } catch {
+    return null
+  }
+  if (typeof script !== 'string' || !script.trim() || /no test specified|--watch(?:All)?\b(?!=false)/.test(script)) return null
+  return lockfiles.pnpm ? 'pnpm test' : lockfiles.yarn ? 'yarn test' : lockfiles.bun ? 'bun run test' : 'npm test'
+}
+
+/** Whether a test run failed to start rather than failed: the shell's "command not found" and "not executable". */
+export const couldNotRun = (exitCode: number, output: string) => exitCode === 126 || exitCode === 127 || /command not found|not recognized as an internal or external command/i.test(output.slice(-2000))
+
+/** Where the spec stands with the person: approved for this text, approved for an older one, or never reviewed. */
+export function specReview(snap: Snapshot, ledger: Ledger): 'approved' | 'changed' | 'unreviewed' {
+  if (!snap.spec) return 'unreviewed'
+  if (!ledger.approvals.spec) return 'unreviewed'
+  return ledger.approvals.spec === specFingerprint(snap.spec) ? 'approved' : 'changed'
 }
 
 /** The first `##` phase of tasks.md that still has an open task: what one implement step covers. */
@@ -165,6 +196,16 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (open.length && has('analyze') && (ledger.checkpoints.analyze ? ledger.checkpoints.analyze !== specFp : !started)) {
     return step('analyze', speckitCommand(snap, 'analyze'), started ? 'The spec changed since the last analysis: check spec, plan and tasks against each other.' : 'Before the first task: check spec, plan and tasks against each other.', null, { approve: { key: 'analyze', value: specFp } })
   }
+  // An analysis that found something is followed through: its fixes go in before the next task does.
+  if (open.length && flow.remediate) {
+    return step('remediate', null, 'The analysis found inconsistencies: apply its remediation before the next task.', null, {
+      prompt: [
+        `Apply the remediation the last ${speckitCommand(snap, 'analyze')} proposed, in this step and without asking whether to.`,
+        'Edit tasks.md, plan.md, data-model.md and spec.md where the findings point. Keep every existing id; new tasks get the next free T### in the phase they belong to, new requirements the next free FR-###. Check nothing off.',
+        'Decide what the person left open and record it as an assumption. A product decision only the person can make (scope, a user-facing behaviour the spec leaves open) goes to mcp__speckit-xref__ask, with options and the stories it blocks.',
+      ].join('\n'),
+    })
+  }
   if (flow.lastTest && !flow.lastTest.ok) {
     if ((flow.repairs ?? 0) > MAX_REPAIRS) {
       return step('repair', null, `The tests still fail after ${MAX_REPAIRS} repairs.`, `The tests still fail after ${MAX_REPAIRS} attempts: look at the failure in the pane and decide how to go on.`)
@@ -214,6 +255,9 @@ export const idleAutopilot = (): Autopilot => ({
   costAtStart: 0,
   night: false,
   scope: null,
+  remediate: false,
+  remediations: 0,
+  testNote: null,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
@@ -279,14 +323,14 @@ export const endsWithQuestion = (answer: string) => /\?["')\]*_\s]*$/.test(answe
 /** The labels for that question; the first means stop. A "shall I continue?" is the second. */
 export const QUESTION_LABELS = ['needs a decision only the person can make', 'asks only whether to continue, or reports progress'] as const
 
-/** The phase strip: `✓setup ✓const ✓spec ✓plan ✓tasks ▶impl 7/8 ·verify`. */
-export function phaseStrip(snap: Snapshot, step: Step): string {
+/** The phase strip: `✓setup ✓const ✓spec ✓plan ✓tasks ▶impl 7/8 ·verify`; `◌spec` is a spec passed without your review. */
+export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): string {
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
     ['const', ['constitution']],
     ['spec', ['specify', 'clarify', 'review', 'revise']],
     ['plan', ['plan']],
-    ['tasks', ['tasks', 'map', 'analyze', 'checklists']],
+    ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge']],
     ['verify', ['verify']],
   ]
@@ -295,7 +339,7 @@ export function phaseStrip(snap: Snapshot, step: Step): string {
   return order
     .map(([label], i) => {
       const extra = label === 'impl' && snap.tasks.length ? ` ${done}/${snap.tasks.length}` : ''
-      return i < at ? `✓${label}` : i === at ? `▶${label}${extra}` : `·${label}`
+      return i < at ? `${label === 'spec' && unreviewed ? '◌' : '✓'}${label}` : i === at ? `▶${label}${extra}` : `·${label}`
     })
     .join(' ')
 }

@@ -85,12 +85,34 @@ def req_status(text: str) -> dict:
     return {"status": "active", "supersededBy": None}
 
 
+def input_of(markdown: str) -> str | None:
+    """The person's words: the **Input** line, and the lines after it while the quote it opened is still open."""
+    lines = markdown.split("\n")
+    at = next((i for i, line in enumerate(lines) if re.match(r"^\*\*Input\*\*:", line, A)), -1)
+    if at == -1:
+        return None
+    text = re.sub(r"^\*\*Input\*\*:\s*(?:User description:\s*)?", "", lines[at], flags=A).strip()
+    if not text:
+        return None
+    if text.startswith('"') and not (len(text) > 1 and text.endswith('"')):
+        for line in lines[at + 1 :]:
+            line = line.rstrip()
+            if re.match(r"^#{1,6}\s", line, A):
+                break
+            text += "\n" + line
+            if line.endswith('"'):
+                break
+    text = text.strip()
+    if text.startswith('"'):
+        text = text[1:]
+        if text.endswith('"'):
+            text = text[:-1]
+    return text.strip() or None
+
+
 def parse_spec(markdown: str) -> dict:
     title = re.search(r"^#\s+(?:Feature Specification:\s*)?(.+)$", markdown, re.M | A)
-    input_line = re.search(r"^\*\*Input\*\*:\s*(?:User description:\s*)?(.+)$", markdown, re.M | A)
-    raw_input = input_line.group(1).strip() if input_line else None
-    if raw_input is not None:
-        raw_input = re.sub(r'^"(.*)"$', r"\1", raw_input).strip()
+    raw_input = input_of(markdown)
     # A story runs from its heading to the next heading of level 1-3; its numbered Given lines are scenarios USn-ASk.
     stories: list[dict] = []
     story: dict | None = None
@@ -126,7 +148,7 @@ def parse_spec(markdown: str) -> dict:
         )
     return {
         "title": title.group(1).strip() if title else "Untitled feature",
-        "input": clip(raw_input, 600) if raw_input and raw_input != "$ARGUMENTS" else None,
+        "input": clip(raw_input, 2000) if raw_input and raw_input != "$ARGUMENTS" else None,
         "stories": stories,
         "reqs": reqs,
         "outOfScope": bullets_under(markdown, re.compile(r"out of scope|non-goals?|not in scope", re.I), 8),
@@ -153,6 +175,9 @@ def extract_paths(text: str) -> list[str]:
 
     for m in re.finditer(r"`([^`]+)`", text):
         keep(m.group(1) or "")
+    # A task that names its files in backticks (the xref preset's rule) names all of them: the rest is prose.
+    if found:
+        return list(found)
     bare = re.sub(r"`[^`]*`", " ", text)
     for m in re.finditer(
         r"(?:^|[\s(\"'])((?:\./)?(?:[\w@.-]+/)+[\w@.\[\]-]*|[\w-]+\.[a-z][a-z0-9]{0,5})(?=[\s,;:)\"']|\.(?:\s|$)|$)", bare, re.I | A
@@ -236,6 +261,8 @@ DEFAULT_EXEMPT = [
 DEFAULT_UNCLEAR = [
     "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pubspec.yaml", "Gemfile", "requirements*.txt", "*.config.*", "tsconfig*.json", ".eslintrc*", ".prettierrc*", "Dockerfile", "docker-compose*.yml",
     "/.github/workflows/", ".env.example", "*.md",
+    # Tooling dotfiles and media: a scaffold writes many of them, and none implements a requirement.
+    ".*ignore", ".editorconfig", ".nvmrc", ".node-version", ".tool-versions", "/assets/", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg", "*.ico", "*.icns", "*.ttf", "*.otf", "*.woff", "*.woff2", "*.mp3", "*.wav", "*.mp4", "*.lottie",
 ]  # fmt: skip
 TEST_GLOBS = ["*.test.*", "*.spec.*", "test_*.py", "*_test.py", "*_test.go", "*_test.dart", "/tests/", "/test/", "__tests__/"]
 
@@ -498,7 +525,9 @@ def proof_snap(snap: dict) -> dict:
 def evaluate(snap: dict, ledger: dict, semantic: bool = False) -> dict:
     """The drift report (§8). The intent check counts only with `semantic`; the extension's exit code never passes it."""
     findings: list[dict] = []
-    open_edits = [u for u in ledger["unplanned"] if not u.get("acknowledged")]
+    # Rules apply to what was booked before they changed: a file now exempt or unclear is no drift any more.
+    rules = snap.get("rules") or {"exempt": [], "unclear": []}
+    open_edits = [u for u in ledger["unplanned"] if not u.get("acknowledged") and not matches_any(u["file"], rules["exempt"] + rules["unclear"])]
     for u in open_edits:
         findings.append({"kind": "unplanned", "level": "yellow", "file": u["file"], "text": f"{u['file']} is not planned for any task"})
     if len(open_edits) >= 3:
@@ -931,6 +960,7 @@ def snapshot(root: Path, feature_dir: str | None) -> dict:
         "tasks": parse_tasks(tasks_md) if tasks_md else [],
         "constitution": parse_constitution(constitution_md) if constitution_md else None,
         "realTests": [],
+        "rules": rules_from(read(root / ".xrefignore")),
     }
 
 
@@ -1466,7 +1496,7 @@ def case_reqs(reqs: list[dict]) -> list[dict]:
 def case_snap(snap: dict) -> dict:
     reqs = case_reqs(snap.get("reqs", []))
     stories = [{"scenarios": [], **s} for s in snap.get("stories", [])]
-    return {"featureDir": snap.get("featureDir"), "tasks": snap["tasks"], "spec": {"reqs": reqs, "stories": stories}, "realTests": snap.get("realTests", [])}
+    return {"featureDir": snap.get("featureDir"), "tasks": snap["tasks"], "spec": {"reqs": reqs, "stories": stories}, "realTests": snap.get("realTests", []), "rules": rules_from(None)}
 
 
 def selftest_cases(cases: dict) -> list[tuple[str, bool, str]]:

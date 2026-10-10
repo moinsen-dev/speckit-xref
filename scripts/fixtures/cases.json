@@ -152,6 +152,26 @@
    "pattern": "/.github/workflows/",
    "path": ".github/workflows/ci.yml",
    "match": true
+  },
+  {
+   "pattern": ".*ignore",
+   "path": ".gitignore",
+   "match": true
+  },
+  {
+   "pattern": ".*ignore",
+   "path": "app/.prettierignore",
+   "match": true
+  },
+  {
+   "pattern": "/assets/",
+   "path": "assets/images/icon.png",
+   "match": true
+  },
+  {
+   "pattern": "*.png",
+   "path": "assets/images/icon.png",
+   "match": true
   }
  ],
  "ignoreFile": [
@@ -1534,6 +1554,166 @@
     "verdict": "unclear",
     "task": null
    }
+  },
+  {
+   "name": "scaffold image is unclear, not drift",
+   "rel": "assets/images/android-icon-foreground.png",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T001",
+      "done": true,
+      "paths": [
+       "src/auth/",
+       "tests/auth/"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T002",
+      "done": true,
+      "paths": [
+       "src/config/mailer.ts"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T004",
+      "done": false,
+      "paths": [
+       "src/auth/token.ts"
+      ],
+      "reqs": [
+       "FR-002"
+      ]
+     },
+     {
+      "id": "T006",
+      "done": false,
+      "paths": [
+       "src/auth/callback.ts"
+      ],
+      "reqs": [
+       "FR-003"
+      ]
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "unclear",
+    "task": null
+   }
+  },
+  {
+   "name": "tooling dotfile is unclear",
+   "rel": ".prettierignore",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T001",
+      "done": true,
+      "paths": [
+       "src/auth/",
+       "tests/auth/"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T002",
+      "done": true,
+      "paths": [
+       "src/config/mailer.ts"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T004",
+      "done": false,
+      "paths": [
+       "src/auth/token.ts"
+      ],
+      "reqs": [
+       "FR-002"
+      ]
+     },
+     {
+      "id": "T006",
+      "done": false,
+      "paths": [
+       "src/auth/callback.ts"
+      ],
+      "reqs": [
+       "FR-003"
+      ]
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "unclear",
+    "task": null
+   }
+  },
+  {
+   "name": "a planned asset stays planned",
+   "rel": "assets/logo.svg",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T010",
+      "done": false,
+      "paths": [
+       "assets/logo.svg"
+      ],
+      "reqs": []
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "planned",
+    "task": "T010"
+   }
   }
  ],
  "levelOf": {
@@ -2243,6 +2423,53 @@
      "level": "green",
      "kinds": [],
      "covered": 3,
+     "total": 5,
+     "notes": [
+      "US2 has no acceptance scenarios"
+     ]
+    }
+   },
+   {
+    "name": "files the rules now call unclear are no drift",
+    "ledger": {
+     "map": {},
+     "links": {},
+     "fingerprints": {},
+     "accepted": [],
+     "touched": {},
+     "unplanned": [
+      {
+       "file": "assets/images/icon.png",
+       "at": "2026-10-09T10:00:00.000Z",
+       "task": null
+      },
+      {
+       "file": "assets/images/splash.png",
+       "at": "2026-10-09T10:00:00.000Z",
+       "task": null
+      },
+      {
+       "file": ".prettierignore",
+       "at": "2026-10-09T10:00:00.000Z",
+       "task": null
+      },
+      {
+       "file": "src/ui/theme.ts",
+       "at": "2026-10-09T10:00:00.000Z",
+       "task": null
+      }
+     ],
+     "verification": {},
+     "anchors": [],
+     "semantic": null
+    },
+    "semantic": false,
+    "expected": {
+     "level": "yellow",
+     "kinds": [
+      "unplanned"
+     ],
+     "covered": 2,
      "total": 5,
      "notes": [
       "US2 has no acceptance scenarios"

@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, and an autopilot gated by your spec review and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
