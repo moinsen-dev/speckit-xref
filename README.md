@@ -35,7 +35,7 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.5.2/speckit-xref-extension-v0.4.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.5.2/speckit-xref-extension-v0.4.1.zip
 ```
 
 **Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.

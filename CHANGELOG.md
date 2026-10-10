@@ -2,7 +2,7 @@
 
 ## 0.5.2 — 2026-10-10
 
-The autopilot no longer ends at "done", and it hands each step what it needs to know. Mod 0.5.2; extension 0.4.0 and preset 0.2.0 unchanged.
+The autopilot no longer ends at "done", and it hands each step what it needs to know. Mod 0.5.2, extension 0.4.1; preset 0.2.0 unchanged.
 
 ### After done comes the next thing
 
@@ -23,6 +23,12 @@ The autopilot no longer ends at "done", and it hands each step what it needs to 
 - The rails' question for an action (`git push`, `reset --hard`, …) now goes through `mcp__speckit-xref__ask` with `allow`; your **yes** allows exactly that action once, for ten minutes. Before, a yes in the dialog changed nothing and the push stayed refused.
 - Option `allowPush` (off): on lets the autopilot push a feature branch by itself once the tests are green; never main, master or trunk, never `--force`, never a deletion.
 - The rules ask Claude to commit the feature's `xref.json` with its own commits.
+
+### Fixes from the live runs
+
+- **An answered decision is no request.** The intent check had turned the person's yes to a push and to wiping a test device into two new requirements, and the next step wrote them into the spec. Answers to the rails' questions no longer reach the check, and a reported change that only repeats an answered decision is dropped.
+- **Every id after `@spec` counts** (contract §5, mod and extension): `@spec 001-x/FR-003 FR-004` anchors both, the feature prefix carrying to the bare ids. Before, only the first id counted, and a verify asked for anchors that were already there.
+- The runbook keeps what is true of the project's environment, not what this session's tool permissions allowed.
 
 ## 0.5.1 — 2026-10-10
 
