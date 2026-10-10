@@ -228,6 +228,10 @@ class XrefCli(unittest.TestCase):
         self.assertEqual(findings["dangling"], "src/auth/request-link.ts:1 anchors 001-magic-link-login/FR-009, which the spec no longer has")
         self.assertEqual(findings["orphan-test"], "tests/auth/old.test.ts:1 tests FR-010, which the spec no longer has")
 
+    def test_an_anchor_names_every_id_after_spec(self) -> None:
+        ids = [a["id"] for a in X.anchors_in("// @spec 001-x/FR-003 FR-004\n# @spec FR-001, US1-AS2 and more", "f.ts")]
+        self.assertEqual(ids, ["001-x/FR-003", "001-x/FR-004", "FR-001", "US1-AS2"])
+
     def test_anchors_in_new_uncommitted_files_are_found_without_ripgrep(self) -> None:
         # A PATH with git but no rg: the git grep fallback has to search untracked files too, scenario anchors included.
         tools = Path(tempfile.mkdtemp(prefix="xref-tools-"))

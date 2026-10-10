@@ -472,7 +472,9 @@ def verification_from_exit(exit_code: int, ids: list[str], fingerprints: dict, a
 # ---------------------------------------------------------------------------
 # X-Ref and drift (mirror mod/hooks/xref.ts)
 
-ANCHOR = re.compile(r"@spec\s+((?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))", A)
+ANCHOR_ID = r"(?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+)"
+# `@spec` and one or more ids (contract §5): a feature prefix carries to the bare ids after it.
+ANCHOR = re.compile(r"@spec\s+(" + ANCHOR_ID + r"(?:[ \t,]+" + ANCHOR_ID + r")*)", A)
 RANK = {"none": 0, "green": 1, "yellow": 2, "red": 3}
 MAX_UNPLANNED = 100
 
@@ -507,7 +509,16 @@ def plans(task: dict, rel: str) -> bool:
 
 
 def anchors_in(text: str, file: str) -> list[dict]:
-    return [{"id": m.group(1), "file": file, "line": i + 1} for i, line in enumerate(text.split("\n")) for m in ANCHOR.finditer(line)]
+    out: list[dict] = []
+    for i, line in enumerate(text.split("\n")):
+        for m in ANCHOR.finditer(line):
+            prefix = ""
+            for token in [t for t in re.split(r"[\s,]+", m.group(1)) if t]:
+                slash = token.rfind("/")
+                if slash >= 0:
+                    prefix = token[: slash + 1]
+                out.append({"id": token if slash >= 0 else prefix + token, "file": file, "line": i + 1})
+    return out
 
 
 def classify_core(rel: str, snap: dict, ledger: dict, rules: dict | None = None, new_text: str = "") -> tuple[str, str | None]:
@@ -1062,9 +1073,12 @@ SKIP_DIRS = {".git", "node_modules", "specs", ".specify", ".venv", "venv", "dist
 
 def scan_anchors(root: Path) -> list[dict]:
     """Every `@spec <id>` comment outside the spec folders: ripgrep, else git grep, else a walk."""
-    out = run(["rg", "-n", "--no-heading", "-o", "-e", r"@spec\s+(?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+)", "--glob", "!specs/**", "--glob", "!.specify/**", "."], root)
+    # -o prints `@spec` with every id after it on the line; anchors_in splits the list.
+    rg_id = r"(?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+)"
+    out = run(["rg", "-n", "--no-heading", "-o", "-e", r"@spec\s+" + rg_id + r"(?:[ \t,]+" + rg_id + r")*", "--glob", "!specs/**", "--glob", "!.specify/**", "."], root)
     if out is None:
-        pattern = "@spec[[:space:]]+([[:alnum:]_.-]+/)?((FR|SC)-[0-9]{3,}|T-?[0-9]{3,}|US[0-9]+-AS[0-9]+)"
+        git_id = "([[:alnum:]_.-]+/)?((FR|SC)-[0-9]{3,}|T-?[0-9]{3,}|US[0-9]+-AS[0-9]+)"
+        pattern = "@spec[[:space:]]+" + git_id + "([[:blank:],]+" + git_id + ")*"
         out = run(["git", "grep", "--untracked", "-n", "-o", "-E", pattern, "--", ".", ":!specs", ":!.specify"], root)
     anchors: list[dict] = []
     if out is not None:

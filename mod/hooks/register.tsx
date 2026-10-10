@@ -107,8 +107,11 @@ const STATE: Record<Level, { glyph: string; word: string }> = {
   yellow: { glyph: '▲', word: 'watch' },
   red: { glyph: '✖', word: 'off-spec' },
 }
-const ANCHOR_RG = '@spec\\s+(?:[\\w.-]+/)?(?:(?:FR|SC)-\\d{3,}|T-?\\d{3,}|US\\d+-AS\\d+)'
-const ANCHOR_GIT = '@spec[[:space:]]+([[:alnum:]_.-]+/)?((FR|SC)-[0-9]{3,}|T-?[0-9]{3,}|US[0-9]+-AS[0-9]+)'
+// `@spec` and every id after it on the line (§5): -o prints the whole list, anchorsIn splits it.
+const RG_ID = '(?:[\\w.-]+/)?(?:(?:FR|SC)-\\d{3,}|T-?\\d{3,}|US\\d+-AS\\d+)'
+const ANCHOR_RG = `@spec\\s+${RG_ID}(?:[ \\t,]+${RG_ID})*`
+const GIT_ID = '([[:alnum:]_.-]+/)?((FR|SC)-[0-9]{3,}|T-?[0-9]{3,}|US[0-9]+-AS[0-9]+)'
+const ANCHOR_GIT = `@spec[[:space:]]+${GIT_ID}([[:blank:],]+${GIT_ID})*`
 
 const snapshotA = atom({ plugin: 'speckit-xref', key: 'snapshot' } as const, null)
 const ledgerA = atom({ plugin: 'speckit-xref', key: 'ledger' } as const, emptyLedger())
@@ -1569,7 +1572,7 @@ async function ask($: $, input: Record<string, unknown>): Promise<string> {
     const yes = `Yes, allow ${allow} once`
     try {
       const answer = await $.ui.ask(question.endsWith('?') ? question : `${question}?`, [yes, 'No'])
-      await recordDecision($, question, [yes, 'No'], blocks, answer || 'No')
+      await recordDecision($, question, [yes, 'No'], blocks, answer || 'No', 'permission')
       if (answer === yes) {
         const until = (await $.clock.now()) + 10 * 60_000
         await update($, permitsA, ps => [...ps.filter(p => p.label !== allow), { label: allow, until }])
@@ -1599,9 +1602,10 @@ async function ask($: $, input: Record<string, unknown>): Promise<string> {
   return ap.on ? 'The autopilot will wait for the person. Put the question in your answer and end your turn.' : 'Noted. Put the question in your answer.'
 }
 
-async function recordDecision($: $, question: string, options: string[], blocks: string[], answer: string | null): Promise<void> {
+async function recordDecision($: $, question: string, options: string[], blocks: string[], answer: string | null, kind?: 'permission'): Promise<void> {
   const when = await stamp($)
-  await update($, ledgerA, l => ({ ...l, decisions: [...l.decisions, { id: `D${l.decisions.length + 1}`, question, options, blocks, at: when, answer }].slice(-50) }))
+  const decision = { id: '', question, options, blocks, at: when, answer, ...(kind ? { kind } : {}) }
+  await update($, ledgerA, l => ({ ...l, decisions: [...l.decisions, { ...decision, id: `D${l.decisions.length + 1}` }].slice(-50) }))
   await persist($)
 }
 

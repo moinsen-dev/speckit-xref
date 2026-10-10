@@ -115,8 +115,10 @@ Signature: `levelOf(id, snap, ledger)`. The snapshot carries `featureDir`, `task
 
 **Task paths** (`extractPaths`, 0.4.1): when a task names any path in backticks, those are its paths; bare words in its prose count only in a task without backticked paths.
 
-A story section starts at its `### User Story N …` heading and ends at the next heading of level 1–3 (`^#{1,3}\s`). Inside it, a line matching `^\s*(\d+)\.\s+(\*\*Given\*\*.*)$` is scenario `USN-AS<number>` (the list number as written, without leading zeros). Its text is group 2 with bold and backticks removed, trimmed, clipped like requirement text (300). `parseSpec` returns `stories[{id, title, priority, scenarios: [{id, text}]}]` and `reqs[{id, kind, text, needsClarification, status, supersededBy}]` (§11). Snapshots in `cases.json` may give reqs without `kind`/`status`: treat them as `FR` and take the status from `reqStatus(text)`. Anchors and links may name scenarios: the anchor regex is
-`@spec\s+((?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))`.
+A story section starts at its `### User Story N …` heading and ends at the next heading of level 1–3 (`^#{1,3}\s`). Inside it, a line matching `^\s*(\d+)\.\s+(\*\*Given\*\*.*)$` is scenario `USN-AS<number>` (the list number as written, without leading zeros). Its text is group 2 with bold and backticks removed, trimmed, clipped like requirement text (300). `parseSpec` returns `stories[{id, title, priority, scenarios: [{id, text}]}]` and `reqs[{id, kind, text, needsClarification, status, supersededBy}]` (§11). Snapshots in `cases.json` may give reqs without `kind`/`status`: treat them as `FR` and take the status from `reqStatus(text)`. Anchors and links may name scenarios. An anchor is `@spec` and one or more ids (0.5.2): with
+`ID = (?:[\w.-]+/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+)` the regex is `@spec\s+(ID(?:[ \t,]+ID)*)`. The list splits on
+whitespace and commas; a feature prefix carries to the bare ids after it (`@spec 001-x/FR-003 FR-004` anchors `001-x/FR-003` and
+`001-x/FR-004`). A scan with `rg -o` or `git grep -o` must print the whole list, not just the first id.
 
 ## 6. Fingerprints
 

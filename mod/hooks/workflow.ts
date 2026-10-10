@@ -497,7 +497,7 @@ export function progressKey(snap: Snapshot, ledger: Ledger): string {
 export const AUTONOMY_RULES = [
   'Autopilot is on. Carry the step through without asking whether to continue: when you end your turn, the autopilot moves on by itself.',
   'Decide what the person left open, from the spec, the constitution and the repository, and record those choices as assumptions in the artifact you write.',
-  "When you get past a problem of the environment (a port, a flag, a permission's name, a tool's quirk), add one line on it to .specify/memory/runbook.md, so later steps start from it. When you commit, commit the feature's xref.json with it.",
+  "When you get past a problem of the project's environment (a port, a flag, a device's or simulator's quirk, the name of an OS permission), add one line on it to .specify/memory/runbook.md, so later steps start from it; what this session's tool permissions allow is no such problem. When you commit, commit the feature's xref.json with it.",
   'Stop only for what only the person can decide: the product idea, a [NEEDS CLARIFICATION] question, a conflict between their request and the spec, anything destructive or irreversible, credentials or payments. Then call mcp__speckit-xref__ask with the question (and the user stories it blocks, if any); if it answers with the person\'s choice, go on with it, otherwise put the question in your answer and end your turn.',
 ]
 

@@ -159,7 +159,16 @@ export type Semantic = {
   diffHash?: string
 }
 export type Verification = { status: 'passing' | 'failing'; tests: string[]; at: string; commit: string; fingerprint: string }
-export type Decision = { id: string; question: string; options: string[]; blocks: string[]; at: string; answer: string | null }
+export type Decision = {
+  id: string
+  question: string
+  options: string[]
+  blocks: string[]
+  at: string
+  answer: string | null
+  /** A yes or no to an action the rails stopped (a push, a wipe): no product decision, never a request. */
+  kind?: 'permission'
+}
 
 /**
  * What the mod keeps per feature. Persisted in two files (docs/contract-0.4.md §1): the committed

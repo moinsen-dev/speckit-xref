@@ -79,12 +79,21 @@ export function plans(task: Task, rel: string): boolean {
   })
 }
 
-export const ANCHOR = /@spec\s+((?:[\w.-]+\/)?(?:(?:FR|SC)-\d{3,}|T-?\d{3,}|US\d+-AS\d+))/g
+const ANCHOR_ID = '(?:[\\w.-]+/)?(?:(?:FR|SC)-\\d{3,}|T-?\\d{3,}|US\\d+-AS\\d+)'
+/** `@spec` and one or more ids (§5): `@spec 001-x/FR-003 FR-004, US1-AS2`; a feature prefix carries to the bare ids after it. */
+export const ANCHOR = new RegExp(`@spec\\s+(${ANCHOR_ID}(?:[ \\t,]+${ANCHOR_ID})*)`, 'g')
 
 export function anchorsIn(text: string, file: string): Anchor[] {
   const out: Anchor[] = []
   text.split('\n').forEach((line, i) => {
-    for (const m of line.matchAll(ANCHOR)) out.push({ id: m[1] ?? '', file, line: i + 1 })
+    for (const m of line.matchAll(ANCHOR)) {
+      let prefix = ''
+      for (const token of (m[1] ?? '').split(/[\s,]+/).filter(Boolean)) {
+        const slash = token.lastIndexOf('/')
+        if (slash >= 0) prefix = token.slice(0, slash + 1)
+        out.push({ id: slash >= 0 ? token : prefix + token, file, line: i + 1 })
+      }
+    }
   })
   return out
 }
@@ -192,6 +201,20 @@ export function acknowledgeAll(ledger: Ledger): Ledger {
 
 /** Whether a logged prompt and a change the check quoted from it are the same request. */
 const quotes = (logged: string, quoted: string) => logged.includes(quoted) || quoted.includes(logged.slice(0, 40))
+
+const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim()
+/** Whether a reported intent change only repeats a question the person already answered (in the ask dialog). */
+export function echoesDecision(change: string, decisions: Ledger['decisions']): boolean {
+  const said = words(change)
+  if (!said) return false
+  return decisions.some(d => {
+    if (!d.answer) return false
+    const asked = words(`${d.question} ${d.answer}`)
+    if (asked.includes(said)) return true
+    const long = said.split(' ').filter(w => w.length > 3)
+    return long.length > 0 && long.filter(w => asked.includes(w)).length / long.length >= 0.6
+  })
+}
 
 export function resolveIntent(ledger: Ledger, text: string): Ledger {
   const semantic = ledger.semantic ? { ...ledger.semantic, changes: ledger.semantic.changes.filter(c => c.text !== text) } : null
@@ -378,8 +401,8 @@ export function forkPrompt(snap: Snapshot, ledger: Ledger, active: string | null
     `Requirements:\n${reqs}`,
     `Out of scope: ${spec?.outOfScope.join('; ') || '-'}`,
     `Current task: ${task ? `${task.id} ${task.text}` : '-'}`,
-    ...(ledger.decisions.some(d => d.answer)
-      ? ['Decisions the person already made (settled: never an intent change):', ...ledger.decisions.filter(d => d.answer).slice(-8).map(d => `- ${d.question} → ${d.answer}`)]
+    ...(ledger.decisions.some(d => d.answer && d.kind !== 'permission')
+      ? ['Decisions the person already made (settled: never an intent change):', ...ledger.decisions.filter(d => d.answer && d.kind !== 'permission').slice(-8).map(d => `- ${d.question} → ${d.answer}`)]
       : []),
     ...(said.length ? ['What the user said in this session, oldest first:', ...said] : []),
     `Changed files: ${changed.join(', ') || '-'}`,
@@ -419,7 +442,8 @@ export function parseSemantic(text: string, at: string): Semantic | null {
 export function applySemantic(ledger: Ledger, semantic: Semantic): Ledger {
   // A change the user already resolved stays resolved when a later check quotes it again.
   const resolved = ledger.intents.filter(i => i.status === 'resolved')
-  const changes = semantic.changes.filter(c => !resolved.some(i => quotes(i.text, c.text)))
+  // An answered decision is settled: a check that reports it as a new request is wrong about it (a push, a wipe).
+  const changes = semantic.changes.filter(c => !resolved.some(i => quotes(i.text, c.text)) && !echoesDecision(c.text, ledger.decisions))
   const intents = ledger.intents.map(i => {
     const hit = changes.find(c => i.status === 'logged' && quotes(i.text, c.text))
     return hit ? { ...i, status: hit.kind } : i

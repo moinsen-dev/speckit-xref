@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { parsePhaseNotes, parseQuickstart, phaseBrief, runbookNote, treeOf, verifyKey } from '../hooks/brief'
 import { pushAllowed, railFor } from '../hooks/register'
-import { emptyLedger } from '../hooks/xref'
+import { anchorsIn, applySemantic, echoesDecision, emptyLedger, forkPrompt } from '../hooks/xref'
 import { AUTONOMY_RULES, nextStep, phaseStrip, tasksFingerprint } from '../hooks/workflow'
 import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
 import { rulesFrom } from '../hooks/rules'
@@ -210,4 +210,34 @@ test('a -p run: the person\'s first prompt is the first step, handed over with i
   expect(log.map(e => [e.step, e.phase])).toEqual([[1, 'implement']])
   // The band still answers.
   expect(toText(await (await $.ui.mount({ ...BAND, surface: 'terminal' })).drawn())).toContain('auto')
+})
+
+test('an answered decision is no request: a check that reports a push or a wipe as new scope is overruled', () => {
+  const decisions = [
+    { id: 'D1', question: 'Auf deinem Android-Emulator Pixel_10 ist kein Platz für Expo Go. Darf ich ihn per „Wipe Data“ zurücksetzen und testen?', options: [], blocks: [], at: '', answer: 'Ja' },
+    { id: 'D2', question: 'Soll ich ihn zu moinsen-dev/tagesinspiration pushen?', options: [], blocks: [], at: '', answer: 'Ja, pushen', kind: 'permission' as const },
+  ]
+  expect(echoesDecision('Pixel_10 per „Wipe Data“ zurücksetzen und testen', decisions)).toBe(true)
+  expect(echoesDecision('Code nach moinsen-dev/tagesinspiration pushen', decisions)).toBe(true)
+  expect(echoesDecision('Links auch per SMS verschicken', decisions)).toBe(false)
+  const ledger = { ...emptyLedger(), decisions }
+  const applied = applySemantic(ledger, { at: '', head: '', diffHash: '', score: 90, verdict: 'aligned', reasons: [], changes: [{ text: 'Pixel_10 per „Wipe Data“ zurücksetzen und testen', kind: 'extends' }, { text: 'Links auch per SMS verschicken', kind: 'extends' }] } as never)
+  expect(applied.semantic!.changes.map(c => c.text)).toEqual(['Links auch per SMS verschicken'])
+  // A permission never reaches the check as a decision.
+  const prompt = forkPrompt({ featureDir: FEATURE, spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!), tasks: parseTasks(DEMO[`${FEATURE}/tasks.md`]!), constitution: null } as unknown as Snapshot, ledger, null, [], '')
+  expect(prompt).toContain('Pixel_10')
+  expect(prompt).not.toContain('pushen')
+})
+
+test('an anchor names every id after @spec; a feature prefix carries to the bare ids', () => {
+  expect(anchorsIn('// @spec 001-tagesinspiration/FR-003 FR-004\n# @spec FR-001, US1-AS2 and more\nx @spec 001-a/FR-001 002-b/FR-002 FR-003', 'f.ts').map(a => `${a.id}@${a.line}`)).toEqual([
+    '001-tagesinspiration/FR-003@1',
+    '001-tagesinspiration/FR-004@1',
+    'FR-001@2',
+    'US1-AS2@2',
+    '001-a/FR-001@3',
+    '002-b/FR-002@3',
+    '002-b/FR-003@3',
+  ])
+  expect(anchorsIn('// @spec: see below', 'f.ts')).toEqual([])
 })

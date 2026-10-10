@@ -107,7 +107,7 @@ export function project(on: any, files: Record<string, string>, options: Options
         if (/^(specs|\.specify)\//.test(path)) continue
         if (skipUntracked && options.untracked?.includes(path)) continue
         text.split('\n').forEach((line, i) => {
-          const m = /@spec\s+\S+/.exec(line)
+          const m = /@spec\s+[\w./-]+(?:[ \t,]+(?:[\w.-]+\/)?(?:FR|SC|T|US)-?\d[\w-]*)*/.exec(line)
           if (m) lines.push(`./${path}:${i + 1}:${m[0]}`)
         })
       }
