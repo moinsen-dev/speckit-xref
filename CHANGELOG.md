@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.0 — 2026-10-10
+
+A new project now starts at the idea, and everything the run knows is on one page. Mod 0.5.0, extension 0.3.0. Design (a DESIGN.md and screen mocks after the plan) follows in 0.5.1.
+
+### Validate and Shape: the entrance
+
+- **Validate** (new projects, option `validate`, on): before the first spec, the idea is researched on the web by an agent of the mod's own: who has the problem, what already exists, what makes the idea different, the riskiest assumption, kill criteria, success measures, and a weighted score. The result is `.specify/memory/idea-brief.md`. Alternatives count as verified only with a URL that was fetched; without web tools the brief says so. **You decide**: Build, Sharpen or Drop, in the pane, the band or a dialog. The decision is kept with the brief's fingerprint, so only your press counts and a rewritten brief asks again. The idea's wording goes to the web search Claude uses.
+- **Shape** (option `shape`, on): Claude asks what the idea leaves open (first-version scope, platforms, language and internationalisation, design direction, data and accounts) and writes `.specify/memory/product-brief.md`. The constitution and the spec treat those decisions as yours, not as assumptions; the brief's success measures become SC-###.
+- Extension commands `speckit.xref.validate` and `speckit.xref.shape` do the same for any agent.
+
+### The dashboard
+
+- `.specify/xref/local/dashboard.html`, regenerated after every step and on `/xref web` (which opens it): goal and vision, the workflow, every tasks.md phase with its progress, a traceability matrix (requirement → tasks → files → tests → rung), drift and decisions, the run log, and the Spec Kit documents rendered in place, ids linked throughout. Local and git-ignored: it holds your own words.
+
+### Visibility
+
+- The pane names the tasks.md phase that runs (`Phase 3 · 1/3 · ✓1 ▶3 ·4 ·5 · US1 …`), the band shows `P3`.
+- On a subscription the band shows the usage windows (`5h 34% · 7d 12%`) instead of /cost's list price.
+- Option `pane: auto | always | off`; a band button opens the pane while it is off screen. Projects can carry `pane: always` in their `.claude/settings.json`.
+- The Tests row names the failing line of a run.
+
+### Fixes from the live run
+
+- **Wrapped bullets:** requirements, scenarios, scope, assumptions, tasks and the constitution keep their indented continuation lines (mod and extension). A requirement cut after its first line had made the intent check flag an answered decision as new scope.
+- **Fingerprints move with the parser:** ledgers now carry `fingerprintVersion: 2`. An older ledger is re-baselined on load: a fingerprint the old parser stored moves to the full text, so a green project stays green after the upgrade; a real change still asks to be proven again.
+- The intent check knows the decisions you already made.
+- `/xref approve` and a pane button approve a spec that was never approved (`◌spec`).
+- The focus stays in the running phase; each implement step starts on its first open task.
+- A repository without a commit waits for the first one (Spec Kit branches per feature only from one); the press asks for a `.gitignore` first.
+- Verify without the extension: Claude checks the code against the spec and your words by itself, and the mod's intent check follows.
+
 ## 0.4.1 — 2026-10-10
 
 Fixes from the first live greenfield run (an Expo app, the autopilot from tasks into phase 1). Mod 0.4.1, extension 0.2.1.

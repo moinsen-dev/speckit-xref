@@ -26,7 +26,7 @@ You need Spec Kit 1.1.2 or later (below 2.0). Run the commands in your Spec Kit 
 From a clone of this repository:
 
 ```bash
-git clone --depth 1 --branch v0.4.1 https://github.com/moinsen-dev/speckit-xref /tmp/speckit-xref
+git clone --depth 1 --branch v0.5.0 https://github.com/moinsen-dev/speckit-xref /tmp/speckit-xref
 specify preset add --dev /tmp/speckit-xref/preset
 ```
 
@@ -35,7 +35,7 @@ specify preset add --dev /tmp/speckit-xref/preset
 From a release, once a preset archive is published:
 
 ```bash
-specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-preset-v0.1.0.zip
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.5.0/speckit-xref-preset-v0.1.0.zip
 ```
 
 Without the CLI installed, prefix each command with `uvx --from 'specify-cli>=1.1.2,<2'`.

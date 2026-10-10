@@ -7,7 +7,7 @@ The speckit-xref Claude Code mod (`../mod`) keeps the same ledger live while Cla
 ## Install
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.4.1/speckit-xref-extension-v0.2.1.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.5.0/speckit-xref-extension-v0.3.0.zip
 ```
 
 From a checkout: `specify extension add --dev /path/to/speckit-xref/extension`.
@@ -20,6 +20,8 @@ Requires Spec Kit 0.12.17 or later and `python3` 3.9+ (standard library only). `
 | --- | --- |
 | `/speckit.xref.map` | Lists requirements, tasks and the coverage ladder, then has the agent map each uncovered FR to the tasks that implement it, and records the map. Optional `after_tasks` hook. |
 | `/speckit.xref.check` | Classifies every changed file, checks anchors, coverage and changed requirements, then has the agent judge the change against the user's words and the spec and records the verdict as advice. Optional `after_implement` hook. |
+| `/speckit.xref.validate` | Before a new project's first spec: researches the idea (who has the problem, what exists, what differs, the riskiest assumption, kill criteria, a score) into `.specify/memory/idea-brief.md`; you decide Build, Sharpen or Drop. Alternatives count as verified only with a fetched URL. |
+| `/speckit.xref.shape` | Settles the first version with you (scope, platforms, language, design, data) into `.specify/memory/product-brief.md`, so the spec treats it as decided. |
 | `/speckit.xref.verify` | Runs the tests with JUnit output and records which requirements pass or fail. |
 | `/speckit.xref.revise` | Folds a change request into the spec: new requirement ids, `SUPERSEDED by FR-###` and `RETIRED` markers, tasks only appended, a dated entry in `revisions.md`. |
 | `/speckit.xref.report` | Writes the traceability report: the ladder per requirement, findings, notes, metrics. |

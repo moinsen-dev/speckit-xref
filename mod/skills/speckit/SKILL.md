@@ -118,7 +118,7 @@ It adds `/speckit-xref-map`, `-check`, `-verify`, `-report` and `-revise`, and h
 For a pull request check, the GitHub Action checks out with `fetch-depth: 0`, then:
 
 ```yaml
-- uses: moinsen-dev/speckit-xref/action@v0.4.1
+- uses: moinsen-dev/speckit-xref/action@v0.5.0
   with:
     fail-on: red
 ```

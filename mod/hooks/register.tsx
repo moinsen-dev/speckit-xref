@@ -2,8 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
 import type { Autopilot, Ledger, RunEntry, Snapshot } from '../types'
+import { renderDashboard } from './dashboard'
+import type { DashboardDoc } from './dashboard'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
-import { LADDER, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
+import { LADDER, isActive, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
+import type { Rung } from './proof'
 import { featureFromBranch, fingerprint, hasRealTests, isTestFile, matchesAny, rulesFrom, specFingerprint } from './rules'
 import { invokeSeparator, parseConstitution, parseFeatureJson, parseSpec, parseTasks } from './speckit'
 import type { Flow, Step } from './workflow'
@@ -421,6 +424,65 @@ async function reopenIdea($: $, fresh: boolean): Promise<string> {
   }
   await scan($)
   return fresh ? 'The old brief is kept beside it; describe the new idea.' : 'The idea is open again: Build, Sharpen or Drop.'
+}
+
+const DASHBOARD = '.specify/xref/local/dashboard.html'
+
+/** The documents the dashboard shows in place: Spec Kit's artifacts of the feature, the constitution, the briefs. */
+async function dashboardDocs($: $, featureDir: string): Promise<DashboardDoc[]> {
+  const docs: DashboardDoc[] = []
+  const add = async (path: string, title: string) => {
+    const markdown = await readText($, path)
+    if (markdown !== null) docs.push({ path, title, markdown })
+  }
+  for (const [name, title] of [['spec.md', 'Spec'], ['plan.md', 'Plan'], ['tasks.md', 'Tasks'], ['research.md', 'Research'], ['data-model.md', 'Data model'], ['quickstart.md', 'Quickstart']] as const) {
+    await add(`${featureDir}/${name}`, title)
+  }
+  for (const dir of ['contracts', 'checklists']) {
+    try {
+      for (const e of await $.fs.list(at(`${featureDir}/${dir}`))) if (e.kind === 'file' && e.name.endsWith('.md')) await add(`${featureDir}/${dir}/${e.name}`, `${dir}/${e.name}`)
+    } catch {
+      // The feature has none.
+    }
+  }
+  await add('.specify/memory/constitution.md', 'Constitution')
+  await add(IDEA_BRIEF, 'Idea brief')
+  await add(PRODUCT_BRIEF, 'Product brief')
+  return docs
+}
+
+/** Writes the dashboard: after every step and on /xref web, never on every edit. Local and git-ignored. */
+async function writeDashboard($: $): Promise<string | null> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir) return null
+  const ledger = await read($, ledgerA)
+  const ap = await read($, autopilotA)
+  const report = evaluate(snap, ledger)
+  const proof = { featureDir: snap.featureDir, tasks: snap.tasks, reqs: snap.spec?.reqs ?? [], realTests: snap.realTests }
+  const levels: Record<string, Rung> = {}
+  for (const r of snap.spec?.reqs ?? []) if (r.kind === 'FR' && isActive(r)) levels[r.id] = levelOf(r.id, proof, ledger)
+  const step = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  const html = renderDashboard({
+    generatedAt: await stamp($),
+    root,
+    snap,
+    ledger,
+    report,
+    levels,
+    step: { phase: step.phase, line: stepLine(step), needsUser: step.needsUser },
+    strip: phaseStrip(snap, step, review !== 'none' && specReview(snap, ledger) !== 'approved'),
+    autopilot: ap,
+    runLog: await runLog($),
+    docs: await dashboardDocs($, snap.featureDir),
+    refreshSeconds: 5,
+  })
+  try {
+    if (!(await exists($, LOCAL_IGNORE.path))) await $.fs.write(at(LOCAL_IGNORE.path), LOCAL_IGNORE.text)
+    await $.fs.write(at(DASHBOARD), html)
+    return at(DASHBOARD)
+  } catch {
+    return null
+  }
 }
 
 /** Whether the repository has a commit: true, false (a repository without one), null (no git here). */
@@ -1092,6 +1154,7 @@ async function advance($: $): Promise<void> {
   const active = await read($, activeA)
   const text = autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) + parallelNote(snap, step)
   await update($, autopilotA, a => ({ ...a, doneAtStep: snap.tasks.filter(t => t.done).map(t => t.id) }))
+  await writeDashboard($).catch(() => null)
   stepStartedAt = await $.clock.now()
   // Nobody is at the prompt in a -p run: the Stop hook hands the step over as its re-prompt.
   if (!interactive) {
@@ -1523,7 +1586,7 @@ export const register: Register = (on, options) => {
     }
     await scan($)
     const commands = [
-      { name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | approve | focus T### | auto on|night|off | pane', argumentHint: '[check | map | ack | approve | focus T### | auto on [steps]|night|off | pane]' },
+      { name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | approve | focus T### | auto on|night|off | pane | web', argumentHint: '[check | map | ack | approve | focus T### | auto on [steps]|night|off | pane | web]' },
       // Runs mid-turn: the one way to stop the autopilot while its step is still working.
       { name: STOP_COMMAND, description: 'Spec X-Ref: stop the autopilot now, the running turn included', immediate: true as const },
     ]
@@ -1716,6 +1779,7 @@ export const register: Register = (on, options) => {
     await update($, turnA, () => null)
     await refresh($)
     await persist($)
+    await writeDashboard($).catch(() => null)
     const snap = await read($, snapshotA)
     if (snap?.initialized && !timer) timer = $.clock.every(REFRESH_MS, () => void refresh($).catch(() => undefined))
     // In a -p run with the autopilot on, the Stop hook already did all of this before the turn ended.
@@ -1834,6 +1898,15 @@ export const register: Register = (on, options) => {
         return { text: await focus($, rest[0] ?? '') }
       case 'approve':
         return { text: await approve($) }
+      case 'web': {
+        await scan($)
+        const path = await writeDashboard($)
+        if (!path) return { text: 'No Spec Kit feature yet: the dashboard starts with the first spec.' }
+        // Opened in the default browser; where nothing opens it, the path is the way in.
+        const opener = (await $.process.run(['uname'], { cwd: root, timeoutMs: 3000 }).catch(() => null))?.stdout.trim() === 'Darwin' ? 'open' : 'xdg-open'
+        const opened = await $.process.run([opener, path], { cwd: root, timeoutMs: 5000 }).then(r => r.exitCode === 0).catch(() => false)
+        return { text: `${opened ? 'Dashboard opened' : 'Dashboard written'}: file://${path}\nIt reloads itself and is rewritten after every step. Local only: it holds your own words.` }
+      }
       case 'auto': {
         const [mode = '', budget = ''] = rest
         if (mode === 'off') {

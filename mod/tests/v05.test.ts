@@ -137,3 +137,18 @@ test('a project that already has a feature never validates', async ($, on) => {
   await seen.clock.advance(0)
   expect(autopilotPrompts(seen)[0]).toContain('implement:')
 })
+
+test('/xref web writes the dashboard; every finished step rewrites it', async ($, on) => {
+  const seen = project(on, { ...DEMO })
+  await startSession($)
+  const answer = (await xref($, 'web')).text
+  expect(answer).toContain('Dashboard written: file:///work/.specify/xref/local/dashboard.html')
+  const page = seen.files['.specify/xref/local/dashboard.html']!
+  expect(page).toContain('Users sign in with a one-time link sent by email. No passwords.')
+  expect(page).toContain('id="req-FR-002"')
+  expect(seen.files['.specify/xref/.gitignore']).toBe('local/\n')
+  delete seen.files['.specify/xref/local/dashboard.html']
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(seen.files['.specify/xref/local/dashboard.html']).toContain('Magic Link Login')
+})

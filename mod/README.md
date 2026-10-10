@@ -69,6 +69,20 @@ Click the buttons, or give the pane the keyboard with `ctrl+x tab` (once more if
 
 The autopilot never sets Spec Kit up by itself: `specify init` and `specify integration install` write into the repository, so it waits there for you. To start every session with the autopilot on, set the plugin options `autopilot: on` and `autopilotMaxSteps`. It is off by default, because every step is a model turn.
 
+## A new project starts at the idea
+
+In an empty folder the autopilot does not go straight to a spec:
+
+1. **Validate.** The idea is researched on the web by an agent of the mod's own: who has the problem, what already exists, what makes the idea different, the riskiest assumption, when to stop. The result is `.specify/memory/idea-brief.md`, with a score out of 5 and a recommendation. Alternatives count as verified only with a URL that was fetched. You decide in the pane, the band or a dialog: **Build**, **Sharpen** (say what should change, it is researched again) or **Drop**. The idea's wording goes to the web search Claude uses.
+2. **Shape.** Claude asks what the idea leaves open (first-version scope, platforms, language, design direction, data) and writes `.specify/memory/product-brief.md`.
+3. Then the constitution and the spec, which treat those decisions as yours.
+
+Options `validate` and `shape` (both `on`) switch the two off; a project that already has a feature skips them.
+
+## The dashboard
+
+`/xref web` opens `.specify/xref/local/dashboard.html` in the browser; the autopilot rewrites it after every step and the page reloads itself. It shows what the pane has no room for: your words and the constitution, every tasks.md phase with its progress, a traceability matrix (requirement → tasks → files → tests → rung), drift, decisions, the run log, and spec, plan, tasks and the other Spec Kit documents rendered in place, with every FR and task id linked. It is local and git-ignored: it holds your own words.
+
 ## Before Spec Kit is there
 
 `/xref pane` and the status tool tell the folder apart, and the pane offers the one fitting start:
@@ -101,6 +115,7 @@ Pressing one of these counts as your go. Without a press or your request nothing
 /xref focus T004       make a task current
 /xref auto on [n]      autopilot: work through Spec Kit by itself (night: a night run, off: stop)
 /xref pane             open the pane
+/xref web              open the dashboard in the browser
 /xref-stop             stop the autopilot now, mid-turn
 ```
 
@@ -112,7 +127,7 @@ Pressing one of these counts as your go. Without a press or your request nothing
 
 The terminal seats a pane nobody asked for from 144 columns (110 once you have opened it); narrower, it waits and the Pane button opens it.
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec` | `spec+plan` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`).
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec` | `spec+plan` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`).
 
 The active feature is found as Spec Kit finds it, then by the git branch (`001-…`), else the spec written last.
 
