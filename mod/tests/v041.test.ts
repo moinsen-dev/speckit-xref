@@ -175,3 +175,19 @@ test('a run that ends right after the analysis still owes its fixes, in this ses
   await startSession($)
   expect((await xref($)).text).toContain('Next Spec Kit step: The analysis found inconsistencies')
 })
+
+test('pane: always opens the pane with the session; while it is not on screen the band offers it', { options: { pane: 'always' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO })
+  await startSession($)
+  expect(seen.opened).toEqual(['speckit-xref'])
+  expect(toText(await (await $.ui.mount({ ...BAND, surface: 'terminal' })).drawn())).not.toContain('[Pane]')
+})
+
+test('by default the band offers the pane until it is open', async ($, on) => {
+  const seen = project(on, { ...DEMO })
+  await startSession($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(toText(await band.drawn())).toContain('[Pane]')
+  await band.press({ key: 'band-open-pane' })
+  expect(seen.opened).toEqual(['speckit-xref'])
+})

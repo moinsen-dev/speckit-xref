@@ -71,6 +71,7 @@ type Options = {
   review: string
   commitPerTask: string
   parallel: string
+  pane: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -126,6 +127,8 @@ let review: Flow['review'] = 'spec'
 let strict = false
 let parallel = false
 let commitPerTask = false
+// When the pane opens without being asked: auto (where it is a sidebar), always (every Spec Kit project), off.
+let paneMode: 'auto' | 'always' | 'off' = 'auto'
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -1307,6 +1310,7 @@ export const register: Register = (on, options) => {
   review = opts.review === 'none' || opts.review === 'spec+plan' ? opts.review : 'spec'
   parallel = opts.parallel === 'on'
   commitPerTask = opts.commitPerTask === 'on'
+  paneMode = opts.pane === 'always' || opts.pane === 'off' ? opts.pane : 'auto'
   const driftCheck = opts.driftCheck === 'off' ? 'off' : 'fork'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
@@ -1394,6 +1398,12 @@ export const register: Register = (on, options) => {
     }
     timer?.cancel()
     timer = initialized ? $.clock.every(REFRESH_MS, () => void refresh($).catch(() => undefined)) : null
+    // pane: always opens it with the session in every Spec Kit project. The engine seats an unasked pane from 144
+    // columns (110 once the person has opened it); narrower, it waits, and the band's Pane button opens it.
+    if (paneMode === 'always' && initialized && !offered) {
+      offered = true
+      void $.ui.open({ id: PANE, title: TITLE })
+    }
     if (parallel) {
       try {
         await $.agent.register({ name: RUNNER, description: 'Implements one Spec Kit task of a phase while sibling [P] tasks run in other agents; never edits tasks.md.', prompt: RUNNER_PROMPT })
@@ -1689,7 +1699,7 @@ export const register: Register = (on, options) => {
     const snap = await read($, snapshotA)
     const ap = await read($, autopilotA)
     // The pane opens unasked only where it is a sidebar (fullscreen), never as a takeover of the main screen.
-    if (!offered && snap?.featureDir && e.viewport?.isFullscreen === true) {
+    if (!offered && paneMode !== 'off' && snap?.featureDir && e.viewport?.isFullscreen === true) {
       offered = true
       void $.ui.open({ id: PANE, title: TITLE })
     }
@@ -1702,6 +1712,9 @@ export const register: Register = (on, options) => {
     const run = ap.on && !ap.paused ? await runCost($, ap) : ''
     const auto = ap.on ? (ap.paused ? ' · auto ⏸ waiting for you' : ` · auto ▶ ${ap.steps}/${ap.max}${run}`) : ''
     const state = STATE[report?.level ?? 'none']
+    // One click to the pane while it is not on screen: closed, behind another tab, or waiting for a wider terminal.
+    const pane = paneMode === 'off' ? undefined : (await $.ui.panes().catch(() => [])).find(p => p.id === PANE)
+    const paneHidden = paneMode !== 'off' && !(pane?.isShown && pane.isPlaced !== false)
     const line = (
       <Box key="speckit-xref-band" flexDirection="row">
         <Text color={LEVEL_COLOR[report?.level ?? 'none']}>{state.glyph} </Text>
@@ -1715,6 +1728,11 @@ export const register: Register = (on, options) => {
           {checking ? ' · checking…' : ''}
         </Text>
         <Text color={ap.paused ? 'warning' : 'suggestion'}>{auto}</Text>
+        {paneHidden && !ap.paused ? (
+          <Box marginLeft={1}>
+            <Button key="band-open-pane" label="Pane" onPress={() => void $.ui.open({ id: PANE, title: TITLE })} />
+          </Box>
+        ) : null}
       </Box>
     )
     // Waiting for the person is the one state that must not be missed: the whole question, and the way on.

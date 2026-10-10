@@ -105,6 +105,17 @@
         "off",
         "on"
       ]
+    },
+    "pane": {
+      "type": "string",
+      "title": "Open the pane",
+      "description": "auto: the pane opens by itself where it is a sidebar (fullscreen). always: it opens with every session in a Spec Kit project (the terminal seats it from 144 columns, 110 once you have opened it; narrower, the band's Pane button opens it). off: only /xref pane opens it.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "always",
+        "off"
+      ]
     }
   }
 }

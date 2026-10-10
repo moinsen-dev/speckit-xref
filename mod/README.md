@@ -104,7 +104,15 @@ Pressing one of these counts as your go. Without a press or your request nothing
 /xref-stop             stop the autopilot now, mid-turn
 ```
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec` | `spec+plan` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`).
+**The pane at start.** By default it opens by itself where it is a sidebar (fullscreen); the band shows a **Pane** button while it is not on screen. With the option `pane: always` it opens with every session in a Spec Kit project. To make that the project's own choice, put it into the project's `.claude/settings.json`:
+
+```json
+{ "pluginConfigs": { "speckit-xref@speckit-xref": { "options": { "pane": "always" } } } }
+```
+
+The terminal seats a pane nobody asked for from 144 columns (110 once you have opened it); narrower, it waits and the Pane button opens it.
+
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec` | `spec+plan` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`).
 
 The active feature is found as Spec Kit finds it, then by the git branch (`001-…`), else the spec written last.
 
