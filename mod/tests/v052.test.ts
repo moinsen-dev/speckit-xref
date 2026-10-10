@@ -41,9 +41,10 @@ test('tasks.md\'s phase notes, quickstart\'s rows and the brief they make', () =
   expect(brief.at(-1)).toBe('- Done when: US1 works on its own. Check that before you end the step, and say how you checked it.')
   expect(runbookNote(RUNBOOK)).toContain('port 1025')
   expect(runbookNote('  ')).toBe(null)
-  // The ledger's own file is no change of the tree.
-  expect(treeOf(' M src/a.ts\n M specs/001-x/xref.json\n')).toBe(treeOf(' M src/a.ts\n'))
-  expect(treeOf(' M src/a.ts\n')).not.toBe(treeOf(''))
+  // The ledger's own file is no change of the tree; the order of the lines does not matter.
+  expect(treeOf('100644 blob a\tsrc/a.ts\n100644 blob x\tspecs/001-x/xref.json')).toBe(treeOf('100644 blob a\tsrc/a.ts'))
+  expect(treeOf('100644 blob a\tsrc/a.ts\nh b.ts')).toBe(treeOf('h b.ts\n100644 blob a\tsrc/a.ts'))
+  expect(treeOf('100644 blob a\tsrc/a.ts')).not.toBe(treeOf('100644 blob b\tsrc/a.ts'))
 })
 
 test('an implement step hands over its phase brief and the runbook; the rules ask for runbook lines and xref.json in commits', async ($, on) => {
@@ -68,7 +69,7 @@ test('done holds while spec, tasks and tree stay: no second verify, but the ques
     tools: { specify: true, uvx: true }, folder: 'existing', spec: parseSpec(DEMO[`${FEATURE}/spec.md`]!), tasks,
     constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!), commandStyle: 'skills', rules: rulesFrom(null), realTests: [],
     planFingerprint: 'p', testCommand: null, branch: null, phase: null, tasksFingerprint: tasksFingerprint(tasks), commands: ['converge', 'specify'],
-    checklists: [], persistence: 'flow-back', head: 'abc', tree: treeOf(''),
+    checklists: [], persistence: 'flow-back', tree: treeOf('100644 blob aaa\tsrc/auth/token.ts'),
   } as unknown as Snapshot
   const converged = { ...emptyLedger(), approvals: { spec: 'x' }, checkpoints: { converge: tasksFingerprint(tasks) } }
   const flow = { review: 'none' as const }
@@ -80,9 +81,9 @@ test('done holds while spec, tasks and tree stay: no second verify, but the ques
   expect(done.phase).toBe('done')
   expect(done.needsUser).toContain('Say what comes next (a new feature, a change to this one, or a bug)')
   expect(phaseStrip(snap, done)).toBe('✓setup ✓const ✓spec ✓plan ✓tasks ✓impl ✓verify')
-  // A new commit or an uncommitted change asks for a verification again.
-  expect(nextStep({ ...snap, head: 'def' } as Snapshot, verified, null, flow).phase).toBe('verify')
-  expect(nextStep({ ...snap, tree: treeOf(' M src/auth/token.ts') } as Snapshot, verified, null, flow).phase).toBe('verify')
+  // Changed content asks for a verification again; committing the same content, or the ledger's own file, does not.
+  expect(nextStep({ ...snap, tree: treeOf('100644 blob bbb\tsrc/auth/token.ts') } as Snapshot, verified, null, flow).phase).toBe('verify')
+  expect(nextStep({ ...snap, tree: treeOf('100644 blob aaa\tsrc/auth/token.ts\n100644 blob ccc\tspecs/001-magic-link-login/xref.json') } as Snapshot, verified, null, flow).phase).toBe('done')
   // What comes next, by kind.
   const feature = nextStep(snap, verified, null, { ...flow, next: { kind: 'feature', text: 'Passkeys as a second way in' } })
   expect([feature.phase, feature.command, feature.consumes]).toEqual(['specify', '/speckit-specify Passkeys as a second way in', true])

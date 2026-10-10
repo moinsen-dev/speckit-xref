@@ -88,15 +88,18 @@ export function runbookNote(runbook: string | null | undefined): string | null {
 }
 
 /**
- * What a verification holds for: this spec, these tasks, this commit and these uncommitted changes. While it holds the
- * feature is done, and another verify would only say the same again.
+ * What a verification holds for: this spec, these tasks and this content of the working tree. While it holds the
+ * feature is done, and another verify would only say the same again; committing what was verified changes nothing.
  */
 export function verifyKey(snap: Snapshot, tasksFp: string): string {
-  return fingerprint([snap.spec ? specFingerprint(snap.spec) : '', tasksFp, snap.head ?? '', snap.tree ?? ''].join('|'))
+  return fingerprint([snap.spec ? specFingerprint(snap.spec) : '', tasksFp, snap.tree ?? ''].join('|'))
 }
 
-/** `git status --porcelain` without the ledger's own file, which the mod rewrites as it links. */
-export const treeOf = (porcelain: string) => fingerprint(porcelain.split('\n').filter(l => l.trim() && !/(^|\/)xref\.json$/.test(l.trim())).sort().join('\n'))
+/**
+ * The working tree's content from `git ls-tree -r` of `git stash create` (or HEAD) plus `<hash> <path>` of the untracked
+ * files: one line per file, without the ledger's own file, which the mod rewrites as it links.
+ */
+export const treeOf = (lines: string) => fingerprint(lines.split('\n').filter(l => l.trim() && !/(^|\/)xref\.json$/.test(l.trim())).sort().join('\n'))
 
 export const NEXT_LABELS = [
   'a new feature, separate from the finished one',

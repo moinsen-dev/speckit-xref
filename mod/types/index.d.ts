@@ -90,8 +90,7 @@ export type Snapshot = {
   quickstart?: QuickRow[]
   /** `.specify/memory/runbook.md`: what earlier steps learned about the project's environment. */
   runbook?: string | null
-  /** git HEAD and a fingerprint of the uncommitted changes, for the verification that marks a feature done. */
-  head?: string | null
+  /** A fingerprint of the working tree's content (committed or not), for the verification that marks a feature done. */
   tree?: string | null
 }
 

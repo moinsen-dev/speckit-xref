@@ -344,7 +344,8 @@ async function scan($: $): Promise<void> {
     phaseNotes: tasksMd ? parsePhaseNotes(tasksMd) : {},
     quickstart: quickstartMd ? parseQuickstart(quickstartMd) : [],
     runbook: runbookMd,
-    ...(featureDir ? await gitState($) : { head: null, tree: null }),
+    // Only a feature whose tasks are all checked can be done: the content fingerprint is taken only then.
+    tree: featureDir && tasks.length && tasks.every(t => t.done) ? await workingTree($) : null,
   }
   // At the design review the mod checks screens.md's word on DESIGN.md against git, where there is a commit to compare with.
   if (snapshot.design?.screens && tasks.length === 0 && snapshot.commits) snapshot.design.verified = await designGit($)
@@ -524,14 +525,23 @@ async function openDashboard($: $): Promise<string> {
   return `${opened ? 'Dashboard opened' : 'Dashboard written'}: file://${path}\nIt reloads itself and is rewritten after every step. Local only: it holds your own words.`
 }
 
-/** HEAD and the uncommitted changes, for the verification that marks a feature done; null where git cannot say. */
-async function gitState($: $): Promise<{ head: string | null; tree: string | null }> {
+/**
+ * The working tree's content, committed or not: `git stash create` makes a commit object of the tracked changes
+ * without touching the tree or any ref (empty when there are none, then HEAD stands for it), and the untracked files
+ * count by their hashes. Null where git cannot say.
+ */
+async function workingTree($: $): Promise<string | null> {
+  const git = (argv: string[]) => $.process.run(['git', ...argv], { cwd: root, timeoutMs: 10_000 })
   try {
-    const head = await $.process.run(['git', 'rev-parse', 'HEAD'], { cwd: root, timeoutMs: 3000 })
-    const status = await $.process.run(['git', 'status', '--porcelain'], { cwd: root, timeoutMs: 5000 })
-    return { head: head.exitCode === 0 ? head.stdout.trim() : null, tree: status.exitCode === 0 ? treeOf(status.stdout) : null }
+    const stash = await git(['stash', 'create'])
+    const ref = (stash.exitCode === 0 && stash.stdout.trim()) || 'HEAD'
+    const tree = await git(['ls-tree', '-r', `${ref}^{tree}`])
+    if (tree.exitCode !== 0) return null
+    const others = (await git(['ls-files', '--others', '--exclude-standard'])).stdout.split('\n').filter(f => f.trim() && !/(^|\/)xref\.json$/.test(f))
+    const hashes = others.length ? (await git(['hash-object', '--', ...others.slice(0, 500)])).stdout.split('\n') : []
+    return treeOf([tree.stdout, ...others.slice(0, 500).map((f, i) => `${hashes[i] ?? ''} ${f}`)].join('\n'))
   } catch {
-    return { head: null, tree: null }
+    return null
   }
 }
 
@@ -1889,12 +1899,6 @@ export const register: Register = (on, options) => {
       const idea = waiting && takesIdea(waiting, snap!) && said && !said.startsWith('/') ? said.slice(0, 600) : ap.idea
       await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea }))
     }
-    // A -p run starts on the person's prompt: that turn is the first step, handed over and logged like any other.
-    if (!interactive && ap.on && ap.steps === 0 && waiting && !waiting.needsUser && snap?.featureDir) {
-      const ledger = await read($, ledgerA)
-      const text = await handOver($, snap, ledger, waiting, `${progressKey(snap, ledger)}|${ap.repairs}`, 0)
-      if (text) return next({ ...e, context: [...(e.context ?? []), text] })
-    }
     // At a done feature the words are what comes next: the autopilot hands over its step once this turn ends.
     // A question or a remark stays a conversation.
     const work = ap.on && waiting?.phase === 'done' && said && !said.startsWith('/') ? await takeNext($, said) : null
@@ -1912,6 +1916,12 @@ export const register: Register = (on, options) => {
     if (text && !text.startsWith('/')) {
       const when = await stamp($)
       await update($, ledgerA, l => logIntent(l, text, currentTask(snap, active)?.id ?? null, when))
+    }
+    // A -p run starts on the person's prompt: that turn is the first step, handed over and logged like any other.
+    if (!interactive && ap.on && ap.steps === 0 && waiting && !waiting.needsUser && snap?.featureDir) {
+      const logged = await read($, ledgerA)
+      const step = await handOver($, snap, logged, waiting, `${progressKey(snap, logged)}|${ap.repairs}`, 0)
+      if (step) return next({ ...e, context: [...(e.context ?? []), step] })
     }
     const ledger = await read($, ledgerA)
     const note = turnContext(snap, ledger, active, stepLine(nextStep(snap, ledger, ap.idea, flowOf(ap))))

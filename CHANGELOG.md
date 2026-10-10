@@ -6,7 +6,7 @@ The autopilot no longer ends at "done", and it hands each step what it needs to 
 
 ### After done comes the next thing
 
-- A feature that passed converge, verify and the tests **stays done** while its spec, its tasks and the working tree (git HEAD and the uncommitted changes) stay as they are. Starting the autopilot again no longer verifies once more: it asks what comes next. In the live run a finished feature was verified three times in a row, the third time with "nothing changed since the last check".
+- A feature that passed converge, verify and the tests **stays done** while its spec, its tasks and the content of the working tree stay as they are; committing what was verified changes nothing, any further edit or new file does. Starting the autopilot again no longer verifies once more: it asks what comes next. In the live run a finished feature was verified three times in a row, the third time with "nothing changed since the last check".
 - **New feature, Change, Bug** in the pane, your own words in the prompt (a small model tells the three apart, and a question stays a question), or `/xref next feature|change|bug <words>`:
   - a new feature goes to `/speckit-specify` and becomes the next feature;
   - a change reaches the spec first, then its appended tasks are built;
