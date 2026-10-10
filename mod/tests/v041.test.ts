@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { localPath } from '../hooks/ledger'
 import { parseSpec } from '../hooks/speckit'
-import { testCommandFrom, testScriptCommand } from '../hooks/workflow'
+import { failureLine, testCommandFrom, testScriptCommand } from '../hooks/workflow'
 import { DEMO } from './fixtures/demo'
 import { BAND, FEATURE, PANE, ROOT, ledgerOf, project, runTurn, startSession, toText, type, xref } from './harness'
 
@@ -207,4 +207,9 @@ test('the pane names the phase of tasks.md that runs, by its own number, with th
   await startSession($)
   const drawn = toText(await (await $.ui.mount({ ...PANE, surface: 'terminal' })).drawn())
   expect(drawn).toContain('Phase3 · 1/3 · ✓1 ▶3 ·4 ·5 · US1 Request a login link (P1) MVP')
+})
+
+test('the Tests row names what failed, not the runner\'s last words', () => {
+  expect(failureLine('PASS a.test.ts\nFAIL tests/services/inspire.test.ts\nTest Suites: 1 failed, 27 passed, 28 total\nTests:       212 passed, 212 total\nRan all test suites.')).toBe('Test Suites: 1 failed, 27 passed, 28 total')
+  expect(failureLine('ok')).toBe('ok')
 })

@@ -102,6 +102,12 @@ export function testScriptCommand(packageJson: string | null, lockfiles: { pnpm:
   return lockfiles.pnpm ? 'pnpm test' : lockfiles.yarn ? 'yarn test' : lockfiles.bun ? 'bun run test' : 'npm test'
 }
 
+/** The line of a test run that says what failed (`Test Suites: 1 failed, 27 passed`), not its last words (`Ran all test suites.`). */
+export function failureLine(output: string): string {
+  const lines = output.split('\n').map(l => l.trim()).filter(Boolean)
+  return [...lines].reverse().find(l => /\b(fail(ed|ing|ures?)?|error|✕|FAIL)\b/i.test(l)) ?? lines.at(-1) ?? ''
+}
+
 /** Whether a test run failed to start rather than failed: the shell's "command not found" and "not executable". */
 export const couldNotRun = (exitCode: number, output: string) => exitCode === 126 || exitCode === 127 || /command not found|not recognized as an internal or external command/i.test(output.slice(-2000))
 

@@ -24,6 +24,7 @@ import {
   stepLine,
   takesIdea,
   couldNotRun,
+  failureLine,
   phaseLabel,
   phaseNumber,
   specReview,
@@ -1981,7 +1982,7 @@ export const register: Register = (on, options) => {
           ),
         )}
         {autoRow}
-        {ap.lastTest && !ap.lastTest.ok ? row('Tests', `fail · ${short(ap.lastTest.output.split('\n').filter(Boolean).at(-1) ?? '', width)}`, 'error') : null}
+        {ap.lastTest && !ap.lastTest.ok ? row('Tests', `fail · ${short(failureLine(ap.lastTest.output), width)}`, 'error') : null}
         {ap.testNote ? row('Tests', `could not run · ${short(ap.testNote, width)} · set testCommand in /config`, 'warning') : null}
         {row('Drift', `${state.glyph} ${state.word}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {details ? driftCards : report.findings.length ? row('', `${report.findings.length} findings · d shows them`, 'subtle') : null}
