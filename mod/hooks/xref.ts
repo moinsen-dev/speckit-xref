@@ -198,6 +198,12 @@ export function currentTask(snap: Snapshot, active: string | null): Task | null 
   return chosen ?? snap.tasks.find(t => !t.done) ?? null
 }
 
+/** The edits outside the plan still open. Rules apply to what was booked before they changed: a file now exempt or unclear is no drift any more. */
+export function openUnplanned(snap: Pick<Snapshot, 'rules'>, ledger: Ledger) {
+  const quiet = [...(snap.rules?.exempt ?? []), ...(snap.rules?.unclear ?? [])]
+  return ledger.unplanned.filter(u => !u.acknowledged && !matchesAny(u.file, quiet))
+}
+
 /** What the ladder reads from a snapshot. */
 const proofSnap = (snap: Snapshot) => ({ featureDir: snap.featureDir, tasks: snap.tasks, reqs: snap.spec?.reqs ?? [], realTests: snap.realTests ?? [] })
 
@@ -208,9 +214,7 @@ const proofSnap = (snap: Snapshot) => ({ featureDir: snap.featureDir, tasks: sna
 export function evaluate(snap: Snapshot, ledger: Ledger, opts: { semantic?: boolean } = {}): Report {
   const semanticOn = opts.semantic ?? true
   const findings: Finding[] = []
-  // Rules apply to what was booked before they changed: a file now exempt or unclear is no drift any more.
-  const quiet = [...(snap.rules?.exempt ?? []), ...(snap.rules?.unclear ?? [])]
-  const open = ledger.unplanned.filter(u => !u.acknowledged && !matchesAny(u.file, quiet))
+  const open = openUnplanned(snap, ledger)
   for (const u of open) findings.push({ kind: 'unplanned', level: 'yellow', file: u.file, text: `${u.file} is not planned for any task` })
   if (open.length >= 3) findings.push({ kind: 'unplanned', level: 'red', text: `${open.length} edits outside the planned files` })
 

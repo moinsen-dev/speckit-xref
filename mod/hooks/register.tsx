@@ -51,6 +51,7 @@ import {
   relPath,
   reqsOf,
   resolveIntent,
+  openUnplanned,
   short,
   speckitCommand,
   turnContext,
@@ -637,7 +638,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, remediate: ap.remediate })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
@@ -931,9 +932,9 @@ async function advance($: $): Promise<void> {
     lastPhase: step.phase,
     idea: step.phase === 'specify' ? null : a.idea,
     scope: step.phase === 'implement' ? snap.phase : a.scope,
-    remediate: step.phase === 'remediate' ? false : a.remediate,
     remediations: (a.remediations ?? 0) + (step.phase === 'remediate' ? 1 : 0),
   }))
+  if (step.phase === 'remediate') await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, remediate: 'done' } }))
   // Handing a step over is its checkpoint (analyze, converge); a revise takes the request it folds in off the list.
   if (step.approve) {
     const { key: point, value } = step.approve
@@ -1060,7 +1061,9 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
   // An analysis that found something ends by offering its fixes: the next step applies them (twice a run at most).
   const findings = ap.lastPhase === 'analyze' && (endsWithQuestion(e.answer) || /\b(CRITICAL|HIGH|MEDIUM)\b/.test(e.answer))
   if (findings && (ap.remediations ?? 0) < 2) {
-    await update($, autopilotA, a => ({ ...a, remediate: true }))
+    // Kept in the local ledger: a run that ends here still owes the fixes in the next session.
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, remediate: 'due' } }))
+    await persist($)
   } else if (endsWithQuestion(e.answer)) {
     // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
     const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
@@ -1121,7 +1124,8 @@ async function acceptOne($: $, file: string): Promise<void> {
 
 /** Accept all asks first: a blind accept is the one way drift tracking quietly stops meaning anything. */
 async function confirmAcceptAll($: $): Promise<void> {
-  const open = (await read($, ledgerA)).unplanned.filter(u => !u.acknowledged).length
+  const snap = await read($, snapshotA)
+  const open = snap ? openUnplanned(snap, await read($, ledgerA)).length : 0
   let answer = ''
   try {
     answer = await $.ui.ask(`Accept all ${open} edits outside the plan as intended?`, ['Accept all', 'Cancel'])
@@ -1833,7 +1837,7 @@ export const register: Register = (on, options) => {
     const open = snap.tasks.filter(t => !t.done && t.id !== task?.id)
     const reqs = task ? reqsOf(task, ledger) : []
     const intents = report.findings.filter(f => f.kind === 'intent' && f.intent)
-    const unplanned = ledger.unplanned.filter(u => !u.acknowledged).slice(-5)
+    const unplanned = openUnplanned(snap, ledger).slice(-5)
     const others = report.findings.filter(f => f.kind !== 'intent' && f.kind !== 'unplanned')
     const ladder = `spec ${report.levels.specified} · plan ${report.levels.planned} · impl ${report.levels.implemented} · test ${report.levels.tested} · pass ${report.levels.passing}`
     const linkOptions = [...snap.tasks.filter(t => !t.done), ...snap.tasks.filter(t => t.done)].map(t => ({ value: t.id, label: `${t.id} ${short(t.text, 40)}` }))

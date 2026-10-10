@@ -133,6 +133,7 @@ test('an analysis that found something is followed by its remediation, then the 
   expect(seen.classified).toHaveLength(0)
   expect(autopilotPrompts(seen)[1]).toContain('remediate: The analysis found inconsistencies')
   expect(autopilotPrompts(seen)[1]).toContain('Keep every existing id')
+  expect(ledgerOf(seen.files).checkpoints.remediate).toBe('done')
   await runTurn($)
   await seen.clock.advance(0)
   expect(autopilotPrompts(seen)[2]).toContain('implement:')
@@ -159,4 +160,18 @@ test('the run log leaves the task empty for a step that implements nothing', asy
   await seen.clock.advance(0)
   const log = seen.files[localPath(FEATURE).replace('.json', '.run.jsonl')]!
   expect(JSON.parse(log.trim().split('\n')[0]!)).toMatchObject({ phase: 'tasks', task: null })
+})
+
+test('a run that ends right after the analysis still owes its fixes, in this session or the next', async ($, on) => {
+  const files = { ...DEMO, [`${FEATURE}/tasks.md`]: DEMO[`${FEATURE}/tasks.md`]!.replace(/- \[x\]/g, '- [ ]') }
+  const seen = project(on, files)
+  await startSession($)
+  await xref($, 'auto on 1')
+  await seen.clock.advance(0)
+  await runTurn($, '| C1 | Constitution | CRITICAL | … |')
+  await seen.clock.advance(0)
+  expect(seen.toasts.at(-1)).toContain('the step budget (1) is used up')
+  expect(ledgerOf(seen.files).checkpoints.remediate).toBe('due')
+  await startSession($)
+  expect((await xref($)).text).toContain('Next Spec Kit step: The analysis found inconsistencies')
 })

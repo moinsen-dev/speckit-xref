@@ -197,7 +197,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     return step('analyze', speckitCommand(snap, 'analyze'), started ? 'The spec changed since the last analysis: check spec, plan and tasks against each other.' : 'Before the first task: check spec, plan and tasks against each other.', null, { approve: { key: 'analyze', value: specFp } })
   }
   // An analysis that found something is followed through: its fixes go in before the next task does.
-  if (open.length && flow.remediate) {
+  if (open.length && (flow.remediate || ledger.checkpoints.remediate === 'due')) {
     return step('remediate', null, 'The analysis found inconsistencies: apply its remediation before the next task.', null, {
       prompt: [
         `Apply the remediation the last ${speckitCommand(snap, 'analyze')} proposed, in this step and without asking whether to.`,
