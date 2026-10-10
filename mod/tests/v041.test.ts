@@ -191,3 +191,13 @@ test('by default the band offers the pane until it is open', async ($, on) => {
   await band.press({ key: 'band-open-pane' })
   expect(seen.opened).toEqual(['speckit-xref'])
 })
+
+test('on a subscription the band shows the usage windows, not a list price', async ($, on) => {
+  const seen = project(on, { ...DEMO }, { rateLimits: [{ kind: 'five_hour', percentUsed: 34.2 }, { kind: 'seven_day', percentUsed: 12 }] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  const band = toText(await (await $.ui.mount({ ...BAND, surface: 'terminal' })).drawn())
+  expect(band).toContain('auto ▶ 1/25 · 5h 34% · 7d 12% · 0m')
+  expect(band).not.toContain('$')
+})

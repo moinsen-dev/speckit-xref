@@ -1111,9 +1111,23 @@ export function compactPrompt(text: string): string | null {
 }
 
 /** What this run cost so far and how long it took: ` · $1.80 · 23m`. */
+/**
+ * What this run used so far and how long it took. On a subscription the usage windows are what limits it
+ * (` · 5h 34% · 7d 12% · 23m`); `$` is /cost's list-price estimate, what an API key is billed (` · $1.80 · 23m`).
+ */
 async function runCost($: $, ap: Autopilot): Promise<string> {
   if (!ap.startedAt) return ''
   const minutes = Math.max(0, Math.round(((await $.clock.now()) - ap.startedAt) / 60_000))
+  let windows: { kind: string; percentUsed: number }[] = []
+  try {
+    windows = (await $.session.usage()).rateLimits.filter(r => r.kind === 'five_hour' || r.kind === 'seven_day')
+  } catch {
+    windows = []
+  }
+  if (windows.length) {
+    const label = (kind: string) => (kind === 'five_hour' ? '5h' : '7d')
+    return ` · ${windows.map(w => `${label(w.kind)} ${Math.round(w.percentUsed)}%`).join(' · ')} · ${minutes}m`
+  }
   const usd = Math.max(0, (await sessionCost($)) - ap.costAtStart)
   return ` · $${usd.toFixed(2)} · ${minutes}m`
 }

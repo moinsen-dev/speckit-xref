@@ -40,6 +40,8 @@ type Options = {
   answers?: string[]
   /** The git branch checked out. */
   branch?: string
+  /** The subscription's usage windows, as /usage shows them. */
+  rateLimits?: { kind: string; percentUsed: number }[]
 }
 
 /** The project of the test running now: its turns start with the prompt submitted last, as the engine's do. */
@@ -200,7 +202,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     seen.aborted.push(e.turnId)
     return { value: undefined }
   })
-  on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: [], cost: { usd: 0.5 } } }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: options.rateLimits ?? [], cost: { usd: 0.5 } } }))
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('ui.render', ($: any, e: any) => ({ type: 'Text', props: {}, children: [e.component === 'UserMessage' ? e.props.text : 'drawn beneath'] }))
   on('session.start', () => ({ cwd: ROOT }))
