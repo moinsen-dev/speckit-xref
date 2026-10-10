@@ -109,7 +109,7 @@ test('the step budget ends a run; /xref auto on starts a new one', async ($, on)
   expect(seen.toasts.at(-1)).toContain('the step budget (2) is used up')
 })
 
-test('without a feature it waits for the idea, then specifies it in the person\'s own words', async ($, on) => {
+test('without a feature it waits for the idea, then specifies it in the person\'s own words', { options: { validate: 'off', shape: 'off' } }, async ($, on) => {
   const files: Record<string, string> = {
     '.specify/memory/constitution.md': DEMO['.specify/memory/constitution.md']!,
     '.specify/integration.json': JSON.stringify({ integration: 'claude', installed_integrations: ['claude'], integration_settings: { claude: { invoke_separator: '-' } } }),
@@ -311,7 +311,7 @@ test('the autopilot never sets Spec Kit up by itself; a setup press lets it go o
   expect((await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result).toContain('Autopilot: on, step 0/25')
 })
 
-test('greenfield: the idea from an empty folder carries through setup and constitution into /speckit-specify', async ($, on) => {
+test('greenfield: the idea from an empty folder carries through setup and constitution into /speckit-specify', { options: { validate: 'off', shape: 'off' } }, async ($, on) => {
   const seen = project(on, { ...README_ONLY })
   await startSession($)
   await xref($, 'auto on')

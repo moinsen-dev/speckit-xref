@@ -122,6 +122,13 @@ export function project(on: any, files: Record<string, string>, options: Options
     if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--verify')) return ok('', options.commits ? 0 : 1)
     if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--abbrev-ref')) return options.branch ? ok(`${options.branch}\n`) : { deny: 'ENOENT' }
     if (e.argv[0] === 'git' && (e.argv[1] === 'add' || e.argv[1] === 'commit')) return ok('')
+    if (e.argv[0] === 'mv') {
+      const [from, to] = e.argv.slice(-2).map((p: string) => rel(p))
+      if (!(from! in files)) return ok('', 1)
+      write(to!, files[from!]!)
+      delete files[from!]
+      return ok('')
+    }
     if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--cached')) return ok('')
     if (e.argv[0] === 'git' && e.argv[1] === 'hash-object') return ok(e.argv.slice(3).map((f: string) => `h-${f}-${mtimes[f] ?? 0}`).join('\n'))
     if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok((options.changed ? options.changed() : ['src/auth/token.ts']).join('\n') + '\n')

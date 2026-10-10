@@ -25,6 +25,7 @@ import {
   takesIdea,
   couldNotRun,
   failureLine,
+  parseIdeaBrief,
   phaseLabel,
   phaseNumber,
   specReview,
@@ -76,6 +77,8 @@ type Options = {
   commitPerTask: string
   parallel: string
   pane: string
+  validate: string
+  shape: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -134,12 +137,15 @@ let commitPerTask = false
 // When the pane opens without being asked: auto (where it is a sidebar), always (every Spec Kit project), off.
 let paneMode: 'auto' | 'always' | 'off' = 'auto'
 let driftCheckOn = true
+let validateOn = true
+let shapeOn = true
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
 let stepStartedAt = 0
 
 const at = (rel: string) => (rel.startsWith('/') ? rel : `${root}/${rel}`)
+const at$ = at
 const stamp = async ($: $) => new Date(await $.clock.now()).toISOString()
 
 async function readText($: $, rel: string): Promise<string | null> {
@@ -313,6 +319,7 @@ async function scan($: $): Promise<void> {
     checklists: featureDir ? await checklists($, featureDir) : [],
     persistence: persistenceModel(constitutionMd),
     commits: await hasCommits($),
+    ...(await ideaState($)),
   }
   if (!previous || previous.featureDir !== featureDir) {
     const ledger = featureDir ? rebaseline(ledgerFromParts(await readText($, `${featureDir}/xref.json`), await readText($, localPath(featureDir))), specMd) : emptyLedger()
@@ -329,6 +336,91 @@ async function projectTestScript($: $): Promise<string | null> {
   const pkg = await readText($, 'package.json')
   if (!pkg) return null
   return testScriptCommand(pkg, { pnpm: await exists($, 'pnpm-lock.yaml'), yarn: await exists($, 'yarn.lock'), bun: (await exists($, 'bun.lock')) || (await exists($, 'bun.lockb')) })
+}
+
+const IDEA_BRIEF = '.specify/memory/idea-brief.md'
+const PRODUCT_BRIEF = '.specify/memory/product-brief.md'
+const PROJECT_STATE = '.specify/xref/local/project.json'
+
+/** The idea's state before the first feature: the brief Validate wrote, the person's decision on it, Shape's brief. */
+async function ideaState($: $): Promise<Pick<Snapshot, 'ideaBrief' | 'ideaDecision' | 'productBrief'>> {
+  const brief = await readText($, IDEA_BRIEF)
+  let decision: Snapshot['ideaDecision'] = null
+  try {
+    const raw = JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as { idea?: Snapshot['ideaDecision'] }
+    if (raw.idea && (raw.idea.decision === 'build' || raw.idea.decision === 'drop')) decision = raw.idea
+  } catch {
+    decision = null
+  }
+  return { ideaBrief: brief ? parseIdeaBrief(brief) : null, ideaDecision: decision, productBrief: await exists($, PRODUCT_BRIEF) }
+}
+
+/**
+ * The person decides on the idea brief: Build goes on, Drop stops the run. Kept in the local project state with the
+ * brief's fingerprint, so only the person's press counts and a rewritten brief asks again; the brief shows the line.
+ */
+async function decideIdea($: $, decision: 'build' | 'drop'): Promise<string> {
+  const snap = await read($, snapshotA)
+  const brief = snap?.ideaBrief
+  if (!brief) return 'No idea brief to decide on.'
+  const at = await stamp($)
+  let state: Record<string, unknown> = {}
+  try {
+    state = JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as Record<string, unknown>
+  } catch {
+    state = {}
+  }
+  await $.fs.write(at$(PROJECT_STATE), JSON.stringify({ ...state, idea: { decision, fingerprint: brief.fingerprint, at } }, null, 2) + '\n')
+  if (!(await exists($, LOCAL_IGNORE.path))) await $.fs.write(at$(LOCAL_IGNORE.path), LOCAL_IGNORE.text)
+  const text = (await readText($, IDEA_BRIEF)) ?? ''
+  const line = `**Decision**: ${decision} (the person, ${at.slice(0, 10)})`
+  const lines = text.split('\n').filter(l => !/^\*\*Decision\*\*:/i.test(l))
+  const after = lines.findIndex(l => /^\*\*(Recommendation|Score)\*\*:/i.test(l))
+  lines.splice(after >= 0 ? after + 1 : 1, 0, line)
+  await $.fs.write(at$(IDEA_BRIEF), lines.join('\n'))
+  await scan($)
+  const ap = await read($, autopilotA)
+  if (decision === 'drop') {
+    if (ap.on) await stopAutopilot($, `Idea dropped: "${brief.title}". The brief stays in ${IDEA_BRIEF}.`)
+    return `Dropped the idea "${brief.title}".`
+  }
+  if (ap.on && ap.paused) await resumeAutopilot($)
+  return `Building "${brief.title}": shape, constitution and spec come next.`
+}
+
+/** Sharpen: the person says what should change, and Validate runs again on the sharper idea. */
+async function sharpenIdea($: $): Promise<void> {
+  let change = ''
+  try {
+    change = await $.ui.ask('What should change about the idea?', { options: ['Narrow the audience', 'Change the core feature'], header: 'Sharpen' })
+  } catch {
+    return
+  }
+  if (!change.trim()) return
+  if ((await read($, autopilotA)).paused) await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0 }))
+  void $.prompt.submit({ text: `Sharpen the idea: ${change}. Run the speckit-xref:validate skill again on the sharper idea and rewrite ${IDEA_BRIEF}.`, asUser: true })
+}
+
+/** A dropped idea reopens, or a new one starts: the old brief moves aside, the decision goes. */
+async function reopenIdea($: $, fresh: boolean): Promise<string> {
+  let state: Record<string, unknown> = {}
+  try {
+    state = JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as Record<string, unknown>
+  } catch {
+    state = {}
+  }
+  delete state.idea
+  await $.fs.write(at$(PROJECT_STATE), JSON.stringify(state, null, 2) + '\n')
+  if (fresh) {
+    const text = await readText($, IDEA_BRIEF)
+    if (text !== null) {
+      // Moved aside, never deleted: the old brief stays readable beside the new one.
+      await $.process.run(['mv', '--', at$(IDEA_BRIEF), at$(`.specify/memory/idea-brief-${(await stamp($)).slice(0, 10)}-dropped.md`)], { cwd: root, timeoutMs: 3000 }).catch(() => undefined)
+    }
+    await update($, autopilotA, a => ({ ...a, idea: null }))
+  }
+  await scan($)
+  return fresh ? 'The old brief is kept beside it; describe the new idea.' : 'The idea is open again: Build, Sharpen or Drop.'
 }
 
 /** Whether the repository has a commit: true, false (a repository without one), null (no git here). */
@@ -658,7 +750,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
@@ -725,7 +817,7 @@ async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
 }
 
 /** Approvals only the person gives: the spec, the plan, open checklists. The autopilot records checkpoints, never these. */
-const APPROVALS = new Set(['spec', 'plan', 'checklists'])
+const APPROVALS = new Set(['idea', 'spec', 'plan', 'checklists'])
 const CHECKPOINTS = new Set(['analyze', 'converge'])
 
 /** The person approves what the autopilot waits on (spec, plan, open checklists); the run goes on. */
@@ -745,6 +837,7 @@ async function approve($: $): Promise<string> {
     return 'Nothing waits for an approval.'
   }
   const { key, value } = step.approve
+  if (key === 'idea') return decideIdea($, 'build')
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
   if (ap.on && ap.paused) await resumeAutopilot($)
@@ -797,6 +890,19 @@ async function remind($: $, reason: string): Promise<void> {
 
 async function askApproval($: $, step: Step): Promise<void> {
   const key = step.approve!.key
+  if (key === 'idea') {
+    let answer = ''
+    try {
+      answer = await $.ui.ask(`${step.why} Build it?`, ['Build', 'Sharpen', 'Drop'])
+    } catch {
+      return
+    }
+    if (answer === 'Build') await decideIdea($, 'build')
+    else if (answer === 'Drop') await decideIdea($, 'drop')
+    else if (answer === 'Sharpen') await sharpenIdea($)
+    else if (answer.trim()) void $.prompt.submit({ text: `About the idea: ${answer}`, asUser: true })
+    return
+  }
   const yes = key === 'spec' ? 'Approve spec' : key === 'plan' ? 'Approve plan' : 'Proceed anyway'
   const question = key === 'checklists' ? `${step.why} Go on implementing anyway?` : `${step.why} Approve the ${key} as the contract?`
   let answer: string
@@ -997,6 +1103,15 @@ async function advance($: $): Promise<void> {
 }
 
 const RUNNER = 'task-runner'
+const RESEARCHER = 'idea-researcher'
+
+/** The research agent's whole system prompt: evidence, no invented sources, one structured report. */
+const RESEARCHER_PROMPT = [
+  'You research a product idea before anyone builds it. The prompt is the idea in its author\'s words.',
+  'Use WebSearch and WebFetch. Find: who has the problem and how badly (forums, reviews, articles); what already exists (apps, services, workarounds) and where each falls short; what would make this idea different; the riskiest assumption and the cheapest way to test it; signals that should stop the project.',
+  'Never invent a source. Report a product or a claim as verified only with a URL you fetched; mark everything else (unverified). If a search finds nothing, say so.',
+  'Answer with one report in Markdown: Problem evidence, Alternatives (name, URL or (unverified), what it does, where it falls short), Difference, Riskiest assumptions (with a cheap test each), Kill criteria, Success measures, Sources. No preamble.',
+].join('\n')
 
 /** With the parallel option, a phase's open [P] tasks go to subagents of their own, one per task. */
 function parallelNote(snap: Snapshot, step: Step): string {
@@ -1381,6 +1496,8 @@ export const register: Register = (on, options) => {
   paneMode = opts.pane === 'always' || opts.pane === 'off' ? opts.pane : 'auto'
   const driftCheck = opts.driftCheck === 'off' ? 'off' : 'fork'
   driftCheckOn = driftCheck === 'fork'
+  validateOn = opts.validate !== 'off'
+  shapeOn = opts.shape !== 'off'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -1472,6 +1589,16 @@ export const register: Register = (on, options) => {
     if (paneMode === 'always' && initialized && !offered) {
       offered = true
       void $.ui.open({ id: PANE, title: TITLE })
+    }
+    // Validate hands the web research to an agent of its own, so the main conversation stays lean. Only offered
+    // where Validate can still come: a new project before its first feature.
+    const fresh = await read($, snapshotA)
+    if (validateOn && fresh?.folder === 'empty' && fresh.features.length === 0) {
+      try {
+        await $.agent.register({ name: RESEARCHER, description: 'Researches a product idea on the web before it becomes a spec: who has the problem, what exists, what differs, the riskiest assumption.', prompt: RESEARCHER_PROMPT, tools: ['WebSearch', 'WebFetch', 'Read'] })
+      } catch {
+        // Without it the validate skill researches in the main loop.
+      }
     }
     if (parallel) {
       try {
@@ -1817,7 +1944,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Box flexDirection="row" columnGap={1}>
           {approval ? (
-            <Button key="band-approve" label={approval === 'checklists' ? 'Proceed anyway' : `Approve ${approval}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+            <Button key="band-approve" label={approval === 'checklists' ? 'Proceed anyway' : approval === 'idea' ? 'Build' : `Approve ${approval}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
           ) : (
             <Button key="band-resume" label="Resume" variant="primary" onPress={() => void resumeAutopilot($)} />
           )}
@@ -1883,6 +2010,28 @@ export const register: Register = (on, options) => {
     if (!snap?.featureDir || !snap.spec) {
       const next = snap ? nextStep(snap, ledger, ap.idea, flowOf(ap)) : null
       const action = next && snap ? setupAction(next, snap) : null
+      const brief = snap?.ideaBrief
+      const decided = brief && snap?.ideaDecision?.fingerprint === brief.fingerprint ? snap.ideaDecision.decision : null
+      const ideaCard = brief ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>{`Idea: ${brief.title}`}</Text>
+          {brief.oneLiner ? <Text>{brief.oneLiner}</Text> : null}
+          <Text dimColor>{`Score ${brief.score ?? '–'}/5 · recommends ${brief.recommendation ?? '–'} · ${brief.research ? 'researched on the web' : 'no web research'}`}</Text>
+          {brief.alternatives.slice(0, 4).map(a => (
+            <Text dimColor wrap="truncate-end">{`${a.verified ? '✓' : '?'} ${a.name}${a.note ? ` · ${a.note}` : ''}`}</Text>
+          ))}
+          {brief.risks[0] ? <Text color="warning" wrap="truncate-end">{`Riskiest: ${brief.risks[0]}`}</Text> : null}
+          {brief.kill[0] ? <Text dimColor wrap="truncate-end">{`Stop if: ${brief.kill[0]}`}</Text> : null}
+          <Box flexDirection="row" columnGap={1} marginTop={1}>
+            {decided === 'drop' ? <Button key="idea-reopen" label="Reopen" onPress={() => void reopenIdea($, false).then(text => $.ui.toast(text))} /> : null}
+            {decided === 'drop' ? <Button key="idea-new" label="New idea" onPress={() => void reopenIdea($, true).then(text => $.ui.toast(text))} /> : null}
+            {decided === 'build' ? <Text color="success">● You decided: build</Text> : null}
+            {!decided ? <Button key="idea-build" label="Build" variant="primary" onPress={() => void decideIdea($, 'build').then(text => $.ui.toast(text))} /> : null}
+            {!decided ? <Button key="idea-sharpen" label="Sharpen" onPress={() => void sharpenIdea($)} /> : null}
+            {!decided ? <Button key="idea-drop" label="Drop" onPress={() => void decideIdea($, 'drop').then(text => $.ui.toast(text))} /> : null}
+          </Box>
+        </Box>
+      ) : null
       return (
         <Box flexDirection="column">
           <Text bold>{next?.why ?? 'No Spec Kit feature found.'}</Text>
@@ -1893,6 +2042,7 @@ export const register: Register = (on, options) => {
               {action}
             </Box>
           ) : null}
+          {ideaCard}
           {/* The autopilot shows here only while it runs; it is started where there is a workflow to run. */}
           {ap.on ? <Box marginTop={1}>{autoRow}</Box> : null}
         </Box>

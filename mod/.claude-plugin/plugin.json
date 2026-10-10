@@ -116,6 +116,26 @@
         "always",
         "off"
       ]
+    },
+    "validate": {
+      "type": "string",
+      "title": "Validate a new idea",
+      "description": "on: before a new project's first spec, the idea is researched on the web (who has the problem, what exists, what differs, the riskiest assumption) into .specify/memory/idea-brief.md, and you decide Build, Sharpen or Drop. The idea's wording goes to the web search Claude uses. off: straight to the spec.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "shape": {
+      "type": "string",
+      "title": "Shape the first version",
+      "description": "on: before a new project's first spec, Claude asks you what the idea leaves open (first-version scope, platforms, language, design, data) and records it in .specify/memory/product-brief.md, so the spec treats it as decided. off: the spec decides and calls it assumptions.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
     }
   }
 }

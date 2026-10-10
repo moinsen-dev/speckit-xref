@@ -75,6 +75,27 @@ export type Snapshot = {
   persistence: 'flow-back' | 'flow-forward' | 'living'
   /** Whether the git repository has a commit; null outside git. */
   commits?: boolean | null
+  /** The idea brief Validate wrote (`.specify/memory/idea-brief.md`), and the person's decision on it. */
+  ideaBrief?: IdeaBrief | null
+  ideaDecision?: { decision: 'build' | 'drop'; fingerprint: string; at: string } | null
+  /** Whether Shape wrote `.specify/memory/product-brief.md`. */
+  productBrief?: boolean
+}
+
+/** What Validate found out about an idea before it became a spec. */
+export type IdeaBrief = {
+  title: string
+  oneLiner: string | null
+  recommendation: 'build' | 'sharpen' | 'drop' | null
+  score: number | null
+  /** Whether the brief rests on web research, or says it had none. */
+  research: boolean
+  alternatives: { name: string; url: string | null; note: string; verified: boolean }[]
+  risks: string[]
+  kill: string[]
+  success: string[]
+  /** Of the brief's text without a Decision line: the person's decision holds for this text only. */
+  fingerprint: string
 }
 
 export type Unplanned = { file: string; at: string; task: string | null; acknowledged: boolean }

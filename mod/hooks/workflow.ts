@@ -1,12 +1,14 @@
 // Where a project stands in Spec Kit's workflow, the step that comes next, and the autopilot's rules. Pure: register.tsx hands in the snapshot.
 
-import type { Autopilot, Ledger, Snapshot, Task } from '../types'
+import type { Autopilot, IdeaBrief, Ledger, Snapshot, Task } from '../types'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
 export type Phase =
   | 'setup'
   | 'integration'
+  | 'validate'
+  | 'shape'
   | 'constitution'
   | 'specify'
   | 'clarify'
@@ -43,6 +45,9 @@ export type Step = {
 /** What the workflow reads beyond the snapshot: the review option, the persistence model, the last test run. */
 export type Flow = {
   review: 'spec' | 'spec+plan' | 'none'
+  /** Validate and Shape for a new project's first feature (both on unless switched off). */
+  validate?: boolean
+  shape?: boolean
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -176,7 +181,29 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (!snap.claudeIntegration) {
     return step('integration', `${specifyCli(snap)} integration install claude`, "Spec Kit is set up, but not for Claude Code: its /speckit-* skills are missing.", 'Say "add the Claude integration", or press Add Claude integration in the pane.')
   }
+  // A new project's first feature starts at the idea: researched (Validate) and shaped with the person (Shape)
+  // before the constitution and the spec are written from it.
+  const greenfield = snap.folder === 'empty' && snap.features.length === 0 && (!snap.featureDir || !snap.spec)
+  if (greenfield && flow.validate !== false) {
+    const brief = snap.ideaBrief
+    const decided = brief && snap.ideaDecision?.fingerprint === brief.fingerprint ? snap.ideaDecision.decision : null
+    if (!brief && !idea) {
+      return step('validate', null, 'No idea yet: it is researched before it becomes a spec.', 'Describe what you want to build, in your own words: I research it first, then we shape and specify it.')
+    }
+    if (!brief) {
+      return step('validate', null, 'The idea is known: research it before it becomes a spec.', null, { prompt: validatePrompt(idea!) })
+    }
+    if (decided === 'drop') return step('validate', null, `You dropped the idea "${brief.title}".`, 'You dropped this idea: Reopen it in the pane, or start a new idea there.')
+    if (decided !== 'build') {
+      return step('review', null, `The idea brief is written: ${brief.oneLiner ?? brief.title}${brief.score !== null ? ` (score ${brief.score}/5, ${brief.recommendation ?? 'no recommendation'})` : ''}.`,
+        'Read the idea brief, then press Build, Sharpen or Drop in the pane.', { approve: { key: 'idea', value: brief.fingerprint } })
+    }
+  }
+  if (greenfield && flow.shape !== false && !snap.productBrief) {
+    return step('shape', null, 'Before the spec: settle with the person what the first version is (scope, platforms, language, design, data).', null, { prompt: SHAPE_PROMPT })
+  }
   if (!snap.constitution || snap.constitution.principles.length === 0) {
+    if (snap.ideaBrief || snap.productBrief) notes.push(BRIEFS_NOTE)
     return step('constitution', speckitCommand(snap, 'constitution'), 'The constitution is missing or still the template.')
   }
   if ((!snap.featureDir || !snap.spec) && snap.commits === false) {
@@ -184,6 +211,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     return step('setup', null, 'The repository has no commit yet: Spec Kit opens a branch per feature only from one.', 'Make the first commit: press First commit in the pane, or ask for it.')
   }
   if (!snap.featureDir || !snap.spec) {
+    if (snap.ideaBrief || snap.productBrief) notes.push(BRIEFS_NOTE)
     return idea
       ? step('specify', `${speckitCommand(snap, 'specify')} ${idea}`, 'No feature yet; the person has said what to build.')
       : step('specify', speckitCommand(snap, 'specify'), 'No feature yet: describe what to build.', 'Describe the feature you want built; your own words become the spec.')
@@ -283,6 +311,63 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   })
 }
 
+/** What Validate is handed: the person's words and the skill that researches them. */
+export function validatePrompt(idea: string): string {
+  return [
+    'Validate the idea before it becomes a spec, with the speckit-xref:validate skill: research it (the speckit-xref:idea-researcher agent does the web research where web tools are there) and write .specify/memory/idea-brief.md in the format the skill gives.',
+    `The idea, in the person's words: "${idea}"`,
+    'Never invent a source: an alternative without a URL you fetched is marked (unverified). Without web tools, say so in the brief. Do not write a **Decision** line: Build, Sharpen or Drop is the person\'s call.',
+  ].join('\n')
+}
+
+const SHAPE_PROMPT = [
+  'Shape the first version with the person before the spec is written, with the speckit-xref:shape skill.',
+  'Ask in the AskUserQuestion dialog only what the idea and .specify/memory/idea-brief.md leave open: which user stories make the first version (the MVP cut), platforms, language and internationalisation, the design direction (mood, references, dark mode, accessibility), data and accounts. At most 4 questions a round, the recommended answer first.',
+  "Write .specify/memory/product-brief.md with '## Decisions (the person's)' and '## Assumptions (Claude's)'. Where nobody can answer (no dialog), record each point as an assumption.",
+].join('\n')
+
+const BRIEFS_NOTE =
+  "Use .specify/memory/idea-brief.md and .specify/memory/product-brief.md: the decisions in them are the person's (write them as decided, never as assumptions), the brief's success measures become SC-###, its riskiest assumption is what the first user story tests, and its differentiation belongs in the constitution."
+
+/** Reads an idea brief (`.specify/memory/idea-brief.md`, the format the validate skill writes). */
+export function parseIdeaBrief(markdown: string): IdeaBrief {
+  const field = (name: string) => new RegExp(`^\\*\\*${name}\\*\\*:\\s*(.+)$`, 'mi').exec(markdown)?.[1]?.trim() ?? null
+  const section = (name: RegExp) => {
+    const out: string[] = []
+    let inside = false
+    for (const line of markdown.split('\n')) {
+      const h = /^##\s+(.+)$/.exec(line)
+      if (h) {
+        inside = name.test(h[1] ?? '')
+        continue
+      }
+      const item = inside ? /^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line) : null
+      if (item) out.push(item[1]!.trim())
+    }
+    return out
+  }
+  const rec = field('Recommendation')?.toLowerCase().match(/build|sharpen|drop/)?.[0] as IdeaBrief['recommendation'] | undefined
+  const score = Number(/([\d.]+)\s*\/\s*5/.exec(field('Score') ?? '')?.[1])
+  const research = field('Research')
+  return {
+    title: /^#\s+(?:Idea Brief:\s*)?(.+)$/m.exec(markdown)?.[1]?.trim() ?? 'Idea',
+    oneLiner: field('One-liner'),
+    recommendation: rec ?? null,
+    score: Number.isFinite(score) ? score : null,
+    research: !!research && !/^none\b/i.test(research),
+    alternatives: section(/^alternatives/i).map(line => {
+      const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*[:–—-]?\s*(.*)$/.exec(line)
+      if (link && !/\(unverified\)/i.test(line)) return { name: link[1]!, url: link[2]!, note: link[3] ?? '', verified: true }
+      const [name, ...rest] = line.replace(/\[([^\]]+)\]\([^)]*\)/, '$1').split(/:\s+/)
+      return { name: name!.replace(/\s*\(unverified\)\s*/i, '').trim(), url: null, note: rest.join(': '), verified: false }
+    }),
+    risks: section(/riskiest/i),
+    kill: section(/^kill/i),
+    success: section(/^success/i),
+    fingerprint: fingerprint(markdown.split('\n').filter(l => !/^\*\*Decision\*\*:/i.test(l)).join('\n')),
+  }
+}
+
 /** The step as one line, as the pane, /xref and the note on each prompt show it. */
 export const stepLine = (s: Step) => (s.command ? `${s.command} · ${s.why}` : s.why)
 
@@ -307,7 +392,8 @@ export const idleAutopilot = (): Autopilot => ({
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
-export const takesIdea = (step: Step, snap: Snapshot) => step.phase === 'specify' || (step.phase === 'setup' && snap.folder === 'empty' && step.command !== null)
+export const takesIdea = (step: Step, snap: Snapshot) =>
+  step.phase === 'specify' || (step.phase === 'validate' && step.needsUser !== null && !snap.ideaBrief) || (step.phase === 'setup' && snap.folder === 'empty' && step.command !== null)
 
 /** What the model reads beside the person's prompt while the autopilot waits before Spec Kit is there. */
 export function setupNote(step: Step, snap: Snapshot): string {
@@ -371,8 +457,11 @@ export const QUESTION_LABELS = ['needs a decision only the person can make', 'as
 
 /** The phase strip: `✓setup ✓const ✓spec ✓plan ✓tasks ▶impl 7/8 ·verify`; `◌spec` is a spec passed without your review. */
 export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): string {
+  // The idea column shows only for a project that started at an idea (Validate, Shape).
+  const ideas = !!snap.ideaBrief || !!snap.productBrief || step.phase === 'validate' || step.phase === 'shape'
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
+    ...(ideas ? [['idea', ['validate', 'shape']] as [string, Phase[]]] : []),
     ['const', ['constitution']],
     ['spec', ['specify', 'clarify', 'review', 'revise']],
     ['plan', ['plan']],
