@@ -14,9 +14,17 @@ Friction from the first real runs of 0.7.0, and the parts so far proven by unit 
 
 - **Vitest's reports reach the anchors.** Vitest writes no `file` attribute but the test file's path as `classname`; a classname that is a source file's path is now the test's file (contract §9, both implementations, a new shared case), so a test's `@spec` anchors count, not only ids in its name. Playwright writes its reports the same way.
 
+### Acceptance on mobile
+
+- **Expo Go counts.** Mobile acceptance plays on what the emulator or simulator already has: a development build if one is installed, else Expo Go on the app's `exp://` link. Building a development build downloads native dependencies, so it is a task under `## Phase N: Acceptance setup`, never part of the step (found live: the old wording made the step leave out mobile because no development build existed).
+- **Live data.** Maestro cannot stub network services as Playwright does: the step plays now what holds without live data, and asks for a fixture mode (an environment flag that makes the app's service adapters return the web tests' fixtures) as an Acceptance setup task for the rest. Leaving out the mobile platform as a whole while Maestro and a device are there is no longer an option.
+- **The time box covers the driver's work** (about 20 minutes for bringing the app up and getting the flows to run), and a tap on screen coordinates is no evidence: an element without a label or testID gets a setup task (found live: a 53-minute step ended with coordinate taps).
+- A failing test run reaches the repair step without the runner's colour codes.
+
 ### Live
 
 - The pane in a real terminal, driven by keyboard and mouse: Ship, the release dialog that names its commands, the band, Not now; the spec review's Keep and Change (Change hands the person's words to Claude, and the spec changes).
+- Acceptance with Maestro on an Android emulator (Expo Go): flows per scenario named by id, a JUnit report the mod records (`US2-AS1`, `US4-AS1` accepted on mobile and web), and a fixture-mode setup task for the scenarios that need live data.
 
 ## 0.7.0 — 2026-10-11
 
