@@ -18,13 +18,14 @@ Friction from the first real runs of 0.7.0, and the parts so far proven by unit 
 
 - **Expo Go counts.** Mobile acceptance plays on what the emulator or simulator already has: a development build if one is installed, else Expo Go on the app's `exp://` link. Building a development build downloads native dependencies, so it is a task under `## Phase N: Acceptance setup`, never part of the step (found live: the old wording made the step leave out mobile because no development build existed).
 - **Live data.** Maestro cannot stub network services as Playwright does: the step plays now what holds without live data, and asks for a fixture mode (an environment flag that makes the app's service adapters return the web tests' fixtures) as an Acceptance setup task for the rest. Leaving out the mobile platform as a whole while Maestro and a device are there is no longer an option.
-- **The time box covers the driver's work** (about 20 minutes for bringing the app up and getting the flows to run), and a tap on screen coordinates is no evidence: an element without a label or testID gets a setup task (found live: a 53-minute step ended with coordinate taps).
+- **The time box covers the driver's work** (about 20 minutes for bringing the app up and getting the flows to run); an element without a label or testID gets a setup task.
+- **A tap on screen coordinates is no evidence**, in the mod and in `xref.py accept`: a testcase whose flow taps by coordinates (a Maestro `point:`, a Playwright `mouse.click(`) accepts nothing, and the person is told which flow (found live: a 53-minute step ended with flows that tapped by coordinates, and the mod accepted two scenarios from them).
 - A failing test run reaches the repair step without the runner's colour codes.
 
 ### Live
 
 - The pane in a real terminal, driven by keyboard and mouse: Ship, the release dialog that names its commands, the band, Not now; the spec review's Keep and Change (Change hands the person's words to Claude, and the spec changes).
-- Acceptance with Maestro on an Android emulator (Expo Go): flows per scenario named by id, a JUnit report the mod records (`US2-AS1`, `US4-AS1` accepted on mobile and web), and a fixture-mode setup task for the scenarios that need live data.
+- Acceptance with Maestro on an Android emulator (Expo Go): flows per scenario named by id, Maestro's JUnit report read and recorded, and a fixture-mode setup task for the scenarios that need live data. The two flows that passed tapped by coordinates, so under this release they would accept nothing; the fixture-mode round and the new time box have not run live yet.
 
 ## 0.7.0 — 2026-10-11
 

@@ -136,3 +136,22 @@ test('found live: a failing run reaches the repair step without the runner\'s co
   expect(repair).toContain('FAIL tests/flows/moment.test.tsx')
   expect(repair).not.toContain('\u001b[')
 })
+
+test('found live: a flow that taps by screen coordinates accepts nothing, and the person hears why', async ($, on) => {
+  const PLAN = (DEMO[`${FEATURE}/plan.md`] ?? '').replace('**Testing**: vitest', '**Testing**: vitest\n**Project Type**: web-app\n**Target Platform**: modern browsers')
+  const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, onPath: ['uvx', 'npx'] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  const report = (file: string) => `<testsuites><testsuite name="m"><testcase name="US1-AS1 requests a link" classname="US1-AS1 requests a link" file="${file}" status="SUCCESS"/></testsuite></testsuites>`
+  seen.write('e2e/acceptance/US1-AS1.yaml', "appId: host.exp.exponent\nname: \"US1-AS1 requests a link\"\n---\n- tapOn:\n    point: '90%,45%'\n")
+  seen.write('reports/acceptance-mobile.xml', report('e2e/acceptance/US1-AS1.yaml'))
+  await runTurn($, 'Played on mobile.')
+  await seen.clock.advance(0)
+  expect(seen.toasts).toContain('Not accepted, the flow taps by screen coordinates: e2e/acceptance/US1-AS1.yaml.')
+  expect(ledgerOf(seen.files).acceptance?.['US1-AS1']).toBeUndefined()
+})

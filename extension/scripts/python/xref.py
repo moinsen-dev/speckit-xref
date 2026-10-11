@@ -1225,14 +1225,27 @@ def acceptance_from(cases: list[dict], spec: dict | None, at: str, file: str) ->
     return out
 
 
-def acceptance_of(files: list[str], spec: dict | None, at: str) -> dict:
-    """Every report together: a scenario two drivers played is accepted only when both passed it."""
+# A flow that taps by screen coordinates proves nothing about its scenario (0.7.1): a Maestro `point:`, a Playwright `mouse.click(`.
+COORDINATE_TAP = re.compile(r"^\s*-?\s*point:|\bmouse\.click\s*\(", re.M)
+
+
+def by_coordinates(case_file: str, root) -> bool:
+    """Whether a testcase's flow (its `file`, under the project root) taps by screen coordinates."""
+    if not case_file or root is None:
+        return False
+    text = read(Path(root) / case_file)
+    return bool(text and COORDINATE_TAP.search(text))
+
+
+def acceptance_of(files: list[str], spec: dict | None, at: str, root=None) -> dict:
+    """Every report together: a scenario two drivers played is accepted only when both passed it; a flow that taps by coordinates accepts nothing."""
     results: dict = {}
     for file in files:
         text = read(Path(file))
         if text is None:
             fail(f"Cannot read {file}")
-        for sid, r in acceptance_from(parse_junit(text), spec, at, file).items():
+        cases = [c for c in parse_junit(text) if not by_coordinates(c["file"], root)]
+        for sid, r in acceptance_from(cases, spec, at, file).items():
             results[sid] = {**r, "ok": r["ok"] and results[sid]["ok"]} if sid in results else r
     return results
 
@@ -1440,7 +1453,7 @@ def cmd_accept(args) -> None:
     root, snap, ledger = context(args)
     if not args.junit:
         fail("accept needs --junit FILE (an acceptance driver's report, e.g. reports/acceptance-web.xml)")
-    results = acceptance_of(args.junit, snap["spec"], now())
+    results = acceptance_of(args.junit, snap["spec"], now(), root)
     ledger["acceptance"] = {**ledger["acceptance"], **results}
     if not args.no_write:
         save_ledger(root, snap["featureDir"], ledger)
@@ -1555,7 +1568,7 @@ def cmd_summary(args) -> None:
     junit_in_memory(snap, ledger, args.junit)
     # This run's acceptance reports, in memory: what the drivers played in CI.
     if args.acceptance:
-        ledger["acceptance"] = {**ledger["acceptance"], **acceptance_of(args.acceptance, snap["spec"], now())}
+        ledger["acceptance"] = {**ledger["acceptance"], **acceptance_of(args.acceptance, snap["spec"], now(), root)}
     report = report_of(root, snap, ledger)
     rows = requirement_rows(snap, ledger)
     scenarios = scenarios_of(snap["spec"])

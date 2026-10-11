@@ -378,6 +378,14 @@ class XrefCli(unittest.TestCase):
         summary = self.xref("summary", "--acceptance", self.outside("acceptance-web.xml", passed), as_json=False)
         self.assertIn("### Acceptance: 1/1 scenarios accepted", summary)
 
+    def test_a_flow_that_taps_by_coordinates_accepts_nothing(self) -> None:
+        self.write("e2e/acceptance/US1-AS1.yaml", "appId: host.exp.exponent\nname: \"US1-AS1 requests a link\"\n---\n- tapOn:\n    point: '90%,45%'\n")
+        report = '<testsuites><testsuite name="m"><testcase name="US1-AS1 requests a link" classname="US1-AS1 requests a link" file="e2e/acceptance/US1-AS1.yaml" status="SUCCESS"/></testsuite></testsuites>'
+        out = self.xref("accept", "--junit", self.outside("acceptance-mobile.xml", report))
+        self.assertEqual((out["accepted"], out["failing"]), ([], []))
+        self.write("e2e/acceptance/US1-AS1.yaml", "appId: host.exp.exponent\nname: \"US1-AS1 requests a link\"\n---\n- tapOn: \"Link anfordern\"\n")
+        self.assertEqual(self.xref("accept", "--junit", self.outside("acceptance-mobile.xml", report))["accepted"], ["US1-AS1"])
+
     def test_migrate_turns_a_v1_ledger_into_two_v2_halves(self) -> None:
         v1 = {
             "schema_version": 1,

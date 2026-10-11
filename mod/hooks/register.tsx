@@ -4,7 +4,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
-import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan } from './accept'
+import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
 import { DEPLOY_TOOLS, RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releaseRuns, releasesApp, releasesByTool } from './ship'
@@ -1678,7 +1678,12 @@ async function recordAcceptance($: $, baseline: Record<string, number>): Promise
   for (const [path] of fresh) {
     const xml = await readText($, path)
     if (!xml) continue
-    const found = acceptanceFrom(parseJunit(xml), snap.spec, at, path)
+    // A flow that taps by screen coordinates proves nothing: its cases accept nothing, and the person hears why.
+    const cases = parseJunit(xml)
+    const byPoint = new Set<string>()
+    for (const flow of new Set(cases.map(c => c.file).filter(Boolean))) if (tapsByCoordinates((await readText($, flow)) ?? '')) byPoint.add(flow)
+    if (byPoint.size) $.ui.toast(`Not accepted, the flow taps by screen coordinates: ${[...byPoint].join(', ')}.`)
+    const found = acceptanceFrom(cases.filter(c => !byPoint.has(c.file)), snap.spec, at, path)
     // A scenario two drivers played is accepted only when both passed it.
     for (const [id, r] of Object.entries(found)) results[id] = results[id] ? { ...r, ok: r.ok && results[id]!.ok } : r
   }

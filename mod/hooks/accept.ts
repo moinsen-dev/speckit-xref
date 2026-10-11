@@ -53,6 +53,10 @@ export function acceptanceFrom(cases: JunitCase[], spec: Spec | null, at: string
   return out
 }
 
+/** A flow that taps by screen coordinates proves nothing about its scenario (0.7.1): a Maestro `point:`, a Playwright `mouse.click(`. */
+export const COORDINATE_TAP = /^\s*-?\s*point:|\bmouse\.click\s*\(/m
+export const tapsByCoordinates = (flow: string) => COORDINATE_TAP.test(flow)
+
 /** Where a scenario stands for the person: accepted by a driver, failing there, passing unit tests only, or untested. */
 export type ScenarioState = 'accepted' | 'failing' | 'stale' | 'passing' | 'untested'
 export function scenarioState(id: string, text: string, ledger: Ledger): ScenarioState {
