@@ -59,7 +59,7 @@ properties:
 
 Run: `maestro test --format junit --output reports/acceptance-mobile.xml e2e/acceptance`.
 
-Select by role, label or `testID`, never by screen coordinates. Assert what the scenario's **Then** says, not just that a screen opened.
+Select by role, label or `testID`, never by screen coordinates. Assert what the scenario's **Then** says, not just that a screen opened. A browser permission (location, notifications) is set on the Playwright context (`permissions`, `geolocation`), not answered in a dialog that never comes. Run the scenarios twice before you report: one that fails once and passes once is flaky, so make its waits explicit; flaky evidence is no evidence.
 
 ## 4. Failures
 

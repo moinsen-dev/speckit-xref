@@ -15,6 +15,7 @@ The finished app is played through before it counts as done. Mod 0.6.0, extensio
 - Pane row `Accept 6/9 accepted · 1 failing · 2 your part`; a dashboard section with each scenario's state, flow, report and screenshot. The dashboard's matrix now gives SC rows their rung and scenarios their acceptance state.
 - Extension command `speckit.xref.accept` does the same for any agent.
 - What acceptance writes (tests, reports, screenshots, acceptance.md, the runbook) does not count as a change of the verified tree, so it cannot start another verify.
+- Converge rates its gaps like verify: only HIGH and MEDIUM become tasks (live, a README gap had become another round of work).
 
 Not in this release: replaying the acceptance tests in CI through the extension and the GitHub Action (it needs emulators there) follows in 0.6.1.
 

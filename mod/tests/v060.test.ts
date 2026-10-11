@@ -160,3 +160,12 @@ test('the dashboard\'s matrix gives SC rows their rung and scenarios their accep
   expect(html).toContain('<span class="rung r-failing">✖ failing</span>')
   expect(html).toContain('<span class="rung r-planned">◔ planned</span>')
 })
+
+test('converge rates its gaps like verify: only HIGH and MEDIUM become tasks', () => {
+  const tasks = parseTasks(DONE)
+  const snap = { ...doneSnap(), commands: ['converge'] } as Snapshot
+  const converge = nextStep(snap, { ...emptyLedger(), approvals: { spec: 'x' } }, null, { review: 'none' })
+  expect(converge.phase).toBe('converge')
+  expect(converge.approve).toEqual({ key: 'converge', value: tasksFingerprint(tasks) })
+  expect(converge.prompt).toBe("Run /speckit-converge now through the Skill tool and carry it through. Append tasks only for its HIGH and MEDIUM gaps; list the LOW ones in your answer under 'Low, no task'.")
+})

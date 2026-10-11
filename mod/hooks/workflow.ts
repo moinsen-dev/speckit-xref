@@ -386,7 +386,12 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
   const tasksFp = snap.tasksFingerprint || tasksFingerprint(snap.tasks)
   if (has('converge') && ledger.checkpoints.converge !== tasksFp) {
-    return step('converge', speckitCommand(snap, 'converge'), 'Every task is checked: find the work the tasks missed.', null, { approve: { key: 'converge', value: tasksFp } })
+    // Converge rates its gaps too: only what matters becomes another round of work.
+    const command = speckitCommand(snap, 'converge')
+    return step('converge', command, 'Every task is checked: find the work the tasks missed.', null, {
+      approve: { key: 'converge', value: tasksFp },
+      prompt: `Run ${command} now through the Skill tool and carry it through. Append tasks only for its HIGH and MEDIUM gaps; list the LOW ones in your answer under 'Low, no task'.`,
+    })
   }
   // A verification that still holds for this spec, these tasks and this tree means done: what comes next is the person's.
   const verified = verifyKey(snap, tasksFp)
