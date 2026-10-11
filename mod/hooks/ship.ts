@@ -154,14 +154,17 @@ export function releasePrompt(release: ReleaseNote): string {
 
 // ---- The rail: what releases the app waits for the person ----
 
+/** Where a word is a command, not an argument (`ls fastlane` is no release): at the start, after `;` `&&` `|` `(`, or `npx`, `exec` and the like. */
+const AT_COMMAND = String.raw`(?:^\s*|[;&|(]\s*|\b(?:npx|bunx|exec|dlx|sudo|env|time)\s+)(?:\w+=\S*\s+)*`
+
 const RELEASING: RegExp[] = [
   /\beas(?:-cli(?:@\S+)?)?\s+(?:build|submit|update)(?![:\w-])/,
   /\bexpo(?:-cli)?\s+publish\b/,
   /\bwrangler(?:@\S+)?\s+(?:pages\s+)?(?:deploy|publish)\b|\bwrangler(?:@\S+)?\s+versions\s+(?:upload|deploy)\b/,
-  /(?:^|[\s;&|(])vercel(?:@\S+)?(?=\s|$)(?!\s+(?:dev|build|env|login|logout|whoami|link|pull|ls|list|inspect|logs|help|--version|-v)\b)/,
+  new RegExp(String.raw`${AT_COMMAND}vercel(?:@\S+)?(?=\s|$)(?!\s+(?:dev|build|env|login|logout|whoami|link|pull|ls|list|inspect|logs|help|--version|-v)\b)`),
   /\bnetlify(?:-cli)?\s+deploy\b/,
   /\bfirebase(?:-tools)?\s+(?:deploy|hosting:channel:deploy)\b/,
-  /(?:^|[\s;&|(])fastlane(?=\s|$)(?!\s+(?:init|lanes|list|env|help|--version|-v)\b)/,
+  new RegExp(String.raw`${AT_COMMAND}fastlane(?=\s|$)(?!\s+(?:init|lanes|list|env|help|--version|-v)\b)`),
   /\b(?:npm|pnpm|yarn|bun)\s+publish\b/,
   /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:deploy|release|publish|ship)\b/,
   /\bgh\s+release\s+create\b/,

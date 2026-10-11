@@ -995,6 +995,8 @@ async function startAutopilot($: $, max?: number, night = false): Promise<void> 
   const cost = await sessionCost($)
   const now = await $.clock.now()
   await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null, verifies: 0 }))
+  // A release's yes never carries into a new run.
+  await update($, permitsA, ps => ps.filter(p => !p.many))
   await update($, seenAtA, () => now)
   await retitle($)
   $.clock.after(0, () => void advance($).catch(() => undefined))
@@ -1012,6 +1014,7 @@ async function resumeAutopilot($: $): Promise<void> {
 async function turnOffAutopilot($: $): Promise<void> {
   const wasOn = (await read($, autopilotA)).on
   await update($, autopilotA, a => ({ ...a, on: false, paused: null, idea: null }))
+  await update($, permitsA, ps => ps.filter(p => !p.many))
   await update($, queueA, q => ({ ...q, auto: false }))
   await retitle($)
   const turn = await read($, turnA)
@@ -2228,7 +2231,14 @@ export const register: Register = (on, options) => {
     // A question or a remark stays a conversation.
     const work = ap.on && waiting?.phase === 'done' && said && !said.startsWith('/') ? await takeNext($, said) : null
     if (work) {
-      const what = work.kind === 'feature' ? `a new feature (${speckitCommand(snap!, 'specify')} next)` : work.kind === 'change' ? 'a change to the finished feature (the spec first)' : 'a bug to reproduce and fix'
+      const what =
+        work.kind === 'feature'
+          ? `a new feature (${speckitCommand(snap!, 'specify')} next)`
+          : work.kind === 'change'
+            ? 'a change to the finished feature (the spec first)'
+            : work.kind === 'ship'
+              ? "a release (a release check first; nothing goes out without the person's yes)"
+              : 'a bug to reproduce and fix'
       const note = `speckit-xref · the autopilot takes these words as ${what} and hands that step over when this turn ends. Do not start on it in this turn: answer in one sentence.`
       return next({ ...e, context: [...(e.context ?? []), note] })
     }

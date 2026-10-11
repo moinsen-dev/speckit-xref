@@ -9,7 +9,7 @@ import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
 import { fingerprint, rulesFrom } from '../hooks/rules'
 import type { Ledger, Snapshot } from '../types'
 import { DEMO } from './fixtures/demo'
-import { FEATURE, PANE, project, runTurn, startSession, toText, xref } from './harness'
+import { FEATURE, PANE, project, runTurn, startSession, toText, type, xref } from './harness'
 
 // 0.7.0: Ship. After a done feature the person can release the app: a release check writes release.md (nothing goes
 // out), its gaps become tasks, and its commands run only after the person's yes. A rail holds every deploy until then.
@@ -103,6 +103,13 @@ test('the rail: deploys, store builds, submits and publishes wait for the person
     'supabase functions deploy',
     'docker push ghcr.io/x/app:1.0.0',
   ]) {
+    expect([command, releasesApp(command)]).toEqual([command, true])
+  }
+  // Found live: a word in argument position is no command.
+  for (const command of ['ls wrangler* vercel.json netlify.toml firebase.json fastlane 2>&1 | head', 'which fastlane vercel', 'echo vercel']) {
+    expect([command, releasesApp(command)]).toEqual([command, false])
+  }
+  for (const command of ['VERCEL_ORG_ID=x vercel deploy', '(cd web; vercel --prod)', 'npx vercel@39 --prod', 'cd ios && fastlane beta']) {
     expect([command, releasesApp(command)]).toEqual([command, true])
   }
   for (const command of ['npx expo export -p web', 'eas whoami', 'eas build:configure', 'npm run build', 'cat vercel.json', 'cat fastlane/Fastfile', 'npx vercel dev', 'wrangler pages dev dist', 'git status', 'npm test']) {
@@ -290,4 +297,45 @@ test('a gap the check finds is built first: a readiness task reopens the feature
   await seen.clock.advance(0)
   expect(autopilotPrompts(seen).at(-1)).toContain('implement:')
   expect(autopilotPrompts(seen).at(-1)).toContain('T090')
+})
+
+test('"ship it" in the person\'s words at a done feature: a release, its check handed over when the turn ends', async ($, on) => {
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, classify: 'ship it: release what is done to its users (deploy, app stores)' })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await type($, 'Ship it to the web')
+  expect(seen.submitted.at(-1).context.join('\n')).toContain("takes these words as a release (a release check first; nothing goes out without the person's yes)")
+  await runTurn($, 'Noted.')
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen).at(-1)).toContain('ship: specs/001-magic-link-login is done: check that the app is ready to release')
+})
+
+test('a release\'s yes holds for its step only: stopped mid-release and started again, the deploy waits again', async ($, on) => {
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] } })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await xref($, 'ship')
+  await seen.clock.advance(0)
+  seen.write(RELEASE, RELEASE_MD)
+  await runTurn($, 'Written.')
+  await seen.clock.advance(0)
+  await xref($, 'approve')
+  await seen.clock.advance(0)
+  const deploy = { tool: 'Bash', input: { command: DEPLOY } }
+  expect((await $.tool.check(deploy as never)).decision).not.toBe('deny')
+  await xref($, 'auto off')
+  await xref($, 'auto on')
+  expect((await $.tool.check(deploy as never)).decision).toBe('deny')
 })
