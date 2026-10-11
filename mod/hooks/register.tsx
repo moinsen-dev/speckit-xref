@@ -1347,8 +1347,7 @@ async function advance($: $): Promise<void> {
   // After a release: the run ends with what went out.
   if (step.phase === 'done' && ap.lastPhase === 'release') {
     // Only rows the release step added report on it.
-    const fresh = (snap.release?.releases.length ?? 0) > (ap.releaseRows ?? 0)
-    const last = fresh ? lastRelease(snap.release) : null
+    const last = lastRelease(snap.release, ap.releaseRows ?? 0)
     return stopAutopilot($, last ? `Release ${last.status}: ${last.version} → ${last.line} (${RELEASE}).` : `The release step left no new row in ${RELEASE}: read its answer, then Ship again.`)
   }
   // The release check starts from proof: the drift is not red and the tests pass once more.

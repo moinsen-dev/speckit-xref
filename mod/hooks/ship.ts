@@ -110,11 +110,15 @@ export function releaseRuns(release: ReleaseNote): string {
   return release.commands.length > 3 ? `${shown} (+${release.commands.length - 3} more)` : shown
 }
 
-/** The last release: the rows it appended (one per target), whether all went out, and one line on each. */
-export function lastRelease(release: ReleaseNote | null | undefined): { status: 'out' | 'partly out' | 'failed'; date: string; version: string; line: string } | null {
+/**
+ * The last release: the rows it appended (one per target), whether all went out, and one line on each. With `since`
+ * (the log's length before the release step) exactly the rows that step added; else the last date's rows.
+ */
+export function lastRelease(release: ReleaseNote | null | undefined, since?: number): { status: 'out' | 'partly out' | 'failed'; date: string; version: string; line: string } | null {
   const last = release?.releases.at(-1)
   if (!last) return null
-  const rows = release!.releases.filter(r => r.date === last.date && r.version === last.version)
+  const rows = since !== undefined ? release!.releases.slice(since) : release!.releases.filter(r => r.date === last.date && r.version === last.version)
+  if (!rows.length) return null
   const status = rows.every(r => r.ok) ? 'out' : rows.some(r => r.ok) ? 'partly out' : 'failed'
   const line = rows.map(r => `${r.target} ${r.ok ? 'out' : 'failed'}${r.where ? `: ${r.where.length > 90 ? r.where.slice(0, 89) + '…' : r.where}` : ''}`).join('; ')
   return { status, date: last.date, version: last.version, line }

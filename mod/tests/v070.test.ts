@@ -67,6 +67,10 @@ test('release.md: the checks, the commands, the person\'s part before and after;
   const failed = parseRelease(RELEASE_MD + '| 2026-10-11 | 1.0.0 | web | failed | wrangler: not logged in |\n| 2026-10-11 | 1.0.0 | ios | failed | not run |\n')
   expect(lastRelease(failed)).toEqual({ status: 'failed', date: '2026-10-11', version: '1.0.0', line: 'web failed: wrangler: not logged in; ios failed: not run' })
   expect(lastRelease(parseRelease(RELEASE_MD + ROW))?.status).toBe('out')
+  // Two attempts on one day: the step's own rows only.
+  const twice = parseRelease(RELEASE_MD + '| 2026-10-11 | 1.0.0 | web | failed | not logged in |\n' + ROW)
+  expect(lastRelease(twice, 1)).toEqual({ status: 'out', date: '2026-10-11', version: '1.0.0', line: 'web out: https://magic-link.pages.dev' })
+  expect(lastRelease(twice, 2)).toBe(null)
   // The release appends to its log: the approval still holds. A changed command needs a new yes.
   const shipped = parseRelease(RELEASE_MD + ROW)
   expect(shipped.fingerprint).toBe(r.fingerprint)
