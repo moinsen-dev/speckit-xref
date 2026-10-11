@@ -8,7 +8,7 @@ import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
 import { rulesFrom } from '../hooks/rules'
 import type { Snapshot } from '../types'
 import { DEMO } from './fixtures/demo'
-import { FEATURE, PANE, ledgerOf, project, runTurn, startSession, toText, xref } from './harness'
+import { FEATURE, PANE, ROOT, ledgerOf, project, runTurn, startSession, toText, type, xref } from './harness'
 
 // 0.5.3: a project can start from a PRD (imported, reviewed, cut into a roadmap the person approves, each feature
 // carrying the PRD's ids), and verify sorts what it finds by weight and stops asking after two rounds.
@@ -236,4 +236,28 @@ test('the intent check reads the PRD sections the feature implements', () => {
   const prompt = forkPrompt(snap, emptyLedger(), null, [], '')
   expect(prompt).toContain("The person's PRD, the sections this feature implements")
   expect(prompt).toContain('P0 is one short show.')
+})
+
+test('a -p run in a new project: the first prompt is the first step, with the PRD imported and its review handed over', { options: { autopilot: 'on' } }, async ($, on) => {
+  const seen = project(on, withPrd())
+  await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
+  await type($, 'Go on with the next step.')
+  expect(seen.files['.specify/memory/prd.md']).toBe(PRD_MD)
+  const context = seen.submitted.at(-1).context.join('\n')
+  expect(context).toContain('[speckit-xref autopilot · step 1/25] prd: The PRD is imported: review it and cut it into features before the spec.')
+  expect(context).toContain('speckit-xref:prd skill')
+})
+
+test('the PRD ids a feature implements and its spec lacks reach the plan step', () => {
+  const items = parseRoadmap(ROADMAP)
+  const spec = parseSpec('# Feature Specification: Solo core\n\n**Input**: User description: "x"\n\n## Requirements\n\n- **FR-001**: Users MUST confirm they are adults (PRD F01, US01).\n')
+  const snap = {
+    initialized: true, featureDir: 'specs/001-solo-core', features: ['specs/001-solo-core'], hasPlan: false, extensions: [], claudeIntegration: true, speckitVersion: '1.1.2',
+    tools: { specify: true, uvx: true }, folder: 'existing', spec, tasks: [], constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!), commandStyle: 'skills',
+    rules: rulesFrom(null), realTests: [], planFingerprint: null, testCommand: null, branch: null, phase: null, tasksFingerprint: '', commands: ['plan'], checklists: [],
+    persistence: 'flow-back', prd: true, roadmap: items, prdApproved: true,
+  } as unknown as Snapshot
+  const plan = nextStep(snap, { ...emptyLedger(), approvals: { spec: 'x' } }, null, { review: 'none' })
+  expect(plan.phase).toBe('plan')
+  expect(plan.notes).toContain('PRD ids of this feature the spec does not carry yet: US02, US03, AC01, AC02 (.specify/memory/prd.md). Cover each, or say why it belongs to a later feature.')
 })

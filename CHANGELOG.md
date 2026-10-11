@@ -12,6 +12,8 @@ A project can start from the PRD you wrote first, and verify stops finding one m
 - Specs carry the PRD's ids (`FR-001 … (PRD F01)`, stories and scenarios theirs); the pane's PRD row counts the feature's PRD ids the spec carries and names the missing ones; the intent check reads the PRD sections the feature implements instead of a one-line request.
 - When a feature is done, **Next from roadmap** specifies the next one in the PRD's words; the gate before it (a test with real users, a review) is named as your part.
 - Extension command `speckit.xref.prd` does the review and the roadmap for any agent.
+- The PRD ids a feature implements and its spec does not carry yet go to the spec review, the plan and the analysis as a note (live: 49 of 55 carried after specify, the six missing named).
+- A `-p` run in a new project hands its first prompt the step it stands at; before, the first turn ran ahead of the PRD review and wrote the constitution.
 
 ### Verify sorts what it finds
 

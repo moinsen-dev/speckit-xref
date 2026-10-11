@@ -2027,6 +2027,15 @@ export const register: Register = (on, options) => {
       return next({ ...e, context: [...(e.context ?? []), note] })
     }
     if (!snap?.featureDir) {
+      // A -p run in a new project starts on the person's prompt too: once Spec Kit is there, that turn is the first step.
+      if (!interactive && ap.on && ap.steps === 0 && waiting && !waiting.needsUser && snap?.initialized) {
+        if (waiting.phase === 'prd' && !snap.prd && snap.prdSource && (await importPrd($, snap.prdSource))) await scan($)
+        const fresh = (await read($, snapshotA)) ?? snap
+        const logged = await read($, ledgerA)
+        const first = nextStep(fresh, logged, ap.idea, flowOf(ap))
+        const step = first.needsUser ? null : await handOver($, fresh, logged, first, `${progressKey(fresh, logged)}|${ap.repairs}`, 0)
+        if (step) return next({ ...e, context: [...(e.context ?? []), step] })
+      }
       // Quiet unasked: before Spec Kit is there, a prompt carries a note only while the autopilot is on.
       return next(waiting ? { ...e, context: [...(e.context ?? []), setupNote(waiting, snap!)] } : e)
     }

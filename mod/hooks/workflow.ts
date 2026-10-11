@@ -2,7 +2,7 @@
 
 import type { Autopilot, IdeaBrief, Ledger, NextWork, Snapshot, Task } from '../types'
 import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
-import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, roadmapSpecify } from './prd'
+import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
@@ -267,6 +267,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
 
   const spec = snap.spec
+  // The PRD ids this feature implements and its spec does not carry yet: the review, the plan and the analysis close them.
+  const prdItem = snap.prdApproved ? roadmapItemOf(snap) : null
+  const prdMissing = prdItem ? prdCoverage(prdItem.scope, spec).missing : []
+  const prdGap = prdMissing.length ? `PRD ids of this feature the spec does not carry yet: ${prdMissing.join(', ')} (${PRD}). Cover each, or say why it belongs to a later feature.` : null
   if (snap.commits === false) notes.push('No commit yet: Spec Kit cannot branch per feature, and commit per task and the GitHub Action need commits (First commit in the pane).')
   const unclear = spec.reqs.filter(r => r.needsClarification).map(r => r.id)
   const specFp = specFingerprint(spec)
@@ -275,10 +279,14 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   const gates = gatesOf(flow.review)
   if (!snap.hasPlan && unclear.length) return step('clarify', speckitCommand(snap, 'clarify'), `${unclear.join(', ')} still marked NEEDS CLARIFICATION; settle them before planning.`)
   if (gates.spec && !specApproved) {
+    if (prdGap) notes.push(prdGap)
     return step('review', null, `The spec of ${snap.featureDir} is written: ${spec.reqs.filter(r => r.kind === 'FR').length} requirements, ${spec.outOfScope.length} out of scope, ${spec.assumptions.length} assumptions.`,
       'Review the spec against your words, then press Approve spec in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'spec', value: specFp } })
   }
-  if (!snap.hasPlan) return step('plan', speckitCommand(snap, 'plan'), 'The spec is written; plan.md is missing.')
+  if (!snap.hasPlan) {
+    if (prdGap) notes.push(prdGap)
+    return step('plan', speckitCommand(snap, 'plan'), 'The spec is written; plan.md is missing.')
+  }
   if (gates.plan && snap.planFingerprint) {
     const planApproved = ledger.approvals.plan ? ledger.approvals.plan === snap.planFingerprint : snap.tasks.length > 0
     if (!planApproved) {
@@ -326,6 +334,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   const started = snap.tasks.some(t => t.done)
   // analyze before the first implement, and again after every change to the spec.
   if (open.length && has('analyze') && (ledger.checkpoints.analyze ? ledger.checkpoints.analyze !== specFp : !started)) {
+    if (prdGap) notes.push(prdGap)
     return step('analyze', speckitCommand(snap, 'analyze'), started ? 'The spec changed since the last analysis: check spec, plan and tasks against each other.' : 'Before the first task: check spec, plan and tasks against each other.', null, { approve: { key: 'analyze', value: specFp } })
   }
   // An analysis that found something is followed through: its fixes go in before the next task does.
