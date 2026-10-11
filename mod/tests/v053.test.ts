@@ -261,3 +261,30 @@ test('the PRD ids a feature implements and its spec lacks reach the plan step', 
   expect(plan.phase).toBe('plan')
   expect(plan.notes).toContain('PRD ids of this feature the spec does not carry yet: US02, US03, AC01, AC02 (.specify/memory/prd.md). Cover each, or say why it belongs to a later feature.')
 })
+
+test('a roadmap changed after the approval asks again before the next feature comes from it', async ($, on) => {
+  const done = DEMO[`${FEATURE}/tasks.md`]!.replace(/- \[ \]/g, '- [x]')
+  const seen = project(on, {
+    ...DEMO,
+    [`${FEATURE}/tasks.md`]: done,
+    '.specify/memory/prd.md': PRD_MD,
+    '.specify/memory/prd-review.md': REVIEW,
+    '.specify/memory/roadmap.md': ROADMAP.replace('Thirty characters', 'Forty characters'),
+    '.specify/xref/local/project.json': JSON.stringify({ prd: { fingerprint: prdFingerprint(REVIEW, ROADMAP), at: '' } }),
+  }, { tests: { exits: [0] }, answers: [] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(seen.toasts.at(-1)).toContain('Read the roadmap again (.specify/memory/roadmap.md), then press Approve roadmap')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('The roadmap changed since you approved it: read it, then approve it again.')
+  expect((await xref($, 'approve')).text).toContain('Approved the roadmap')
+  await seen.clock.advance(0)
+  expect(seen.toasts.at(-1)).toContain('Next in the roadmap: "Solo beta"')
+})

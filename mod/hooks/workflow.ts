@@ -385,6 +385,11 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   // A verification that still holds for this spec, these tasks and this tree means done: what comes next is the person's.
   const verified = verifyKey(snap, tasksFp)
   if (ledger.checkpoints.verify === verified) {
+    // The roadmap changed since the person approved it: the next feature waits for their eye on it.
+    if (snap.prd && snap.roadmap?.length && !snap.prdApproved && snap.prdFingerprint) {
+      return step('review', null, `${snap.featureDir} is done, but the roadmap changed since you approved it.`,
+        'Read the roadmap again (.specify/memory/roadmap.md), then press Approve roadmap in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'prd', value: snap.prdFingerprint } })
+    }
     const next = flow.next
     const quote = next ? `"${next.text.length > 80 ? next.text.slice(0, 79) + '…' : next.text}"` : ''
     if (next?.kind === 'feature' && snap.prd) notes.push(PRD_NOTE)

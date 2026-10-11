@@ -2517,6 +2517,8 @@ export const register: Register = (on, options) => {
                 ? 'The look is drafted: open the mocks, then approve it for the tasks.'
                 : step.approve.key === 'done'
                   ? 'Verify keeps finding small things: close the feature as it is, or Resume for one more round.'
+                  : step.approve.key === 'prd'
+                    ? 'The roadmap changed since you approved it: read it, then approve it again.'
                   : 'Is this what you meant? Approve it as the contract.',
             'warning',
           )}
