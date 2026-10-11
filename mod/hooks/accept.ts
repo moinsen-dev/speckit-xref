@@ -119,7 +119,7 @@ export function acceptPrompt(snap: Snapshot): string {
   const drivers = [
     webLine,
     maestro
-      ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Play on what the emulator or simulator already has: a development build of the app if one is installed, else Expo Go (opened on the app's exp:// link). Building a development build (npx expo run:android, run:ios) downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup' when Expo Go is not there either.`
+      ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Play on what the emulator or simulator already has: a development build of the app if one is installed, else Expo Go (opened on the app's exp:// link). Building a development build (npx expo run:android, run:ios) downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup' when Expo Go is not there either. Maestro cannot stub network data as Playwright does: play now what holds without live data, and for the rest append a task under '## Phase N: Acceptance setup' for a fixture mode (an environment flag that makes the app's service adapters return the fixtures the web tests use). Never leave out the mobile platform as a whole while Maestro and a device are there.`
       : null,
   ].filter((d): d is string => !!d)
   return [
