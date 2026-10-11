@@ -125,6 +125,12 @@ const NEXT_KINDS: Record<string, NextWork['kind'] | null> = {
   'no new work: a question or a remark': null,
 }
 export const NEXT_LABELS = Object.keys(NEXT_KINDS)
+
+/**
+ * An untracked file as `git ls-tree` writes it once committed (`100644 blob <hash>\t<path>`): committing the files of a
+ * done feature changes nothing that was verified (found live in 0.7.0).
+ */
+export const untrackedLine = (hash: string, path: string) => `100644 blob ${hash}\t${path}`
 export const NO_WORK = 'no new work: a question or a remark'
 /** The kind of work a label names; null for a question or a remark, which stays a conversation. */
 export const nextKindOf = (label: string): NextWork['kind'] | null => NEXT_KINDS[label] ?? null

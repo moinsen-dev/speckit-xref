@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { NEXT_LABELS, NO_WORK, nextKindOf, treeOf, verifyKey } from '../hooks/brief'
+import { NEXT_LABELS, NO_WORK, nextKindOf, treeOf, untrackedLine, verifyKey } from '../hooks/brief'
 import { railFor } from '../hooks/register'
 import { RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool, shipPrompt } from '../hooks/ship'
 import { emptyLedger } from '../hooks/xref'
@@ -85,6 +85,10 @@ test('what the release check writes and builds does not change what was verified
   const base = '100644 blob a1\tsrc/auth/token.ts'
   expect(treeOf(`${base}\nh1 .specify/memory/release.md\nh2 dist/index.html\nh3 web-build/app.js`)).toBe(treeOf(base))
   expect(treeOf(`${base}\nh4 src/dist/helper.ts`)).not.toBe(treeOf(base))
+  // Found live: committing the new files of a done feature changes nothing that was verified; changing one does.
+  const untracked = treeOf(`${base}\n${untrackedLine('b7', 'eas.json')}`)
+  expect(treeOf(`${base}\n100644 blob b7\teas.json`)).toBe(untracked)
+  expect(treeOf(`${base}\n100644 blob b8\teas.json`)).not.toBe(untracked)
 })
 
 test('the rail: deploys, store builds, submits and publishes wait for the person; building and reading pass', () => {

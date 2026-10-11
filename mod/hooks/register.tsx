@@ -6,7 +6,7 @@ import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
 import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan } from './accept'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
-import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, verifyKey } from './brief'
+import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
 import { DEPLOY_TOOLS, RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releaseRuns, releasesApp, releasesByTool } from './ship'
 import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
@@ -645,7 +645,7 @@ async function workingTree($: $): Promise<string | null> {
     if (tree.exitCode !== 0) return null
     const others = (await git(['ls-files', '--others', '--exclude-standard'])).stdout.split('\n').filter(f => f.trim() && !/(^|\/)xref\.json$/.test(f))
     const hashes = others.length ? (await git(['hash-object', '--', ...others.slice(0, 500)])).stdout.split('\n') : []
-    return treeOf([tree.stdout, ...others.slice(0, 500).map((f, i) => `${hashes[i] ?? ''} ${f}`)].join('\n'))
+    return treeOf([tree.stdout, ...others.slice(0, 500).map((f, i) => untrackedLine(hashes[i] ?? '', f))].join('\n'))
   } catch {
     return null
   }

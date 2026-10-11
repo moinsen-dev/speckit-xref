@@ -16,6 +16,10 @@ The done app can go out: a release check, a release plan you approve, and a rail
 
 - While the autopilot runs, deploys, store builds and submissions and publishes wait for you like a push does: `wrangler deploy`, `eas build|submit|update`, `vercel`, `netlify deploy`, `firebase deploy`, `fastlane`, `npm publish`, `npm run deploy|release|publish`, `gh release create`, `fly deploy`, `supabase functions deploy`, `docker push`, also behind `npx`, and MCP tools that deploy, publish or submit. Building locally (`npx expo export`, `npm run build`), reading (`eas whoami`, `list_deployments`), asking for help (`--help`) and a tool's name as an argument (`ls fastlane`) pass. `allowPush` never opens a release; your yes in the ask dialog opens one command once; **Ship it** opens, for the release step, exactly the commands it approved as written (wrapped in `cd … &&` or `| tail` they pass; another flag, another project, `npx` in front, an extra deploy or an MCP deploy tool do not). The pane, the band and the dialog show those commands before you say yes.
 
+### Done stays done
+
+- Committing the new files of a done feature no longer reopens it: the tree fingerprint writes an untracked file as git will once it is committed (found live, when the release check's own advice to commit led to a second verify and acceptance round).
+
 ### Extension
 
 - `/speckit.xref.ship`: the same release check and plan for every agent Spec Kit supports.
