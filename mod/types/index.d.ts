@@ -45,7 +45,7 @@ export type Snapshot = {
   /** The Spec Kit release the project was set up with (`.specify/init-options.json`). */
   speckitVersion: string | null
   /** What can run Spec Kit's CLI on this machine. */
-  tools: { specify: boolean; uvx: boolean; maestro?: boolean; npx?: boolean; chrome?: boolean }
+  tools: { specify: boolean; uvx: boolean; maestro?: boolean; npx?: boolean; chrome?: boolean; deploy?: string[] }
   /** The project folder at a glance: nothing but dotfiles and a README (empty), or code already there (existing). */
   folder: 'empty' | 'existing'
   spec: Spec | null
@@ -108,6 +108,24 @@ export type Snapshot = {
   /** Whether the project has Playwright's test runner (`@playwright/test` in package.json). */
   playwright?: boolean
   acceptanceDoc?: AcceptanceNote | null
+  /** `.specify/memory/release.md`: the release check, its commands, the person's part and the releases so far (0.7.0). */
+  release?: ReleaseNote | null
+}
+
+/** `.specify/memory/release.md` as the mod reads it. */
+export type ReleaseNote = {
+  version: string | null
+  targets: string[]
+  /** Claude's word on the app (the person's part aside): null while the file says nothing. */
+  ready: boolean | null
+  readyNote: string | null
+  checks: { area: string; check: string; result: 'pass' | 'fail' | 'your part' | 'n/a'; evidence: string }[]
+  /** The commands that release it, in order: they run only after the person's yes. */
+  commands: string[]
+  yourPart: { text: string; done: boolean; when: 'before' | 'after' }[]
+  releases: { date: string; version: string; target: string; ok: boolean; where: string }[]
+  /** Of the file without its Releases log: what the person approves. */
+  fingerprint: string
 }
 
 /** `<feature>/acceptance.md` as the mod reads it. */
@@ -126,7 +144,7 @@ export type PhaseNote = { goal: string | null; test: string | null; checkpoint: 
 export type QuickRow = { ids: string[]; text: string }
 
 /** What comes after a done feature, in the person's words. */
-export type NextWork = { kind: 'feature' | 'change' | 'bug'; text: string }
+export type NextWork = { kind: 'feature' | 'change' | 'bug' | 'ship'; text: string }
 
 /** A screen of a feature, as `<feature>/design/screens.md` lists it. */
 export type Screen = {
@@ -299,8 +317,8 @@ declare module 'claude-code' {
       seenAt: number
       /** The chip under each booked write in the transcript, by tool_use_id: `T006 · FR-004` or `▲ unplanned`. */
       chips: Record<string, string>
-      /** What the person allowed once through the ask tool: a rail's label and until when it holds. */
-      permits: { label: string; until: number }[]
+      /** What the person allowed: a rail's label and until when it holds; once (the ask tool), or for a step (a release). */
+      permits: { label: string; until: number; many?: boolean }[]
     }
   }
 }

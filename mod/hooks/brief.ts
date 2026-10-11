@@ -5,6 +5,7 @@
 
 import type { Autopilot, NextWork, PhaseNote, QuickRow, Snapshot } from '../types'
 import { ACCEPTANCE_ARTIFACT } from './accept'
+import { SHIP_ARTIFACT } from './ship'
 import { designDir } from './design'
 import { fingerprint, specFingerprint } from './rules'
 
@@ -108,29 +109,32 @@ export const treeOf = (lines: string) =>
         if (!l.trim()) return false
         // `<mode> <type> <hash>\t<path>` from ls-tree, `<hash> <path>` for an untracked file.
         const path = l.includes('\t') ? l.slice(l.indexOf('\t') + 1) : l.trim().slice(l.trim().indexOf(' ') + 1)
-        // The ledger's own file, and what acceptance writes about the app, change nothing that was verified.
-        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path)
+        // The ledger's own file, and what acceptance and the release check write about the app, change nothing that was verified.
+        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path) && !SHIP_ARTIFACT.test(path)
       })
       .sort()
       .join('\n'),
   )
 
-export const NEXT_LABELS = [
-  'a new feature, separate from the finished one',
-  'a change to what the finished feature does',
-  'a bug: something the finished feature does wrong',
-  'no new work: a question or a remark',
-] as const
+/** What a small model sorts the person's words after a done feature into; the question is no work. */
+const NEXT_KINDS: Record<string, NextWork['kind'] | null> = {
+  'a new feature, separate from the finished one': 'feature',
+  'a change to what the finished feature does': 'change',
+  'a bug: something the finished feature does wrong': 'bug',
+  'ship it: release what is done to its users (deploy, app stores)': 'ship',
+  'no new work: a question or a remark': null,
+}
+export const NEXT_LABELS = Object.keys(NEXT_KINDS)
+export const NO_WORK = 'no new work: a question or a remark'
 /** The kind of work a label names; null for a question or a remark, which stays a conversation. */
-export const nextKindOf = (label: string): NextWork['kind'] | null =>
-  label === NEXT_LABELS[0] ? 'feature' : label === NEXT_LABELS[1] ? 'change' : label === NEXT_LABELS[2] ? 'bug' : null
+export const nextKindOf = (label: string): NextWork['kind'] | null => NEXT_KINDS[label] ?? null
 
 /** What the person is asked once a feature is done; with a kind chosen in the pane, only its words are missing. */
 export function doneAsk(kind: NextWork['kind'] | null | undefined): string {
   if (kind === 'feature') return 'Describe the new feature in your own words; the autopilot specifies it as the next feature.'
   if (kind === 'change') return 'Describe the change in your own words; the autopilot folds it into the spec and builds it.'
   if (kind === 'bug') return 'Describe the bug: what you did, what happened, what you expected; the autopilot reproduces and fixes it.'
-  return 'The feature is done. Say what comes next (a new feature, a change to this one, or a bug), or press New feature, Change or Bug in the pane.'
+  return 'The feature is done. Say what comes next (a new feature, a change to this one, a bug, or ship it), or press New feature, Change, Bug or Ship in the pane.'
 }
 
 /** The bug step: Spec Kit's bug extension where it is installed, else the same three steps by hand. */

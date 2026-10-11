@@ -5,6 +5,7 @@ import { acceptPrompt, scenariosOf } from './accept'
 import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
 import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
+import { RELEASE, releaseBlockers, releaseLine, releasePrompt, shipPrompt } from './ship'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
@@ -32,6 +33,8 @@ export type Phase =
   | 'verify'
   | 'accept'
   | 'bug'
+  | 'ship'
+  | 'release'
   | 'done'
 export type Step = {
   phase: Phase
@@ -410,6 +413,24 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       })
     }
     const next = flow.next
+    // Ship: a release check first (nothing goes out), its gaps built as tasks, then the person's yes, then the release.
+    if (next?.kind === 'ship') {
+      if (ledger.checkpoints.ship !== verified) {
+        return step('ship', null, `${snap.featureDir} is done: check that the app is ready to release; nothing goes out in this step.`, null, { approve: { key: 'ship', value: verified }, prompt: shipPrompt(snap) })
+      }
+      const blockers = releaseBlockers(snap, ledger, flow.lastTest ?? null, gatesOf(flow.review).spec)
+      if (blockers.length) {
+        return step('ship', null, `The release waits: ${blockers[0]}.`, `Before the release: ${blockers.join('; ')}. Tick your part in ${RELEASE} as you do it; Check again in the pane runs the release check once more.`)
+      }
+      const release = snap.release!
+      if (ledger.approvals.release !== release.fingerprint) {
+        return step('review', null, `The release check is written: ${releaseLine(release)}.`,
+          `Read ${RELEASE}: its release commands go out only with your yes. Press Ship it in the pane (or /xref approve), or tell me what to change.`, { approve: { key: 'release', value: release.fingerprint } })
+      }
+      if (ledger.checkpoints.released !== release.fingerprint) {
+        return step('release', null, `You approved the release: ${releaseLine(release)}.`, null, { approve: { key: 'released', value: release.fingerprint }, consumes: true, prompt: releasePrompt(release) })
+      }
+    }
     const quote = next ? `"${next.text.length > 80 ? next.text.slice(0, 79) + '…' : next.text}"` : ''
     if (next?.kind === 'feature' && snap.prd) notes.push(PRD_NOTE)
     if (next?.kind === 'feature') return step('specify', `${speckitCommand(snap, 'specify')} ${next.text}`, `${snap.featureDir} is done; the person named the next feature: ${quote}.`, null, { consumes: true })
@@ -611,6 +632,8 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
   const ideas = !!snap.ideaBrief || !!snap.productBrief || !!snap.prd || step.phase === 'validate' || step.phase === 'shape' || step.phase === 'prd'
   // The design column shows for a feature with screens, and while its design is drawn or reviewed.
   const drawn = !!snap.design?.screens?.length || step.phase === 'design' || step.approve?.key === 'design'
+  // The ship column shows once a release was checked, and while it is.
+  const shipping = !!snap.release || step.phase === 'ship' || step.phase === 'release' || step.approve?.key === 'release'
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
     ...(ideas ? [['idea', ['prd', 'validate', 'shape']] as [string, Phase[]]] : []),
@@ -621,9 +644,10 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge', 'bug']],
     ['verify', ['verify', 'accept']],
+    ...(shipping ? [['ship', ['ship', 'release']] as [string, Phase[]]] : []),
   ]
   // A review sits in the column of what it reviews.
-  const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify' }
+  const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify', release: 'ship' }
   const phase = step.phase === 'review' && step.approve ? (reviewed[step.approve.key] ?? 'review') : step.phase
   // Done: every column is behind it.
   const at = phase === 'done' ? order.length : order.findIndex(([, phases]) => phases.includes(phase))

@@ -47,6 +47,7 @@ It stops only for what is yours:
 - a `[NEEDS CLARIFICATION]` question, or open checklist items;
 - a request that contradicts the spec (one that only extends it becomes a revise step);
 - destructive or irreversible actions: while it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question. Your **yes** in that dialog allows exactly that action once; `allowPush: on` lets it push a feature branch by itself once the tests are green (never main, never `--force`).
+- releasing the app: deploys, store builds and submissions, publishes (`wrangler deploy`, `eas build|submit|update`, `vercel`, `netlify deploy`, `firebase deploy`, `fastlane`, `npm publish`, `npm run deploy`, `gh release create` …, and MCP tools that deploy, publish or submit) are refused the same way. Only **Ship it** opens them, for the release step it approves.
 
 Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question opens as a dialog and the run goes on with your answer in the same turn. A question that blocks only some stories waits in the pane's **Decide** row while the rest goes on. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
 
@@ -64,6 +65,8 @@ Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question 
 - a new feature goes to `/speckit-specify` and becomes the next feature;
 - a change reaches the spec first (new requirements, appended tasks), then gets built;
 - a bug is reproduced with a failing test, fixed and recorded (with Spec Kit's bug extension where it is installed), with a task of its own in the trace.
+
+**Ship.** **Ship** in the pane (or `/xref ship`, or "ship it") releases the done app, in three steps. First a release check with the `speckit-xref:ship` skill, after the tests passed once more: version and store fields, a usage text for every OS permission the code asks for, privacy, accessibility, tracked secrets (paths, never values), the production build run locally. It writes `.specify/memory/release.md`: the checks with their evidence, the exact release commands per platform (a static web host the project is set up for, Expo EAS for iOS and Android, or what the project configured), and your part before and after the release. Nothing goes out in the check, and nothing is downloaded for it. A HIGH or MEDIUM gap becomes a task under `## Phase N: Release readiness`; the autopilot builds, verifies and plays it through, then checks again. The release waits on the tests, the drift, failing acceptance scenarios and your open boxes before the release. Then **Ship it** is yours: the release step runs the commands as written, once each, stops at a login or a prompt, and logs the result under `## Releases`. Every release asks anew. The pane's Ship row and the dashboard's Release section show the checks and what went out.
 
 It also stops on Esc or `/xref-stop` (both end the running turn), on an API error or a refusal, when the drift turns red, after three steps without progress, at the step budget (25 by default) and when the feature is done. After five minutes of waiting it sends a notification. The band shows `auto ▶ 3/25 · 5h 34% · 7d 12% · 23m` while it runs (on a subscription, the usage windows; with an API key, `/cost`'s dollars) and the whole question when it waits; the pane tab reads `Spec X-Ref ⏸`. Back at the keyboard, the pane's **Away** card says what happened.
 
@@ -148,6 +151,8 @@ Pressing one of these counts as your go. Without a press or your request nothing
 /xref approve          approve what the autopilot waits on (spec, plan, open checklists)
 /xref focus T004       make a task current
 /xref auto on [n]      autopilot: work through Spec Kit by itself (night: a night run, off: stop)
+/xref next feature|change|bug <words>   what comes after a done feature
+/xref ship             check the done app for release; its commands run after your Ship it
 /xref pane             open the pane
 /xref web              open the dashboard in the browser
 /xref-stop             stop the autopilot now, mid-turn

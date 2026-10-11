@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.0 — 2026-10-11
+
+The done app can go out: a release check, a release plan you approve, and a rail that holds every deploy until then. Mod 0.7.0, extension 0.7.0; preset 0.2.0 unchanged.
+
+### Ship
+
+- **Ship** after a done feature (the pane's Ship button, `/xref ship`, `/xref next ship`, or "ship it" in your words): the tests run once more, then a **release check** with the new `speckit-xref:ship` skill writes `.specify/memory/release.md`: version and store fields, a usage text for every OS permission the code asks for, privacy (the stores' answers drafted for you), accessibility, tracked secrets (paths, never values), the production build run locally, each with its evidence; the exact release commands per platform (the static web host the project is set up for, Expo EAS for iOS and Android with the traps of a first iOS build, or what the project configured); and your part before and after the release, as boxes you tick. Nothing goes out in the check, and nothing is downloaded for it.
+- **Gaps are built first.** A HIGH or MEDIUM finding becomes a task under `## Phase N: Release readiness`; the autopilot builds, verifies and plays it through, then checks again. What the check and the local build write (`release.md`, `dist/`, `web-build/`) does not reopen a done feature.
+- **What holds a release, before any model looks:** failing tests, red drift, a failing acceptance scenario, an unapproved spec; then release.md itself: not ready, a failing check, an open box of your part before the release, no command. The pane lists them, with **Check again**.
+- **Ship it is yours.** The pane shows the commands that will run and your part after the release; **Ship it** (or `/xref approve`) runs them in a release step, once each, stopping at a login or any prompt, and the result is logged under `## Releases`. The run ends with what went out. Every release asks anew.
+- Pane: a Ship row (`v1.0.0 → web · 14 pass · 2 your part · last: out …`) and a ship column in the phase strip; dashboard: a Release section with the checks, the commands, your part and the releases.
+
+### The release rail
+
+- While the autopilot runs, deploys, store builds and submissions and publishes wait for you like a push does: `wrangler deploy`, `eas build|submit|update`, `vercel`, `netlify deploy`, `firebase deploy`, `fastlane`, `npm publish`, `npm run deploy|release|publish`, `gh release create`, `fly deploy`, `supabase functions deploy`, `docker push`, also behind `npx`, and MCP tools that deploy, publish or submit. Building locally (`npx expo export`, `npm run build`) and reading (`eas whoami`, `list_deployments`) pass. `allowPush` never opens a release; your yes in the ask dialog opens one command once; **Ship it** opens the release step.
+
+### Extension
+
+- `/speckit.xref.ship`: the same release check and plan for every agent Spec Kit supports.
+
+### Develop
+
+- `node scripts/bump.mjs <version> [--extension <version>]` sets the version in all its places and the download and Action links; bumping to the current version changes nothing.
+
 ## 0.6.1 — 2026-10-11
 
 Acceptance reaches the pull request, and the spec review separates what you decided from what Claude assumed. Mod 0.6.1, extension 0.6.1; preset 0.2.0 unchanged.

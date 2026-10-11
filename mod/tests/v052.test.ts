@@ -79,7 +79,7 @@ test('done holds while spec, tasks and tree stay: no second verify, but the ques
   const verified = { ...converged, checkpoints: { ...converged.checkpoints, verify: verify.approve!.value } }
   const done = nextStep(snap, verified, null, flow)
   expect(done.phase).toBe('done')
-  expect(done.needsUser).toContain('Say what comes next (a new feature, a change to this one, or a bug)')
+  expect(done.needsUser).toContain('Say what comes next (a new feature, a change to this one, a bug, or ship it)')
   expect(phaseStrip(snap, done)).toBe('✓setup ✓const ✓spec ✓plan ✓tasks ✓impl ✓verify')
   // Changed content asks for a verification again; committing the same content, or the ledger's own file, does not.
   expect(nextStep({ ...snap, tree: treeOf('100644 blob bbb\tsrc/auth/token.ts') } as Snapshot, verified, null, flow).phase).toBe('verify')

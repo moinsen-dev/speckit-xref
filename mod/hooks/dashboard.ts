@@ -448,6 +448,35 @@ function acceptance(input: DashboardInput): string {
   )
 }
 
+const CHECK_BADGE: Record<string, string> = {
+  pass: '<span class="rung r-accepted">✓ pass</span>',
+  fail: '<span class="rung r-failing">✖ fail</span>',
+  'your part': '<span class="pill quiet">your part</span>',
+  'n/a': '<span class="muted">n/a</span>',
+}
+
+/** Release (0.7.0): the release check, what runs on the person's yes, what stays theirs, and what went out. */
+function release(input: DashboardInput): string {
+  const r = input.snap.release
+  if (!r) return ''
+  const checks = r.checks.map(c => `<tr><td>${esc(c.area)}</td><td>${text(c.check)}</td><td>${CHECK_BADGE[c.result] ?? ''}</td><td>${text(c.evidence)}</td></tr>`)
+  const ready = r.ready === null ? '' : r.ready ? '<span class="pill drift-green">ready</span>' : `<span class="pill drift-red">not ready</span>${r.readyNote ? ` ${text(r.readyNote)}` : ''}`
+  const yours = (when: 'before' | 'after') => r.yourPart.filter(y => y.when === when).map(y => `${y.done ? '☑' : '☐'} ${text(y.text)}`)
+  const releases = r.releases.map(x => `<tr><td>${esc(x.date)}</td><td>${esc(x.version)}</td><td>${esc(x.target)}</td><td>${x.ok ? '<span class="rung r-accepted">✓ out</span>' : '<span class="rung r-failing">✖ failed</span>'}</td><td>${text(x.where)}</td></tr>`)
+  return section(
+    'release',
+    'Release',
+    [
+      `<p class="state"><span class="pill">${esc(r.version ? `v${r.version.replace(/^v/i, '')}` : 'no version')}</span> ${esc(r.targets.join(', ') || 'no target')} ${ready}</p>`,
+      checks.length ? `<div class="scroll"><table><thead><tr><th>Area</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody>${checks.join('\n')}</tbody></table></div>` : '',
+      r.commands.length ? `<h3>Runs on your yes</h3>\n${ul(r.commands.map(c => `<code>${esc(c)}</code>`))}` : '',
+      yours('before').length ? `<h3>Your part before the release</h3>\n${ul(yours('before'))}` : '',
+      yours('after').length ? `<h3>Your part after the release</h3>\n${ul(yours('after'))}` : '',
+      releases.length ? `<h3>Releases</h3>\n<div class="scroll"><table><thead><tr><th>Date</th><th>Version</th><th>Target</th><th>Result</th><th>Where</th></tr></thead><tbody>${releases.join('\n')}</tbody></table></div>` : '',
+    ].filter(Boolean).join('\n'),
+  )
+}
+
 function drift(input: DashboardInput): string {
   const { snap, ledger, report, root } = input
   const d = DRIFT[report.level] ?? DRIFT.none
@@ -584,6 +613,7 @@ const NAV = [
   ['workflow', 'Workflow'],
   ['design', 'Design'],
   ['acceptance', 'Acceptance'],
+  ['release', 'Release'],
   ['phases', 'Phases'],
   ['matrix', 'Traceability'],
   ['tasks', 'Tasks'],
@@ -609,12 +639,13 @@ export function renderDashboard(input: DashboardInput): string {
     '</head>',
     '<body>',
     header(input),
-    `<nav>${NAV.filter(([id]) => (id !== 'design' || input.design) && (id !== 'acceptance' || (input.snap.ui && scenariosOf(input.snap.spec).length))).map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
+    `<nav>${NAV.filter(([id]) => (id !== 'design' || input.design) && (id !== 'acceptance' || (input.snap.ui && scenariosOf(input.snap.spec).length)) && (id !== 'release' || input.snap.release)).map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
     '<main>',
     goal(input),
     workflow(input),
     design(input),
     acceptance(input),
+    release(input),
     phases(input),
     matrix(input),
     tasks(input),
