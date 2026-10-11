@@ -461,7 +461,24 @@ async function ideaState($: $): Promise<Pick<Snapshot, 'ideaBrief' | 'ideaDecisi
   } catch {
     decision = null
   }
-  return { ideaBrief: brief ? parseIdeaBrief(brief) : null, ideaDecision: decision, productBrief: await exists($, PRODUCT_BRIEF) }
+  const product = await readText($, PRODUCT_BRIEF)
+  return { ideaBrief: brief ? parseIdeaBrief(brief) : null, ideaDecision: decision, productBrief: product !== null, briefDecisions: product ? briefDecisionsOf(product) : [] }
+}
+
+/** The product brief's `## Decisions (the person's)` bullets: what the person decided before the spec. */
+function briefDecisionsOf(markdown: string): string[] {
+  const out: string[] = []
+  let inside = false
+  for (const line of markdown.split('\n')) {
+    const h = /^##\s+(.+)$/.exec(line)
+    if (h) {
+      inside = /decision|entscheid/i.test(h[1]!) && !/assum|annahme/i.test(h[1]!)
+      continue
+    }
+    const bullet = inside ? /^\s*[-*]\s+(.+)$/.exec(line) : null
+    if (bullet) out.push(bullet[1]!.replace(/\*\*/g, '').trim())
+  }
+  return out
 }
 
 /**
@@ -1093,9 +1110,32 @@ async function approveByCommand($: $, text: string): Promise<void> {
   $.ui.toast(`Approved the ${key}: you ran /speckit-${m[1]}.`)
 }
 
+/** Keep: the person agrees with an assumption the spec makes; it is shown as kept until its text changes. */
+async function keepAssumption($: $, text: string): Promise<string> {
+  await update($, ledgerA, l => ({ ...l, assumed: { ...(l.assumed ?? {}), [fingerprint(text)]: 'keep' } }))
+  await persist($)
+  return 'Kept the assumption.'
+}
+
+/** Change: what should hold instead goes to Claude as the person's words, and the spec changes before it is approved. */
+async function changeAssumption($: $, text: string): Promise<void> {
+  const drop = 'Drop it'
+  const open = 'Make it an open question'
+  let answer = ''
+  try {
+    answer = await $.ui.ask(`What should hold instead of the assumption "${text}"?`, [drop, open])
+  } catch {
+    return
+  }
+  if (!answer.trim()) return
+  const what = answer === drop ? 'Remove it from spec.md.' : answer === open ? 'Turn it into a [NEEDS CLARIFICATION] question in spec.md.' : `Instead: ${answer}. Change spec.md accordingly (the assumption, or a requirement where it is one).`
+  void $.prompt.submit({ text: `About the spec's assumption "${text}": ${what}`, asUser: true })
+}
+
 /** Stops the autopilot until the person speaks, says why, and asks again after five minutes. */
 async function pauseAutopilot($: $, reason: string, step?: Step): Promise<void> {
   await update($, autopilotA, a => ({ ...a, paused: reason }))
+  await logStop($, 'pause', reason)
   $.ui.toast(`Autopilot waits for you: ${reason}`)
   await retitle($)
   $.clock.after(5 * 60_000, () => void remind($, reason).catch(() => undefined))
@@ -1153,6 +1193,7 @@ async function askApproval($: $, step: Step): Promise<void> {
 }
 
 async function stopAutopilot($: $, why: string): Promise<void> {
+  await logStop($, 'stop', why)
   await update($, autopilotA, a => ({ ...a, on: false, paused: null }))
   $.ui.toast(why)
   await retitle($)
@@ -1210,6 +1251,12 @@ async function runTests($: $): Promise<{ ran: boolean; ok: boolean; output: stri
   return { ran: true, ok: exitCode === 0, output }
 }
 
+/** Why the run waits or ended, in the run log beside its steps: the dashboard shows it where the steps stop. */
+async function logStop($: $, kind: 'pause' | 'stop', reason: string): Promise<void> {
+  const ap = await read($, autopilotA)
+  await logRun($, { at: await stamp($), step: ap.steps, phase: kind, task: null, files: [], durationMs: 0, tokens: 0, outcome: reason })
+}
+
 /** Appends one finished step to the run log (local, never committed). */
 async function logRun($: $, entry: RunEntry): Promise<void> {
   const snap = await read($, snapshotA)
@@ -1239,7 +1286,9 @@ async function runLog($: $): Promise<RunEntry[]> {
 /** What happened since the person last spoke: the "since you left" card and the night run's briefing. */
 async function sinceYouLeft($: $): Promise<string[]> {
   const seen = await read($, seenAtA)
-  const entries = (await runLog($)).filter(e => Date.parse(e.at) >= seen)
+  const all = (await runLog($)).filter(e => Date.parse(e.at) >= seen)
+  // A pause or a stop is no step: the card counts the work, the last of them says why it ended.
+  const entries = all.filter(e => e.phase !== 'pause' && e.phase !== 'stop')
   if (!entries.length) return []
   const snap = await read($, snapshotA)
   const ap = await read($, autopilotA)
@@ -2566,6 +2615,8 @@ export const register: Register = (on, options) => {
     const linkOptions = [...snap.tasks.filter(t => !t.done), ...snap.tasks.filter(t => t.done)].map(t => ({ value: t.id, label: `${t.id} ${short(t.text, 40)}` }))
     const away = ap.steps > 0 ? await sinceYouLeft($) : []
     const decisions = ledger.decisions.filter(d => d.answer === null).slice(-3)
+    // What the person decided (the product brief, their answers) beside what Claude assumed.
+    const decided = [...(snap.briefDecisions ?? []), ...ledger.decisions.filter(d => d.answer && d.kind !== 'permission').map(d => `${d.question} → ${d.answer}`)]
     const reviewCard =
       step.phase === 'review' && step.approve ? (
         <Box flexDirection="column" marginTop={1}>
@@ -2593,7 +2644,23 @@ export const register: Register = (on, options) => {
           {step.approve.key === 'spec' ? row('', `You said: "${short((spec.input ?? '-').replace(/\s+/g, ' '), width * 2)}"`, 'subtle') : null}
           {step.approve.key === 'spec' ? spec.reqs.filter(r => r.kind === 'FR' && r.status === 'active').slice(0, 8).map(r => row('', `${r.id} ${r.text}`)) : null}
           {step.approve.key === 'spec' && spec.outOfScope.length ? row('', `Out of scope: ${spec.outOfScope.join(' · ')}`, 'subtle') : null}
-          {step.approve.key === 'spec' ? spec.assumptions.map(a => row('', `Assumed: ${a}`, 'warning')) : null}
+          {step.approve.key === 'spec' && decided.length ? row('', `You decided: ${decided.slice(0, 5).join(' · ')}`, 'success') : null}
+          {step.approve.key === 'spec'
+            ? spec.assumptions.slice(0, 6).map((a, i) =>
+                ledger.assumed?.[fingerprint(a)] ? (
+                  row('', `✓ Kept: ${a}`, 'subtle')
+                ) : (
+                  <Box flexDirection="column">
+                    {row('', `Claude assumed: ${a}`, 'warning')}
+                    <Box flexDirection="row" columnGap={1} marginLeft={8}>
+                      <Button key={`keep-${i}`} label="Keep" onPress={() => void keepAssumption($, a).then(text => $.ui.toast(text))} />
+                      <Button key={`change-${i}`} label="Change" onPress={() => void changeAssumption($, a)} />
+                    </Box>
+                  </Box>
+                ),
+              )
+            : null}
+          {step.approve.key === 'spec' && spec.assumptions.length > 6 ? row('', `+${spec.assumptions.length - 6} more assumptions in spec.md`, 'subtle') : null}
         </Box>
       ) : step.phase === 'checklists' && step.approve ? (
         <Box flexDirection="row" columnGap={1} marginLeft={8}>

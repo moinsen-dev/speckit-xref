@@ -1,0 +1,2 @@
+<?xml version="1.0"?>
+<testsuites><testsuite name="acceptance"><testcase name="US1-AS1 Given a registered email, when the user requests a link, then an email with a single-use link is sent" classname="e2e/acceptance/US1-AS1.spec.ts"/></testsuite></testsuites>

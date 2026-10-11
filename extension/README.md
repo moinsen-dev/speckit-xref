@@ -7,7 +7,7 @@ The speckit-xref Claude Code mod (`../mod`) keeps the same ledger live while Cla
 ## Install
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.6.0/speckit-xref-extension-v0.6.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.6.1/speckit-xref-extension-v0.6.1.zip
 ```
 
 From a checkout: `specify extension add --dev /path/to/speckit-xref/extension`.
@@ -61,6 +61,10 @@ Acceptance scenarios get ids from their position: the first `1. **Given** …` l
 ## Tests
 
 `xref.py verify --junit report.xml` maps each test case to the ids in its name or class name (`FR-002`, `SC-001`, `US1-AS2`) and to the `@spec` anchors in its file (`file` attribute). A requirement fails if any of its tests failed. Without JUnit output, `verify --exit-code <code>` marks the requirements already at tested as passing when the suite exits 0.
+
+## Acceptance
+
+`xref.py accept --junit reports/acceptance-web.xml` records an acceptance run: each test of an acceptance driver (Playwright, Maestro) counts for the scenario ids in its name (`US1-AS2 …`), a failed one fails the scenario, and a scenario whose text changed has to be accepted again. Exit 1 when a scenario failed. `/speckit.xref.accept` writes those tests in the first place.
 
 ## CI
 

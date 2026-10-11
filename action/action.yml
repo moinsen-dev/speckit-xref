@@ -22,6 +22,14 @@ inputs:
     description: "Space-separated JUnit XML paths or globs, e.g. 'reports/*.xml'. When set, verify reads them before the check."
     required: false
     default: ""
+  acceptance-junit:
+    description: "Space-separated JUnit XML paths or globs of the acceptance tests this job played, e.g. 'reports/acceptance-*.xml' (Playwright or Maestro, one test per scenario named by its id). The summary shows each scenario's state."
+    required: false
+    default: ""
+  fail-on-acceptance:
+    description: "true: fail the job when an acceptance scenario failed in these reports. false: report only."
+    required: false
+    default: "true"
   working-directory:
     description: "The Spec Kit project root, relative to the workspace."
     required: false
@@ -107,6 +115,47 @@ runs:
         if [ "$rc" -ge 2 ]; then echo "::error::speckit-xref: verify failed (exit $rc)"; fi
         exit 0
 
+    - name: Accept scenarios
+      id: accept
+      if: inputs.acceptance-junit != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XREF_SCRIPT: ${{ steps.prep.outputs.script }}
+        XREF_FEATURE: ${{ inputs.feature }}
+        XREF_ACCEPTANCE: ${{ inputs.acceptance-junit }}
+      run: |
+        shopt -s nullglob
+        shopt -s globstar 2>/dev/null || true
+        args=()
+        if [ -n "$XREF_FEATURE" ]; then args+=(--feature "$XREF_FEATURE"); fi
+        list="${RUNNER_TEMP:-/tmp}/speckit-xref-acceptance.txt"
+        : > "$list"
+        read -r -a patterns <<< "$XREF_ACCEPTANCE"
+        for pattern in "${patterns[@]}"; do
+          matched=0
+          # Unquoted on purpose: the shell expands the glob.
+          for file in $pattern; do
+            if [ -f "$file" ]; then
+              args+=(--junit "$file")
+              printf '%s\n' "$file" >> "$list"
+              matched=1
+            fi
+          done
+          if [ "$matched" = 0 ]; then echo "::warning::speckit-xref: no acceptance report matches '$pattern'"; fi
+        done
+        if [ ! -s "$list" ]; then
+          echo "rc=skipped" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "list=$list" >> "$GITHUB_OUTPUT"
+        rc=0
+        python3 "$XREF_SCRIPT" accept "${args[@]}" --no-write || rc=$?
+        echo "rc=$rc" >> "$GITHUB_OUTPUT"
+        if [ "$rc" = 1 ]; then echo "::error::speckit-xref: an acceptance scenario failed"; fi
+        if [ "$rc" -ge 2 ]; then echo "::error::speckit-xref: accept failed (exit $rc)"; fi
+        exit 0
+
     - name: Check drift
       id: check
       shell: bash
@@ -133,6 +182,7 @@ runs:
         XREF_BASE: ${{ steps.prep.outputs.base }}
         XREF_FEATURE: ${{ inputs.feature }}
         XREF_JUNIT_LIST: ${{ steps.verify.outputs.list }}
+        XREF_ACCEPTANCE_LIST: ${{ steps.accept.outputs.list }}
       run: |
         args=(--base "$XREF_BASE")
         if [ -n "$XREF_FEATURE" ]; then args+=(--feature "$XREF_FEATURE"); fi
@@ -140,6 +190,11 @@ runs:
           while IFS= read -r file; do
             if [ -n "$file" ]; then args+=(--junit "$file"); fi
           done < "$XREF_JUNIT_LIST"
+        fi
+        if [ -n "$XREF_ACCEPTANCE_LIST" ] && [ -f "$XREF_ACCEPTANCE_LIST" ]; then
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then args+=(--acceptance "$file"); fi
+          done < "$XREF_ACCEPTANCE_LIST"
         fi
         out="$(mktemp)"
         rc=0
@@ -157,4 +212,9 @@ runs:
       shell: bash
       env:
         XREF_CHECK_RC: ${{ steps.check.outputs.rc }}
-      run: exit "${XREF_CHECK_RC:-2}"
+        XREF_ACCEPT_RC: ${{ steps.accept.outputs.rc }}
+        XREF_FAIL_ON_ACCEPTANCE: ${{ inputs.fail-on-acceptance }}
+      run: |
+        rc="${XREF_CHECK_RC:-2}"
+        if [ "$rc" = 0 ] && [ "$XREF_FAIL_ON_ACCEPTANCE" = "true" ] && [ "${XREF_ACCEPT_RC:-skipped}" != "skipped" ] && [ "${XREF_ACCEPT_RC}" != 0 ]; then rc="$XREF_ACCEPT_RC"; fi
+        exit "$rc"

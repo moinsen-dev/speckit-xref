@@ -65,7 +65,7 @@ The in-memory ledger keeps the v1 shape (`tasks{touched,linked}`, `requirements{
 
 **Rules** (`rulesFrom(ignoreText | null)`): `{exempt: DEFAULT_EXEMPT + file exempt, unclear: DEFAULT_UNCLEAR + file unclear}`. A case with `"rules": null` uses the defaults alone.
 
-**Default exempt** (never drift, not shown): `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Gemfile.lock`, `go.sum`, `composer.lock`, `Podfile.lock`, `pubspec.lock`, `node_modules/`, `/dist/`, `/build/`, `/coverage/`, `/.next/`, `/out/`, `/target/`, `__snapshots__/`, `*.min.js`, `*.map`, `*.generated.*`, `*.g.dart`.
+**Default exempt** (never drift, not shown): `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Gemfile.lock`, `go.sum`, `composer.lock`, `Podfile.lock`, `pubspec.lock`, `node_modules/`, `/dist/`, `/build/`, `/coverage/`, `/.next/`, `/out/`, `/target/`, `__snapshots__/`, `*.min.js`, `*.map`, `*.generated.*`, `*.g.dart`, and (0.6.1) the evidence of an acceptance run: `/e2e/acceptance/shots/`, `/reports/acceptance*.xml`.
 
 **Default unclear** (not drift, listed as "unclear"): `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pubspec.yaml`, `Gemfile`, `requirements*.txt`, `*.config.*`, `tsconfig*.json`, `.eslintrc*`, `.prettierrc*`, `Dockerfile`, `docker-compose*.yml`, `/.github/workflows/`, `.env.example`, `*.md`, and (0.4.1) tooling dotfiles and media: `.*ignore`, `.editorconfig`, `.nvmrc`, `.node-version`, `.tool-versions`, `/assets/`, `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.webp`, `*.svg`, `*.ico`, `*.icns`, `*.ttf`, `*.otf`, `*.woff`, `*.woff2`, `*.mp3`, `*.wav`, `*.mp4`, `*.lottie`.
 
@@ -147,6 +147,8 @@ Order: `--feature` (extension) → `SPECIFY_FEATURE_DIRECTORY` → `.specify/fea
 
 `verificationFromExit(exitCode, ids, fingerprints, at, commit)`: without JUnit, a test command that exits 0 proves every id in `ids` (the FRs at `tested`) `passing` with `tests: ["<suite>"]`; any other exit code records nothing (the run is a failure of the suite, not of a known requirement).
 
+**Acceptance reports** (0.6.1, `acceptanceFrom(cases, spec, at, file)`): a testcase counts for every scenario id (`USn-ASm`) in its name or classname that the spec has; a skipped case says nothing; a scenario with any failed case is `ok: false`. Each result is `{ok, fingerprint: fingerprint(scenario text), at, file}`; several reports are merged with `ok` only when every report passed it. Results live in the local half under `acceptance` (§1). These reports never feed `verificationFrom`: a played scenario is no unit test.
+
 ## 10. Implement scope (mod)
 
 The autopilot runs `/speckit-implement` for one phase at a time: the first `##` phase in tasks.md with an open task. The prompt names the phase heading and tells Claude to stop after it.
@@ -161,6 +163,7 @@ A requirement line whose text (unbolded, before clipping) contains `SUPERSEDED b
 - `check [--base REF] [--fail-on none|yellow|red] [--no-write] [--json] [--junit FILE…]`: classifies the changed files (with `--base`: the committed diff `REF...HEAD` only, no untracked files; without: the working tree against HEAD plus untracked files), evaluates with `semantic: false`, prints the findings; `--no-write` leaves both ledger files alone (the Action always passes it).
 - `verify --junit FILE [--junit FILE…] [--no-write]`: `parseJunit` + `verificationFrom`, stores `verification` in the local ledger, records the requirements' fingerprints in the committed one, prints passing/failing per id; exit 1 when a mapped test failed.
 - `report [--format md|json] [--out FILE]`: coverage ladder per FR, findings, notes, metrics (§13); the LLM verdict appears only as advice.
+- `accept --junit FILE [--junit FILE…] [--no-write]` (0.6.1): `parseJunit` + `acceptanceFrom` per report (§9), merged; stores `acceptance` in the local ledger, prints each scenario's state (accepted, failing, stale, passing, untested); exit 1 when a scenario failed. With `summary --acceptance FILE…` an Acceptance section lists each scenario's state from those reports (in memory, never written).
 - `summary [--base REF] [--junit FILE…]`: the PR job summary (JUnit results are turned into verification in memory, never written, so `passing` shows in CI) in Markdown on stdout (requirement → tasks → files with ladder level, unplanned and unclear files of the diff, re-verify, notes). Never reads the local ledger's intents.
 - `map --apply`, `link`, `record-check`, `dump [--spec|--tasks|--constitution FILE]` as before; `dump --spec` includes scenarios and statuses.
 - `migrate`: rewrites a v1 ledger as v2 (idempotent).

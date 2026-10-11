@@ -287,7 +287,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (gates.spec && !specApproved) {
     if (prdGap) notes.push(prdGap)
     return step('review', null, `The spec of ${snap.featureDir} is written: ${spec.reqs.filter(r => r.kind === 'FR').length} requirements, ${spec.outOfScope.length} out of scope, ${spec.assumptions.length} assumptions.`,
-      'Review the spec against your words, then press Approve spec in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'spec', value: specFp } })
+      'Review the spec against your words: keep or change each of Claude\'s assumptions, then press Approve spec in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'spec', value: specFp } })
   }
   if (!snap.hasPlan) {
     if (prdGap) notes.push(prdGap)

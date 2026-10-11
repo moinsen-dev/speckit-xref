@@ -39,6 +39,8 @@ jobs:
           working-directory: examples/demo
           feature: specs/001-magic-link-login
           fail-on: none
+          # An acceptance report as a Playwright run writes it: the summary shows the scenario accepted.
+          acceptance-junit: ../../scripts/fixtures/acceptance-demo.xml
 
   mod:
     name: Claude Code mod

@@ -1778,6 +1778,132 @@ export const CASES: any = {
     "verdict": "planned",
     "task": "T010"
    }
+  },
+  {
+   "name": "an acceptance screenshot is evidence, exempt",
+   "rel": "e2e/acceptance/shots/US1-AS1.png",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T001",
+      "done": true,
+      "paths": [
+       "src/auth/",
+       "tests/auth/"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T002",
+      "done": true,
+      "paths": [
+       "src/config/mailer.ts"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T004",
+      "done": false,
+      "paths": [
+       "src/auth/token.ts"
+      ],
+      "reqs": [
+       "FR-002"
+      ]
+     },
+     {
+      "id": "T006",
+      "done": false,
+      "paths": [
+       "src/auth/callback.ts"
+      ],
+      "reqs": [
+       "FR-003"
+      ]
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "exempt",
+    "task": null
+   }
+  },
+  {
+   "name": "an acceptance report is evidence, exempt",
+   "rel": "reports/acceptance-web.xml",
+   "snap": {
+    "tasks": [
+     {
+      "id": "T001",
+      "done": true,
+      "paths": [
+       "src/auth/",
+       "tests/auth/"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T002",
+      "done": true,
+      "paths": [
+       "src/config/mailer.ts"
+      ],
+      "reqs": []
+     },
+     {
+      "id": "T004",
+      "done": false,
+      "paths": [
+       "src/auth/token.ts"
+      ],
+      "reqs": [
+       "FR-002"
+      ]
+     },
+     {
+      "id": "T006",
+      "done": false,
+      "paths": [
+       "src/auth/callback.ts"
+      ],
+      "reqs": [
+       "FR-003"
+      ]
+     }
+    ],
+    "reqIds": [
+     "FR-001",
+     "FR-002",
+     "FR-003",
+     "FR-004",
+     "FR-005"
+    ]
+   },
+   "ledger": {
+    "links": {},
+    "accepted": [],
+    "anchors": []
+   },
+   "newText": "",
+   "rules": null,
+   "expected": {
+    "verdict": "exempt",
+    "task": null
+   }
   }
  ],
  "levelOf": {
@@ -2877,6 +3003,29 @@ export const CASES: any = {
      "FR-001": "f4226a9835c1d57e3e95b88fe40c023b884c4490ed941287224e0aed96f17ec1"
     },
     "fingerprintVersion": 2
+   }
+  }
+ ],
+ "acceptance": [
+  {
+   "name": "a failed case fails the scenario, a class names one too, skipped and unknown ids say nothing",
+   "specMarkdown": "# Feature Specification: X\n\n### User Story 1 - Request a link (Priority: P1)\n\n**Acceptance Scenarios**:\n\n1. **Given** a registered email, **When** the user requests a link, **Then** an email arrives.\n2. **Given** the link, **When** it is opened twice, **Then** the second is rejected.\n3. **Given** an unknown email, **When** a link is requested, **Then** the answer is the same.\n",
+   "xml": "<testsuites><testsuite name=\"acceptance\">\n<testcase name=\"US1-AS1 requests a link\" classname=\"e2e/acceptance/US1-AS1.spec.ts\"/>\n<testcase name=\"US1-AS1 on mobile\" classname=\"e2e/acceptance/US1-AS1.yaml\"><failure>no email</failure></testcase>\n<testcase name=\"opens the link twice\" classname=\"US1-AS2\"/>\n<testcase name=\"US1-AS3 same answer\" classname=\"x\"><skipped/></testcase>\n<testcase name=\"US9-AS9 not in the spec\" classname=\"x\"/>\n</testsuite></testsuites>\n",
+   "at": "2026-10-11T10:00:00.000Z",
+   "file": "reports/acceptance-web.xml",
+   "expected": {
+    "US1-AS1": {
+     "ok": false,
+     "fingerprint": "6ba42ef3ccd7c413f7079ac49fe549f8271747d60cd288c72f63e8e80e01d883",
+     "at": "2026-10-11T10:00:00.000Z",
+     "file": "reports/acceptance-web.xml"
+    },
+    "US1-AS2": {
+     "ok": true,
+     "fingerprint": "41ec471a0d0317d24f116e0ff4bcac8ebaff4974e4c9ed7adf61633d4a201c2d",
+     "at": "2026-10-11T10:00:00.000Z",
+     "file": "reports/acceptance-web.xml"
+    }
    }
   }
  ]

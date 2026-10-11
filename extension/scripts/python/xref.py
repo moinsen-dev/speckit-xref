@@ -275,6 +275,8 @@ def spec_fingerprint(spec: dict) -> str:
 DEFAULT_EXEMPT = [
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb", "Cargo.lock", "poetry.lock", "uv.lock", "Gemfile.lock", "go.sum", "composer.lock", "Podfile.lock", "pubspec.lock",
     "node_modules/", "/dist/", "/build/", "/coverage/", "/.next/", "/out/", "/target/", "__snapshots__/", "*.min.js", "*.map", "*.generated.*", "*.g.dart",
+    # What an acceptance run leaves as evidence (0.6.1): screenshots and the drivers' reports.
+    "/e2e/acceptance/shots/", "/reports/acceptance*.xml",
 ]  # fmt: skip
 DEFAULT_UNCLEAR = [
     "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pubspec.yaml", "Gemfile", "requirements*.txt", "*.config.*", "tsconfig*.json", ".eslintrc*", ".prettierrc*", "Dockerfile", "docker-compose*.yml",
@@ -715,7 +717,7 @@ def apply_mapping(ledger: dict, raw: object, snap: dict, source: str = "llm") ->
 # The ledger, v2 (mirror mod/hooks/ledger.ts): committed half and local half
 
 COMMITTED_KEYS = {"schema_version", "feature", "map", "links", "accepted", "fingerprints", "fingerprintVersion"}
-LOCAL_KEYS = {"schema_version", "feature", "touched", "unplanned", "intents", "semantic", "semanticHistory", "verification", "approvals", "decisions", "anchors", "fingerprintVersion"}
+LOCAL_KEYS = {"schema_version", "feature", "touched", "unplanned", "intents", "semantic", "semanticHistory", "verification", "acceptance", "approvals", "decisions", "anchors", "fingerprintVersion"}
 # 2 (0.5.0): requirement texts include their wrapped continuation lines (§6).
 FINGERPRINT_VERSION = 2
 MAX_HISTORY = 10
@@ -732,6 +734,7 @@ def empty_ledger() -> dict:
         "semanticHistory": [],
         "fingerprints": {},
         "verification": {},
+        "acceptance": {},
         "approvals": {},
         "decisions": [],
         "fingerprintVersion": FINGERPRINT_VERSION,
@@ -840,6 +843,7 @@ def ledger_from_parts(committed: dict | None, local: dict | None) -> dict:
     ledger["semantic"] = local.get("semantic")
     ledger["semanticHistory"] = _arr(local.get("semanticHistory"))
     ledger["verification"] = _obj(local.get("verification"))
+    ledger["acceptance"] = _obj(local.get("acceptance"))
     ledger["approvals"] = _obj(local.get("approvals"))
     ledger["decisions"] = _arr(local.get("decisions"))
     ledger["fingerprintVersion"] = version
@@ -879,6 +883,7 @@ def ledger_to_parts(ledger: dict, feature_dir: str) -> tuple[dict, dict]:
         "semantic": ledger["semantic"],
         "semanticHistory": ledger["semanticHistory"][-MAX_HISTORY:],
         "verification": ledger["verification"],
+        "acceptance": ledger["acceptance"],
         "approvals": ledger["approvals"],
         "decisions": ledger["decisions"],
         "anchors": ledger["anchors"],
@@ -1192,6 +1197,49 @@ def read_junit(files: list[str]) -> list[dict]:
     return cases
 
 
+SCENARIO_ID = re.compile(r"\bUS\d+-AS\d+\b")
+
+
+def scenarios_of(spec: dict | None) -> list[dict]:
+    return [s for story in (spec or {}).get("stories", []) for s in story["scenarios"]]
+
+
+def acceptance_from(cases: list[dict], spec: dict | None, at: str, file: str) -> dict:
+    """The scenarios an acceptance driver's report accepts or fails (§9); mirrors acceptanceFrom in mod/hooks/accept.ts."""
+    texts = {s["id"]: s["text"] for s in scenarios_of(spec)}
+    out: dict = {}
+    for c in cases:
+        if c["status"] == "skipped":
+            continue
+        for sid in dict.fromkeys(SCENARIO_ID.findall(f"{c['name']} {c['classname']}")):
+            if sid not in texts:
+                continue
+            ok = c["status"] == "passed" and out.get(sid, {}).get("ok", True)
+            out[sid] = {"ok": ok, "fingerprint": fingerprint(texts[sid]), "at": at, "file": file}
+    return out
+
+
+def acceptance_of(files: list[str], spec: dict | None, at: str) -> dict:
+    """Every report together: a scenario two drivers played is accepted only when both passed it."""
+    results: dict = {}
+    for file in files:
+        text = read(Path(file))
+        if text is None:
+            fail(f"Cannot read {file}")
+        for sid, r in acceptance_from(parse_junit(text), spec, at, file).items():
+            results[sid] = {**r, "ok": r["ok"] and results[sid]["ok"]} if sid in results else r
+    return results
+
+
+def scenario_state(sid: str, text: str, ledger: dict) -> str:
+    a = ledger.get("acceptance", {}).get(sid)
+    if a:
+        if a.get("fingerprint") != fingerprint(text):
+            return "stale"
+        return "accepted" if a.get("ok") else "failing"
+    return "passing" if ledger["verification"].get(sid, {}).get("status") == "passing" else "untested"
+
+
 def junit_in_memory(snap: dict, ledger: dict, files: list[str] | None) -> None:
     """Test results for this run's output only (summary, check): never written, and no fingerprint moves."""
     if not files:
@@ -1381,6 +1429,27 @@ def cmd_verify(args) -> None:
         raise SystemExit(1)
 
 
+def cmd_accept(args) -> None:
+    """Records an acceptance run from the drivers' JUnit reports: per scenario accepted or failing, fingerprinted."""
+    root, snap, ledger = context(args)
+    if not args.junit:
+        fail("accept needs --junit FILE (an acceptance driver's report, e.g. reports/acceptance-web.xml)")
+    results = acceptance_of(args.junit, snap["spec"], now())
+    ledger["acceptance"] = {**ledger["acceptance"], **results}
+    if not args.no_write:
+        save_ledger(root, snap["featureDir"], ledger)
+    scenarios = scenarios_of(snap["spec"])
+    states = {s["id"]: scenario_state(s["id"], s["text"], ledger) for s in scenarios}
+    accepted = sorted(sid for sid, st in states.items() if st == "accepted")
+    failing = sorted(sid for sid, r in results.items() if not r["ok"])
+    data = {"feature": snap["featureDir"], "scenarios": len(scenarios), "accepted": accepted, "failing": failing, "states": states, "written": not args.no_write}
+    lines = [f"{snap['featureDir']}: {len(accepted)}/{len(scenarios)} scenarios accepted · {len(failing)} failing"]
+    lines += [f"  {sid:<9} {states[sid]}" for sid in states]
+    emit(args, data, "\n".join(lines))
+    if failing:
+        raise SystemExit(1)
+
+
 def cmd_record_check(args) -> None:
     root, snap, ledger = context(args)
     text = read(Path(args.file))
@@ -1478,14 +1547,19 @@ def cmd_summary(args) -> None:
     ledger = {**ledger, "intents": [], "semantic": None, "semanticHistory": []}
     changed = book_changes(root, snap, ledger, args.base)
     junit_in_memory(snap, ledger, args.junit)
+    # This run's acceptance reports, in memory: what the drivers played in CI.
+    if args.acceptance:
+        ledger["acceptance"] = {**ledger["acceptance"], **acceptance_of(args.acceptance, snap["spec"], now())}
     report = report_of(root, snap, ledger)
     rows = requirement_rows(snap, ledger)
+    scenarios = scenarios_of(snap["spec"])
+    states = {s["id"]: scenario_state(s["id"], s["text"], ledger) for s in scenarios}
     unplanned = [c["file"] for c in changed if c["verdict"] == "unplanned" and any(u["file"] == c["file"] and not u.get("acknowledged") for u in ledger["unplanned"])]
     unclear = [c["file"] for c in changed if c["verdict"] == "unclear"]
     reverify = [f for f in report["findings"] if f["kind"] == "re-verify"]
     other = [f for f in report["findings"] if f["kind"] in ("dangling", "orphan-test")]
     if args.json:
-        print(json.dumps({"feature": snap["featureDir"], "level": report["level"], "levels": report["levels"], "requirements": rows, "unplanned": unplanned, "unclear": unclear, "reverify": [f["id"] for f in reverify], "findings": report["findings"], "notes": report["notes"]}, indent=2, ensure_ascii=False))
+        print(json.dumps({"feature": snap["featureDir"], "level": report["level"], "levels": report["levels"], "requirements": rows, "acceptance": states if args.acceptance else None, "unplanned": unplanned, "unclear": unclear, "reverify": [f["id"] for f in reverify], "findings": report["findings"], "notes": report["notes"]}, indent=2, ensure_ascii=False))
         return
     title = (snap["spec"] or {}).get("title") or snap["featureDir"]
     out = [
@@ -1500,6 +1574,11 @@ def cmd_summary(args) -> None:
         level = r["level"] or (f"superseded by {r['supersededBy']}" if r["supersededBy"] else r["status"])
         files = list(dict.fromkeys(r["files"] + [a.rsplit(":", 1)[0] for a in r["anchors"]]))
         out.append(f"| **{r['id']}** {cell(clip(r['text'], 90))} | {level} | {', '.join(r['tasks']) or '–'} | {cell(', '.join(f'`{f}`' for f in files)) or '–'} |")
+    if args.acceptance and scenarios:
+        accepted = sum(1 for st in states.values() if st == "accepted")
+        mark = {"accepted": "★ accepted", "failing": "✖ failing", "stale": "↻ re-accept", "passing": "passing (unit)", "untested": "–"}
+        out += ["", f"### Acceptance: {accepted}/{len(scenarios)} scenarios accepted", "", "| Scenario | State |", "| --- | --- |"]
+        out += [f"| **{s['id']}** {cell(clip(s['text'], 110))} | {mark[states[s['id']]]} |" for s in scenarios]
     for heading, items in (
         ("Unplanned files", [f"`{f}`" for f in unplanned]),
         ("Unclear files", [f"`{f}`" for f in unclear]),
@@ -1621,6 +1700,10 @@ def selftest_cases(cases: dict) -> list[tuple[str, bool, str]]:
                 check(f"junit: #{i + 1} cases", parsed, c["expectedCases"])
                 got = verification_from(parsed, c["anchors"], c["fingerprints"], c["featureDir"], c["at"], c["commit"])
                 check(f"junit: #{i + 1} verification", got, c["expectedVerification"])
+        elif section == "acceptance":
+            for c in items:
+                got = acceptance_from(parse_junit(c["xml"]), parse_spec(c["specMarkdown"]), c["at"], c["file"])
+                check(f"acceptance: {c['name']}", got, c["expected"])
         elif section == "featureFromBranch":
             for c in items:
                 check(f"featureFromBranch: {c['branch']}", feature_from_branch(c["branch"], c["dirs"]), c["expected"])
@@ -1695,6 +1778,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--no-write", action="store_true", help="leave both ledger files alone")
     p.set_defaults(run=cmd_verify)
 
+    p = sub.add_parser("accept", parents=[common], help="record an acceptance run from the drivers' JUnit reports (per scenario)")
+    p.add_argument("--junit", action="append", metavar="FILE", help="an acceptance driver's JUnit report (repeatable)")
+    p.add_argument("--no-write", action="store_true", help="report only; do not write the ledger")
+    p.set_defaults(run=cmd_accept)
+
     p = sub.add_parser("record-check", parents=[common], help="record an intent verdict from a JSON file")
     p.add_argument("file")
     p.set_defaults(run=cmd_record_check)
@@ -1708,6 +1796,7 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("summary", parents=[common], help="the pull request job summary in Markdown")
     p.add_argument("--base", help="git ref to diff against (e.g. origin/main): the committed diff since the merge base")
     p.add_argument("--junit", action="append", metavar="FILE", help="JUnit XML for the ladder (repeatable; never stored)")
+    p.add_argument("--acceptance", action="append", metavar="FILE", help="an acceptance driver's JUnit report for the Acceptance section (repeatable; never stored)")
     p.set_defaults(run=cmd_summary)
 
     p = sub.add_parser("migrate", parents=[common], help="rewrite a v1 ledger as v2 (idempotent)")

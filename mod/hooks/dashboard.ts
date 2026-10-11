@@ -493,7 +493,8 @@ function runLog(input: DashboardInput): string {
   const body = rows
     .map(
       r =>
-        `<tr><td class="nowrap">${time(r.at)}</td><td class="num">${r.step}</td><td>${esc(r.phase)}</td><td class="ids">${r.task ? text(r.task) : '—'}</td>` +
+        // A pause or a stop is no step: it says why the run waited or ended.
+        `<tr${r.phase === 'pause' || r.phase === 'stop' ? ' class="halt"' : ''}><td class="nowrap">${time(r.at)}</td><td class="num">${r.step}</td><td>${r.phase === 'pause' ? '⏸ waits' : r.phase === 'stop' ? '■ stopped' : esc(r.phase)}</td><td class="ids">${r.task ? text(r.task) : '—'}</td>` +
         `<td class="num">${duration(r.durationMs)}</td><td class="num">${thousands(r.tokens)}</td><td class="num" title="${esc(r.files.join('\n'))}">${r.files.length}</td><td>${text(r.outcome)}</td></tr>`,
     )
     .join('')
@@ -563,7 +564,7 @@ nav{position:sticky;top:0;z-index:1;background:var(--bg);border-bottom:1px solid
 .label{font-weight:600;margin-right:.4em}.waiting{border:2px solid var(--warn);background:var(--warn-bg);border-radius:8px;padding:.6em 1em;margin:.8em 0}.waiting p{margin:.3em 0 0}
 .scroll{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:.92em}th,td{text-align:left;vertical-align:top;padding:.35em .5em;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
 td.files,td.ids,td.id{overflow-wrap:anywhere}td.id{white-space:nowrap}.matrix td:nth-child(2){min-width:16em}.tasks td:nth-child(3){min-width:14em}
-tr.now td{background:var(--hl)}tr.done td{color:var(--muted)}tr.gone td{color:var(--muted)}tr:target td{background:var(--warn-bg)}
+tr.now td{background:var(--hl)}tr.halt td{color:var(--warn);font-style:italic}tr.done td{color:var(--muted)}tr.gone td{color:var(--muted)}tr:target td{background:var(--warn-bg)}
 .bar{display:inline-block;width:7em;height:.55em;background:var(--line);border-radius:999px;overflow:hidden;vertical-align:middle}.bar>span{display:block;height:100%;background:var(--accent)}tr.done .bar>span{background:var(--ok)}
 .rung{display:inline-block;white-space:nowrap;border:1px solid currentColor;border-radius:999px;padding:0 .5em;font-size:.85em}
 .r-accepted{color:var(--ok);background:var(--ok-bg);font-weight:600}.r-failing{color:var(--bad);background:var(--bad-bg)}.r-stale{color:var(--warn)}img.shot{max-width:120px;max-height:240px;border:1px solid var(--line);border-radius:6px}

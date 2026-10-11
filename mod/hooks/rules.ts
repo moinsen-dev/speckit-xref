@@ -76,6 +76,8 @@ export function specFingerprint(spec: { input: string | null; reqs: { text: stri
 export const DEFAULT_EXEMPT = [
   'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lock', 'bun.lockb', 'Cargo.lock', 'poetry.lock', 'uv.lock', 'Gemfile.lock', 'go.sum', 'composer.lock', 'Podfile.lock', 'pubspec.lock',
   'node_modules/', '/dist/', '/build/', '/coverage/', '/.next/', '/out/', '/target/', '__snapshots__/', '*.min.js', '*.map', '*.generated.*', '*.g.dart',
+  // What an acceptance run leaves as evidence (0.6.1): screenshots and the drivers' reports.
+  '/e2e/acceptance/shots/', '/reports/acceptance*.xml',
 ]
 export const DEFAULT_UNCLEAR = [
   'package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'pubspec.yaml', 'Gemfile', 'requirements*.txt', '*.config.*', 'tsconfig*.json', '.eslintrc*', '.prettierrc*', 'Dockerfile', 'docker-compose*.yml',

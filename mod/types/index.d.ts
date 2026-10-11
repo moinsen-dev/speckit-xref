@@ -78,8 +78,9 @@ export type Snapshot = {
   /** The idea brief Validate wrote (`.specify/memory/idea-brief.md`), and the person's decision on it. */
   ideaBrief?: IdeaBrief | null
   ideaDecision?: { decision: 'build' | 'drop'; fingerprint: string; at: string } | null
-  /** Whether Shape wrote `.specify/memory/product-brief.md`. */
+  /** Whether Shape wrote `.specify/memory/product-brief.md`, and the decisions it records as the person's. */
   productBrief?: boolean
+  briefDecisions?: string[]
   /** Whether the feature has a user interface, from plan.md's Project Type (else its Target Platform). */
   ui?: boolean
   /** The feature's design: DESIGN.md at the root and the screens of `<feature>/design/screens.md`. */
@@ -209,6 +210,8 @@ export type Ledger = {
   /** A requirement's text fingerprint when it was last mapped, linked or verified. */
   fingerprints: Record<string, string>
   verification: Record<string, Verification>
+  /** The spec's assumptions the person kept at the review, by the fingerprint of their text (0.6.1). */
+  assumed?: Record<string, 'keep'>
   /** Acceptance per scenario (USn-ASm): a driver's fresh JUnit report played it through as a person would (0.6.0). */
   acceptance: Record<string, { ok: boolean; fingerprint: string; at: string; file: string }>
   /** `spec`/`plan`: the fingerprint the person approved. */

@@ -367,6 +367,17 @@ class XrefCli(unittest.TestCase):
         self.assertEqual(self.xref("verify", "--junit", failing, code=1)["failing"], ["FR-003"])
         self.assertEqual(self.local()["verification"]["FR-003"]["status"], "failing")
 
+    def test_accept_records_scenarios_from_a_drivers_report_in_the_local_half(self) -> None:
+        passed = '<testsuites><testsuite name="a"><testcase name="US1-AS1 requests a link" classname="e2e/acceptance/US1-AS1.spec.ts"/></testsuite></testsuites>'
+        out = self.xref("accept", "--junit", self.outside("acceptance-web.xml", passed))
+        self.assertEqual((out["accepted"], out["failing"], out["scenarios"]), (["US1-AS1"], [], 1))
+        self.assertTrue(self.local()["acceptance"]["US1-AS1"]["ok"])
+        self.assertNotIn("acceptance", self.ledger())
+        failed = passed.replace('/>', '><failure>no email</failure></testcase>', 1)
+        self.assertEqual(self.xref("accept", "--junit", self.outside("acceptance-web.xml", failed), code=1)["failing"], ["US1-AS1"])
+        summary = self.xref("summary", "--acceptance", self.outside("acceptance-web.xml", passed), as_json=False)
+        self.assertIn("### Acceptance: 1/1 scenarios accepted", summary)
+
     def test_migrate_turns_a_v1_ledger_into_two_v2_halves(self) -> None:
         v1 = {
             "schema_version": 1,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { acceptanceFrom } from '../hooks/accept'
 import { ledgerFromParts, ledgerToParts, migrateV1, rebaseline } from '../hooks/ledger'
 import { levelOf, parseJunit, verificationFrom } from '../hooks/proof'
 import { featureFromBranch, fingerprint, globToRegExp, hasRealTests, isTestFile, normalizeText, parseIgnore, reqStatus, rulesFrom } from '../hooks/rules'
@@ -87,6 +88,10 @@ describe('contract: scenarios, test results, ledger files', () => {
       expect(cases).toEqual(c.expectedCases)
       expect(verificationFrom(cases, c.anchors, c.fingerprints, c.featureDir, c.at, c.commit)).toEqual(c.expectedVerification)
     }
+  })
+
+  test('an acceptance driver\'s report accepts or fails scenarios (0.6.1)', () => {
+    for (const c of CASES.acceptance) expect(acceptanceFrom(parseJunit(c.xml), parseSpec(c.specMarkdown), c.at, c.file)).toEqual(c.expected)
   })
 
   test('migrates a v1 ledger into the committed and the local half', () => {

@@ -183,3 +183,57 @@ test('the web driver never downloads: Chrome and the project\'s Playwright decid
   expect(none).toContain('no Google Chrome is installed here, and this step never downloads a browser')
   for (const prompt of [ready, setup, none]) expect(prompt).not.toContain('playwright install')
 })
+
+test('why the run waited or stopped is in the run log; the Away card counts only the steps', async ($, on) => {
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, answers: [] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  const log = seen.files[`.specify/xref/local/001-magic-link-login.run.jsonl`]!.trim().split('\n').map(l => JSON.parse(l))
+  expect(log.map(e => e.phase)).toEqual(['converge', 'verify', 'stop'])
+  expect(log.at(-1).outcome).toContain('Autopilot done:')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('2 steps in 0 min: converge, verify')
+  await xref($, 'web')
+  expect(seen.files['.specify/xref/local/dashboard.html']).toContain('<tr class="halt">')
+})
+
+test('the spec review shows what the person decided beside what Claude assumed; Keep marks one kept, Change asks and hands it to Claude', async ($, on) => {
+  const files: Record<string, string> = { ...DEMO, '.specify/memory/product-brief.md': "# Product Brief\n\n## Decisions (the person's)\n- Platforms: web only\n\n## Assumptions (Claude's)\n- none\n" }
+  delete files[`${FEATURE}/plan.md`]
+  delete files[`${FEATURE}/tasks.md`]
+  files[`${FEATURE}/spec.md`] = files[`${FEATURE}/spec.md`]!.replace('rate-limit link requests to [NEEDS CLARIFICATION: how many per hour?]', 'rate-limit link requests to five per hour.')
+  const seen = project(on, files, { answers: ['Drop it'] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const drawn = toText(await pane.drawn())
+  expect(drawn).toContain('You decided: Platforms: web only')
+  expect(drawn).toContain('Claude assumed: An SMTP provider is available.')
+  expect(drawn).toContain('[Keep] [Change]')
+  await pane.press({ key: 'keep-0' })
+  expect(toText(await pane.drawn())).toContain('✓ Kept: An SMTP provider is available.')
+  expect(Object.values(ledgerOf(seen.files).assumed)).toEqual(['keep'])
+})
+
+test('Change on an assumption asks what should hold instead and hands the answer to Claude as the person\'s words', async ($, on) => {
+  const files: Record<string, string> = { ...DEMO }
+  delete files[`${FEATURE}/plan.md`]
+  delete files[`${FEATURE}/tasks.md`]
+  files[`${FEATURE}/spec.md`] = files[`${FEATURE}/spec.md`]!.replace('rate-limit link requests to [NEEDS CLARIFICATION: how many per hour?]', 'rate-limit link requests to five per hour.')
+  // The first answer goes to the spec gate's own dialog, the second to Change.
+  const seen = project(on, files, { answers: ['Not yet', 'Drop it'] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'change-0' })
+  await seen.clock.advance(0)
+  expect(seen.asked.at(-1)).toContain('What should hold instead of the assumption "An SMTP provider is available."')
+  expect(seen.submitted.map(e => e.text)).toContain('About the spec\'s assumption "An SMTP provider is available.": Remove it from spec.md.')
+})

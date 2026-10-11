@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.1 — 2026-10-11
+
+Acceptance reaches the pull request, and the spec review separates what you decided from what Claude assumed. Mod 0.6.1, extension 0.6.1; preset 0.2.0 unchanged.
+
+### Acceptance in CI
+
+- `xref.py accept --junit reports/acceptance-web.xml` records an acceptance run (contract §9, §12): each driver test counts for the scenario ids in its name, a failed one fails the scenario, several reports merge (accepted only when every one passed it). Exit 1 when a scenario failed. Shared with the mod through a new contract case.
+- The GitHub Action takes `acceptance-junit` (paths or globs) and `fail-on-acceptance` (true): the job summary gets an Acceptance section with each scenario's state, and a failed scenario fails the job. The README shows a workflow that plays the Playwright tests with the runner's Chrome.
+- Screenshots and reports of an acceptance run (`/e2e/acceptance/shots/`, `/reports/acceptance*.xml`) are exempt: evidence is no drift (contract §2).
+
+### The spec review: decided or assumed
+
+- The review card lists what you decided (the product brief's decisions, your answers in the ask dialog) beside each assumption Claude made. **Keep** marks an assumption as yours (it stays kept until its text changes); **Change** asks what should hold instead (drop it, make it an open question, or your own words) and hands it to Claude, so the spec changes before you approve it.
+
+### Run log
+
+- Why the autopilot waited or stopped is logged beside its steps (`⏸ waits`, `■ stopped` in the dashboard); the Away card still counts only the steps.
+
 ## 0.6.0 — 2026-10-11
 
 The finished app is played through before it counts as done. Mod 0.6.0, extension 0.6.0; preset 0.2.0 unchanged.
