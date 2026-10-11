@@ -114,6 +114,15 @@ test('the rail: deploys, store builds, submits and publishes wait for the person
   for (const command of ['ls wrangler* vercel.json netlify.toml firebase.json fastlane 2>&1 | head', 'which fastlane vercel', 'echo vercel']) {
     expect([command, releasesApp(command)]).toEqual([command, false])
   }
+  // Found live: text that is only written is no command; text that runs is.
+  expect(releasesApp("cat >> specs/001/tasks.md <<'E'\n- [ ] T068 EAS-Profil (ohne Profil kein `eas build --profile production`)\nE")).toBe(false)
+  expect(releasesApp("cat >> tasks.md <<'E'\n- [ ] T068 eas build\nE\neas build -p ios")).toBe(true)
+  expect(releasesApp('git commit -m "T068: eas build profile" -m "wrangler pages deploy later"')).toBe(false)
+  expect(releasesApp("gh pr create --title 'Release' --body 'then: npm publish'")).toBe(false)
+  expect(releasesApp("echo 'run wrangler pages deploy dist next'")).toBe(false)
+  expect(releasesApp('bash -c "eas build -p ios"')).toBe(true)
+  expect(releasesApp("sh -c 'wrangler deploy'")).toBe(true)
+  expect(releasesApp("python3 - <<'E'\nimport os; os.system('eas build -p ios')\nE")).toBe(true)
   // Asking for help is no release; a release after it still is.
   expect(releasesApp('wrangler pages deploy --help')).toBe(false)
   expect(releasesApp('eas build -h')).toBe(false)
@@ -136,6 +145,8 @@ test('the rail: deploys, store builds, submits and publishes wait for the person
   expect(approvedRelease('wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(true)
   expect(approvedRelease('cd web && wrangler  pages deploy dist --project-name tagesinspiration 2>&1 | tail -20', approved)).toBe(true)
   expect(approvedRelease('cd mobile && eas build -p ios --profile production --non-interactive', approved)).toBe(true)
+  expect(approvedRelease('timeout 600 wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(true)
+  expect(approvedRelease('CLOUDFLARE_ACCOUNT_ID=x wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(false)
   expect(approvedRelease('wrangler pages deploy dist --project-name other', approved)).toBe(false)
   expect(approvedRelease('npx wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(false)
   expect(approvedRelease('eas update --branch production', approved)).toBe(false)

@@ -195,9 +195,20 @@ const RELEASING: RegExp[] = [
 /** A shell command's parts: what `;`, `&&`, `||` and `|` separate. */
 const SEGMENTS = /\n|;|&&|\|\|?/
 
+/**
+ * A command without the text it only writes: the body of a heredoc fed to `cat` or `tee`, a message after `-m`,
+ * `--body`, `--title` or `--notes`, what `echo` and `printf` print. Text that runs (`bash -c`, `eval`, a script's
+ * heredoc) stays.
+ */
+export const commandText = (command: string) =>
+  command
+    .replace(/(\b(?:cat|tee)\b[^\n]*<<-?\s*(['"]?)(\w+)\2[^\n]*)\n[\s\S]*?\n\s*\3\s*(?=\n|$)/g, '$1')
+    .replace(/(\s(?:-m|--message|--body|--title|--notes)(?:\s+|=))(['"])(?:\\.|(?!\2)[^\\])*\2/g, "$1''")
+    .replace(/(\b(?:echo|printf)\s+(?:-\w+\s+)*)(['"])(?:\\.|(?!\2)[^\\])*\2/g, "$1''")
+
 /** Whether a shell command releases the app: deploys, builds or submits for a store, publishes. Asking a tool for its help does not. */
 export const releasesApp = (command: string) =>
-  command
+  commandText(command)
     .split(SEGMENTS)
     .some(part => !/\s(?:--help|-h)(?:\s|$)/.test(part) && RELEASING.some(re => re.test(part)))
 
@@ -205,6 +216,8 @@ const normalized = (command: string) =>
   command
     .replace(/\s+(?:\d*>>?|&>)\s*&?\S+/g, '')
     .replace(/^\s*\(+|\)+\s*$/g, '')
+    // A time limit or a stopwatch around a command does not change where it goes.
+    .replace(/^(?:\s*(?:timeout\s+(?:-\S+\s+)*\S+|time|nohup)\s+)+/, '')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -214,8 +227,8 @@ const normalized = (command: string) =>
  * project is not). The person's yes is to these commands, not to releasing in general.
  */
 export function approvedRelease(command: string, approved: string[]): boolean {
-  const ok = new Set(approved.flatMap(c => c.split(SEGMENTS).filter(part => releasesApp(part)).map(normalized)))
-  const releasing = command.split(SEGMENTS).filter(part => releasesApp(part))
+  const ok = new Set(approved.flatMap(c => commandText(c).split(SEGMENTS).filter(part => releasesApp(part)).map(normalized)))
+  const releasing = commandText(command).split(SEGMENTS).filter(part => releasesApp(part))
   return releasing.length > 0 && releasing.every(part => ok.has(normalized(part)))
 }
 
