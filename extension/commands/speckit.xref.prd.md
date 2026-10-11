@@ -12,7 +12,7 @@ $ARGUMENTS
 
 The person wrote the PRD first: its decisions are theirs, its research is done. Your job is not to rewrite it or research it again. It is to read it as the one who has to build it: where does it contradict itself, what can nobody test, what is missing for the first feature, and in which order does it get built.
 
-Read the PRD whole. If it is not at `.specify/memory/prd.md` yet, copy it there first (a `.docx` converts with `pandoc -f docx -t gfm` or, on macOS, `textutil -convert txt`); the user input may name its path. Note its id families as it writes them (stories `US01`, features `F01`, requirements `N01`, acceptance criteria `AC01`, decisions `D01`, gates `G1`, phases `P0` …): the specs carry these ids later, so the trace runs from the PRD to the code.
+Read the PRD whole. If it is not at `.specify/memory/prd.md` yet, copy it there first (a Markdown file; the user input may name its path). Note its id families as it writes them (stories `US01`, features `F01`, requirements `N01`, acceptance criteria `AC01`, decisions `D01`, gates `G1`, phases `P0` …): the specs carry these ids later, so the trace runs from the PRD to the code.
 
 ## 1. `.specify/memory/prd-review.md`
 

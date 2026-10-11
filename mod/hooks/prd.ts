@@ -9,14 +9,13 @@ export const PRD = '.specify/memory/prd.md'
 export const PRD_REVIEW = '.specify/memory/prd-review.md'
 export const ROADMAP = '.specify/memory/roadmap.md'
 
-/** A file at the root that is a PRD by its name: `PRD_Show.md`, `product-requirements.docx`. */
+/** A file at the root that is a PRD by its name: `PRD_Show.md`, `product-requirements.md`. Markdown only. */
 export const PRD_NAME = /(^|[^a-z])prd([^a-z]|$)|product[-_ ]?requirements/i
-const PRD_EXT = /\.(md|markdown|docx)$/i
+const PRD_EXT = /\.(md|markdown)$/i
 
-/** The PRD among the root's files: Markdown before Word, and never one of Spec Kit's own. */
+/** The PRD among the root's files: a Markdown file named so, never a dotfile. */
 export function prdSourceOf(names: string[]): string | null {
-  const candidates = names.filter(n => PRD_NAME.test(n) && PRD_EXT.test(n) && !n.startsWith('.'))
-  return candidates.find(n => /\.(md|markdown)$/i.test(n)) ?? candidates[0] ?? null
+  return names.find(n => PRD_NAME.test(n) && PRD_EXT.test(n) && !n.startsWith('.')) ?? null
 }
 
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)

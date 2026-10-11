@@ -218,7 +218,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (greenfield && fromPrd) {
     if (!snap.prd) {
       return step('prd', null, `A PRD is in the folder (${snap.prdSource}): it is imported to ${PRD} first.`, null, {
-        prompt: `Convert ${snap.prdSource} to Markdown at ${PRD}, keeping its headings, tables and ids as they are, then end your turn.`,
+        prompt: `Copy ${snap.prdSource} to ${PRD} as it is, then end your turn.`,
       })
     }
     if (!snap.prdReview || !snap.roadmap?.length) return step('prd', null, 'The PRD is imported: review it and cut it into features before the spec.', null, { prompt: PRD_PROMPT })

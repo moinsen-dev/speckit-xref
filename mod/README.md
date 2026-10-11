@@ -90,9 +90,9 @@ Options `validate` and `shape` (both `on`) switch the two off; a project that al
 
 ## A project that starts from a PRD
 
-Wrote a PRD first? Put it in the empty folder (`PRD_Show.md`, or a `.docx`; a file with "PRD" or "product requirements" in its name), or import it from anywhere with `/xref prd <path>`. Instead of Validate:
+Wrote a PRD first? Put it in the empty folder as Markdown (`PRD_Show.md`; a file with "PRD" or "product requirements" in its name), or import it from anywhere with `/xref prd <path>`. Instead of Validate:
 
-1. **Import.** The mod copies it to `.specify/memory/prd.md` (a `.docx` through pandoc or macOS textutil; otherwise Claude converts it).
+1. **Import.** The mod copies it to `.specify/memory/prd.md`.
 2. **Review and roadmap.** Claude reads it as the one who has to build it: `.specify/memory/prd-review.md` (contradictions, untestable criteria, gaps, the open decisions that block the first feature) and `.specify/memory/roadmap.md` (the features in build order, each with its phase, the PRD's own ids, the PRD sections it implements, and the gate before it). It does not rewrite the PRD or research it again.
 3. **Your approval.** The pane shows the roadmap and the open decisions: **Approve roadmap**.
 4. Shape asks only the blocking decisions; the PRD's other decisions are yours already. Then the constitution, and the first feature is specified from the roadmap.

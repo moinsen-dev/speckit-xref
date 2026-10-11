@@ -403,27 +403,14 @@ async function prdState($: $, featureDir: string | null, features: string[]): Pr
   }
 }
 
-/** Imports the PRD: Markdown as it is, Word through pandoc or macOS textutil; false where neither can read it. */
+/** Imports the PRD as it is: Markdown only; false for any other file or one that cannot be read. */
 async function importPrd($: $, source: string): Promise<boolean> {
   const rel = relPath(source, root)
-  if (/\.(md|markdown)$/i.test(rel)) {
-    const text = await readText($, rel)
-    if (text === null) return false
-    await $.fs.write(at(PRD), text)
-    return true
-  }
-  for (const argv of [['pandoc', '-f', 'docx', '-t', 'gfm', '--wrap=none', at(rel)], ['textutil', '-convert', 'txt', '-stdout', at(rel)]]) {
-    try {
-      const ran = await $.process.run(argv, { cwd: root, timeoutMs: 30_000 })
-      if (ran.exitCode === 0 && ran.stdout.trim()) {
-        await $.fs.write(at(PRD), ran.stdout)
-        return true
-      }
-    } catch {
-      // Not installed here: the next converter, or Claude converts it.
-    }
-  }
-  return false
+  if (!/\.(md|markdown)$/i.test(rel)) return false
+  const text = await readText($, rel)
+  if (text === null) return false
+  await $.fs.write(at(PRD), text)
+  return true
 }
 
 /** The person approves the roadmap: kept in the local project state with its fingerprint, like the idea decision. */
@@ -446,8 +433,9 @@ async function decidePrd($: $, value: string): Promise<string> {
 /** `/xref prd <path>`: imports a PRD now, from any path in the project. */
 async function prdByCommand($: $, path: string): Promise<string> {
   const source = path || (await read($, snapshotA))?.prdSource
-  if (!source) return 'Name the PRD: /xref prd <path to the .md or .docx>.'
-  if (!(await importPrd($, source))) return `Could not read ${source} here (pandoc or textutil converts a .docx); ask Claude to convert it to ${PRD}.`
+  if (!source) return 'Name the PRD: /xref prd <path to the Markdown file>.'
+  if (!/\.(md|markdown)$/i.test(source)) return `A PRD is read as Markdown: ${source} is no .md file.`
+  if (!(await importPrd($, source))) return `Could not read ${source}.`
   await scan($)
   return `Imported ${source} to ${PRD}. Next: the PRD review and the roadmap (the autopilot, or the speckit-xref:prd skill).`
 }

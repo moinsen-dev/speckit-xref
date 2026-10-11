@@ -76,7 +76,9 @@ function withPrd(name = 'PRD_Show.md'): Record<string, string> {
 
 test('the PRD\'s files: its name, its ranges of ids, the roadmap, the review, its numbered sections, its ids in a spec', () => {
   expect(prdSourceOf(['README.md', 'PRD_Show.docx', 'PRD_Show.md', 'notes.md'])).toBe('PRD_Show.md')
-  expect(prdSourceOf(['product-requirements.docx'])).toBe('product-requirements.docx')
+  expect(prdSourceOf(['product-requirements.md'])).toBe('product-requirements.md')
+  // Markdown only: a Word file is no PRD source.
+  expect(prdSourceOf(['PRD_Show.docx'])).toBe(null)
   expect(prdSourceOf(['README.md', 'approach.md'])).toBe(null)
   expect(expandIds('US01–US03, F01, AC01-AC02, G1')).toEqual(['US01', 'US02', 'US03', 'F01', 'AC01', 'AC02', 'G1'])
   const items = parseRoadmap(ROADMAP)
@@ -143,14 +145,12 @@ test('a folder with a PRD: imported, reviewed, the roadmap approved by the perso
   expect(specify).toContain('(Source: .specify/memory/prd.md §5; PRD ids US01, US02, US03, F01, AC01, AC02)')
 })
 
-test('a Word PRD that nothing here converts goes to Claude to convert', async ($, on) => {
-  const files = withPrd('PRD_Show.docx')
-  const seen = project(on, files)
+test('/xref prd reads Markdown only', async ($, on) => {
+  const seen = project(on, { ...withPrd(), 'docs/requirements.md': PRD_MD })
   await startSession($)
-  await xref($, 'auto on')
-  await seen.clock.advance(0)
-  expect(autopilotPrompts(seen)[0]).toContain('Convert PRD_Show.docx to Markdown at .specify/memory/prd.md')
-  expect((await xref($, 'prd')).text).toContain('Could not read PRD_Show.docx here')
+  expect((await xref($, 'prd docs/PRD.docx')).text).toBe('A PRD is read as Markdown: docs/PRD.docx is no .md file.')
+  expect((await xref($, 'prd docs/requirements.md')).text).toContain('Imported docs/requirements.md to .specify/memory/prd.md.')
+  expect(seen.files['.specify/memory/prd.md']).toBe(PRD_MD)
 })
 
 test('a done feature with a roadmap names the next one and its gate; Next from roadmap specifies it in the PRD\'s words', async ($, on) => {
