@@ -2798,6 +2798,68 @@ export const CASES: any = {
     }
    },
    "featureDir": "specs/001-magic-link-login"
+  },
+  {
+   "xml": "<?xml version=\"1.0\"?>\n<testsuites name=\"vitest tests\"><testsuite name=\"tests/auth/callback.test.ts\">\n<testcase classname=\"tests/auth/callback.test.ts\" name=\"callback &gt; works\" time=\"0.01\"/>\n<testcase classname=\"auth.flow\" name=\"a dotted class is no path\"/>\n<testcase classname=\"tests/auth/token.test.ts\" name=\"a file attribute wins\" file=\"tests/auth/request-link.test.ts\"><failure/></testcase>\n</testsuite></testsuites>\n",
+   "expectedCases": [
+    {
+     "name": "callback > works",
+     "classname": "tests/auth/callback.test.ts",
+     "file": "tests/auth/callback.test.ts",
+     "status": "passed"
+    },
+    {
+     "name": "a dotted class is no path",
+     "classname": "auth.flow",
+     "file": "",
+     "status": "passed"
+    },
+    {
+     "name": "a file attribute wins",
+     "classname": "tests/auth/token.test.ts",
+     "file": "tests/auth/request-link.test.ts",
+     "status": "failed"
+    }
+   ],
+   "anchors": [
+    {
+     "id": "FR-003",
+     "file": "tests/auth/callback.test.ts",
+     "line": 1
+    },
+    {
+     "id": "FR-001",
+     "file": "tests/auth/request-link.test.ts",
+     "line": 1
+    }
+   ],
+   "fingerprints": {
+    "FR-001": "f1",
+    "FR-003": "f3"
+   },
+   "at": "2026-10-11T12:00:00.000Z",
+   "commit": "def5678",
+   "expectedVerification": {
+    "FR-001": {
+     "status": "failing",
+     "tests": [
+      "tests/auth/token.test.ts.a file attribute wins"
+     ],
+     "at": "2026-10-11T12:00:00.000Z",
+     "commit": "def5678",
+     "fingerprint": "f1"
+    },
+    "FR-003": {
+     "status": "passing",
+     "tests": [
+      "tests/auth/callback.test.ts.callback > works"
+     ],
+     "at": "2026-10-11T12:00:00.000Z",
+     "commit": "def5678",
+     "fingerprint": "f3"
+    }
+   },
+   "featureDir": "specs/001-magic-link-login"
   }
  ],
  "featureFromBranch": [

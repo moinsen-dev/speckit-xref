@@ -141,7 +141,7 @@ Order: `--feature` (extension) → `SPECIFY_FEATURE_DIRECTORY` → `.specify/fea
 
 ## 9. Test results (JUnit)
 
-`parseJunit(xml)`: every `<testcase>` with `name`, `classname`, `file` (attributes may be absent) and a status: `failed` when it has a `<failure` or `<error` child, `skipped` with a `<skipped` child, else `passed`. Attribute values unescape `&amp; &lt; &gt; &quot; &apos;`.
+`parseJunit(xml)`: every `<testcase>` with `name`, `classname`, `file` (attributes may be absent; 0.7.1: without a `file` attribute, a `classname` that is a source file's path, `^[\w@./-]+\.(?:[cm]?[jt]sx?|py|go|rs|dart|rb|kt|swift|java)$`, is the file, as Vitest and Playwright write it) and a status: `failed` when it has a `<failure` or `<error` child, `skipped` with a `<skipped` child, else `passed`. Attribute values unescape `&amp; &lt; &gt; &quot; &apos;`.
 
 `verificationFrom(cases, anchors, fingerprints, featureDir, at, commit)`: a test maps to every id found in its `name` or `classname` (`FR-###`, `SC-###`, `USn-ASm`) and to every anchor id (through `localId`, so other features' anchors drop out) in its `file`. Per id: `failing` if any mapped test failed, else `passing` if at least one passed; skipped-only maps to nothing. Each entry records the test names (`classname.name`, else `name`) sorted by code point and cut to the first 10, `at`, `commit`, and `fingerprints[id]` (else `""`).
 

@@ -429,13 +429,19 @@ def _attr(tag: str, name: str) -> str:
     return _unescape(m.group(2) if m.group(2) is not None else m.group(3) or "")
 
 
+# A classname that is a source file's path, as Vitest and Playwright write it: the test's file when the report names none.
+SOURCE_PATH = re.compile(r"^[\w@./-]+\.(?:[cm]?[jt]sx?|py|go|rs|dart|rb|kt|swift|java)$", A)
+
+
 def parse_junit(xml: str) -> list[dict]:
     """Every <testcase> with name, classname, file and passed, failed or skipped (§9)."""
     cases = []
     for m in re.finditer(r"<testcase\b([^>]*?)(/>|>([\s\S]*?)</testcase>)", xml):
         tag, body = m.group(1) or "", m.group(3) or ""
         status = "failed" if re.search(r"<(failure|error)\b", body) else "skipped" if re.search(r"<skipped\b", body) else "passed"
-        cases.append({"name": _attr(tag, "name"), "classname": _attr(tag, "classname"), "file": _attr(tag, "file"), "status": status})
+        classname = _attr(tag, "classname")
+        file = _attr(tag, "file") or (classname if SOURCE_PATH.match(classname) else "")
+        cases.append({"name": _attr(tag, "name"), "classname": classname, "file": file, "status": status})
     return cases
 
 

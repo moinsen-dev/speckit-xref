@@ -1440,6 +1440,12 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     const commands = snap.release?.commands ?? []
     await update($, permitsA, ps => [...ps.filter(p => !(p.label === 'releasing' && p.many)), { label: 'releasing', until, many: true, commands }])
     await update($, autopilotA, a => ({ ...a, releaseRows: snap.release?.releases.length ?? 0 }))
+    // Handed over, the person's Ship is carried out: the next release starts from their next Ship.
+    await update($, ledgerA, l => {
+      const checkpoints = { ...l.checkpoints }
+      delete checkpoints.shipWanted
+      return { ...l, checkpoints }
+    })
   }
   // Only a report the acceptance step writes counts: what is there now is the baseline.
   if (step.phase === 'accept') {
@@ -1474,11 +1480,9 @@ async function takeNext($: $, said: string): Promise<NextWork | null> {
   const kind = ap.nextKind ?? nextKindOf(await $.model.classify(said.slice(0, 1500), [...NEXT_LABELS]).catch(() => NO_WORK))
   if (!kind) return null
   const next: NextWork = { kind, text: said.slice(0, 1200) }
-  // Every release asks anew: a fresh check, then the person's yes.
-  if (kind === 'ship') {
-    await update($, ledgerA, resetShip)
-    await persist($)
-  }
+  // Every release asks anew: a fresh check, then the person's yes. Other work puts a release aside.
+  await update($, ledgerA, l => (kind === 'ship' ? wantShip(resetShip(l)) : resetShip(l)))
+  await persist($)
   await update($, autopilotA, a => ({ ...a, next, nextKind: null, paused: null, stalls: 0 }))
   return next
 }
@@ -1489,9 +1493,13 @@ function resetShip(l: Ledger): Ledger {
   const approvals = { ...l.approvals }
   delete checkpoints.ship
   delete checkpoints.released
+  delete checkpoints.shipWanted
   delete approvals.release
   return { ...l, checkpoints, approvals }
 }
+
+/** The person asked to ship: it holds through the readiness rounds and across sessions until the release is handed over. */
+const wantShip = (l: Ledger): Ledger => ({ ...l, checkpoints: { ...l.checkpoints, shipWanted: 'yes' } })
 
 /**
  * Ship (the pane's Ship and Check again, /xref ship): a fresh release check of the done app; its commands go out
@@ -1503,7 +1511,7 @@ async function startShip($: $, text = 'Ship it'): Promise<string> {
   const ap = await read($, autopilotA)
   const at = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
   if (at.phase !== 'done' && at.phase !== 'ship' && at.approve?.key !== 'release') return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
-  await update($, ledgerA, resetShip)
+  await update($, ledgerA, l => wantShip(resetShip(l)))
   await persist($)
   await update($, autopilotA, a => ({ ...a, next: { kind: 'ship', text }, nextKind: null, paused: null, stalls: 0 }))
   if (!(await read($, autopilotA)).on) await startAutopilot($)
@@ -1515,7 +1523,8 @@ async function startShip($: $, text = 'Ship it'): Promise<string> {
 async function dropShip($: $): Promise<string> {
   await update($, ledgerA, resetShip)
   await persist($)
-  await update($, autopilotA, a => ({ ...a, next: a.next?.kind === 'ship' ? null : a.next, paused: a.on ? a.paused : null }))
+  // The pause was the release's: the autopilot asks again what comes next (found live in 0.7.1).
+  await update($, autopilotA, a => ({ ...a, next: a.next?.kind === 'ship' ? null : a.next, paused: null }))
   if ((await read($, autopilotA)).on) $.clock.after(0, () => void advance($).catch(() => undefined))
   return 'The release is put aside; Ship checks again when you want it.'
 }
@@ -1526,6 +1535,8 @@ async function chooseNext($: $, kind: NextWork['kind']): Promise<void> {
     $.ui.toast(await startShip($))
     return
   }
+  await update($, ledgerA, resetShip)
+  await persist($)
   await update($, autopilotA, a => ({ ...a, nextKind: kind, next: null }))
   // Starting asks by itself: its first step is the done feature's question, now for this kind.
   if (!(await read($, autopilotA)).on) return startAutopilot($)
@@ -1537,6 +1548,8 @@ async function chooseRoadmap($: $): Promise<void> {
   const snap = await read($, snapshotA)
   const item = snap?.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
   if (!item) return
+  await update($, ledgerA, resetShip)
+  await persist($)
   await update($, autopilotA, a => ({ ...a, next: { kind: 'feature', text: roadmapSpecify(item) }, nextKind: null, paused: null, stalls: 0 }))
   if (!(await read($, autopilotA)).on) return startAutopilot($)
   $.clock.after(0, () => void advance($).catch(() => undefined))
@@ -2747,8 +2760,14 @@ export const register: Register = (on, options) => {
     const decisions = ledger.decisions.filter(d => d.answer === null).slice(-3)
     // What the person decided (the product brief, their answers) beside what Claude assumed.
     const decided = [...(snap.briefDecisions ?? []), ...ledger.decisions.filter(d => d.answer && d.kind !== 'permission').map(d => `${d.question} → ${d.answer}`)]
+    // While a step the autopilot handed over still runs, what it writes is not ready to approve (found live in 0.7.1).
+    const running = (await read($, turnA))?.auto === true
     const reviewCard =
-      step.phase === 'review' && step.approve ? (
+      (step.phase === 'review' && step.approve) || (step.phase === 'ship' && step.needsUser) ? (running ? (
+        <Box marginTop={1}>{row(step.phase === 'ship' ? 'Ship' : 'Review', 'Claude is still on this step: it opens here when the step ends.', 'subtle')}</Box>
+      ) : null) : null
+    const approveCard =
+      step.phase === 'review' && step.approve && !running ? (
         <Box flexDirection="column" marginTop={1}>
           {row(
             'Review',
@@ -2820,7 +2839,7 @@ export const register: Register = (on, options) => {
       ) : null
     // The release waits on something: what, and the way to check again once it is done.
     const shipCard =
-      step.phase === 'ship' && step.needsUser ? (
+      step.phase === 'ship' && step.needsUser && !running ? (
         <Box flexDirection="column" marginTop={1}>
           {row('Ship', 'The release waits:', 'warning')}
           {releaseBlockers(snap, ledger, ap.lastTest, gatesOf(review).spec).slice(0, 6).map(b => row('', `· ${b}`))}
@@ -2907,6 +2926,7 @@ export const register: Register = (on, options) => {
         {row('Next', stepLine(step), 'suggestion')}
         {step.phase === 'integration' ? <Box marginLeft={8}>{setupAction(step, snap)}</Box> : null}
         {reviewCard}
+        {approveCard}
         {doneCard}
         {shipCard}
         {away.length ? (

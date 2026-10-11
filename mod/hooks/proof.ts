@@ -63,6 +63,9 @@ const attr = (tag: string, name: string) => {
   return m ? unescape(m[2] ?? m[3] ?? '') : ''
 }
 
+/** A classname that is a source file's path, as Vitest and Playwright write it: the test's file when the report names none. */
+const SOURCE_PATH = /^[\w@./-]+\.(?:[cm]?[jt]sx?|py|go|rs|dart|rb|kt|swift|java)$/
+
 export function parseJunit(xml: string): JunitCase[] {
   const cases: JunitCase[] = []
   const re = /<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g
@@ -70,7 +73,8 @@ export function parseJunit(xml: string): JunitCase[] {
     const tag = m[1] ?? ''
     const body = m[3] ?? ''
     const status = /<(failure|error)\b/.test(body) ? 'failed' : /<skipped\b/.test(body) ? 'skipped' : 'passed'
-    cases.push({ name: attr(tag, 'name'), classname: attr(tag, 'classname'), file: attr(tag, 'file'), status })
+    const classname = attr(tag, 'classname')
+    cases.push({ name: attr(tag, 'name'), classname, file: attr(tag, 'file') || (SOURCE_PATH.test(classname) ? classname : ''), status })
   }
   return cases
 }
