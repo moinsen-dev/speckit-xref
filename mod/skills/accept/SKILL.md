@@ -41,7 +41,7 @@ test('US1-AS1 Given a registered email, when the user requests a link, then …'
 })
 ```
 
-Run: `PLAYWRIGHT_JUNIT_OUTPUT_NAME=reports/acceptance-web.xml npx playwright test e2e/acceptance --reporter=junit` (install the browser once with `npx playwright install chromium`).
+Run: `PLAYWRIGHT_JUNIT_OUTPUT_NAME=reports/acceptance-web.xml npx playwright test e2e/acceptance --reporter=junit`, with `use: { channel: 'chrome' }` in `playwright.config.ts`: the installed Google Chrome. **Never download a browser in this step.** Without Chrome on the machine, the web scenarios go under Your part. Without `@playwright/test` in the project, play nothing on the web: append a task under `## Phase N: Acceptance setup` (the devDependency, the config with `channel: 'chrome'`, an npm script `test:acceptance`), so it is built, verified and then played in the next acceptance run; changing `package.json` here would change what was just verified.
 
 **Maestro (iOS, Android)**, `e2e/acceptance/<id>.yaml`:
 

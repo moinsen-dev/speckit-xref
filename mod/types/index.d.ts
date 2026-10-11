@@ -45,7 +45,7 @@ export type Snapshot = {
   /** The Spec Kit release the project was set up with (`.specify/init-options.json`). */
   speckitVersion: string | null
   /** What can run Spec Kit's CLI on this machine. */
-  tools: { specify: boolean; uvx: boolean; maestro?: boolean; npx?: boolean }
+  tools: { specify: boolean; uvx: boolean; maestro?: boolean; npx?: boolean; chrome?: boolean }
   /** The project folder at a glance: nothing but dotfiles and a README (empty), or code already there (existing). */
   folder: 'empty' | 'existing'
   spec: Spec | null
@@ -104,6 +104,8 @@ export type Snapshot = {
   prdExcerpt?: string | null
   /** The platforms plan.md names, and what acceptance.md says: evidence per scenario and what only the person can check. */
   platforms?: { web: boolean; ios: boolean; android: boolean }
+  /** Whether the project has Playwright's test runner (`@playwright/test` in package.json). */
+  playwright?: boolean
   acceptanceDoc?: AcceptanceNote | null
 }
 

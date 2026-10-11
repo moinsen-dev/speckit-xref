@@ -56,7 +56,7 @@ function doneSnap(extra: Partial<Snapshot> = {}): Snapshot {
   const tasks = parseTasks(DONE)
   return {
     initialized: true, featureDir: FEATURE, features: [FEATURE], hasPlan: true, extensions: [], claudeIntegration: true, speckitVersion: '1.1.2',
-    tools: { specify: true, uvx: true, npx: true, maestro: false }, folder: 'existing', spec: SPEC, tasks,
+    tools: { specify: true, uvx: true, npx: true, maestro: false, chrome: true }, playwright: true, folder: 'existing', spec: SPEC, tasks,
     constitution: parseConstitution(DEMO['.specify/memory/constitution.md']!), commandStyle: 'skills', rules: rulesFrom(null), realTests: [],
     planFingerprint: 'p', testCommand: null, branch: null, phase: null, tasksFingerprint: tasksFingerprint(tasks), commands: ['converge'],
     checklists: [], persistence: 'flow-back', tree: treeOf('a'), ui: true, platforms: platformsFromPlan(PLAN), ...extra,
@@ -168,4 +168,18 @@ test('converge rates its gaps like verify: only HIGH and MEDIUM become tasks', (
   expect(converge.phase).toBe('converge')
   expect(converge.approve).toEqual({ key: 'converge', value: tasksFingerprint(tasks) })
   expect(converge.prompt).toBe("Run /speckit-converge now through the Skill tool and carry it through. Append tasks only for its HIGH and MEDIUM gaps; list the LOW ones in your answer under 'Low, no task'.")
+})
+
+test('the web driver never downloads: Chrome and the project\'s Playwright decide between playing, a setup task and the person\'s part', () => {
+  const base = doneSnap()
+  const ready = acceptPrompt({ ...base, tools: { ...base.tools, npx: true, chrome: true }, playwright: true } as Snapshot)
+  expect(ready).toContain("installed Google Chrome (`channel: 'chrome'`; never download a browser)")
+  expect(ready).toContain('PLAYWRIGHT_JUNIT_OUTPUT_NAME=reports/acceptance-web.xml')
+  const setup = acceptPrompt({ ...base, tools: { ...base.tools, npx: true, chrome: true }, playwright: false } as Snapshot)
+  expect(setup).toContain("Playwright is not set up in this project yet, so play nothing on the web in this step. Append one task under '## Phase N: Acceptance setup'")
+  expect(setup).toContain("`channel: 'chrome'` (the installed Google Chrome; no browser download)")
+  expect(setup).not.toContain('PLAYWRIGHT_JUNIT_OUTPUT_NAME')
+  const none = acceptPrompt({ ...base, tools: { ...base.tools, npx: true, chrome: false }, playwright: true } as Snapshot)
+  expect(none).toContain('no Google Chrome is installed here, and this step never downloads a browser')
+  for (const prompt of [ready, setup, none]) expect(prompt).not.toContain('playwright install')
 })

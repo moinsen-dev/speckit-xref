@@ -353,6 +353,7 @@ async function scan($: $): Promise<void> {
     ...(await prdState($, featureDir, features.map(f => f.dir))),
     ui: uiFromPlan(planMd),
     platforms: platformsFromPlan(planMd),
+    playwright: /"@playwright\/test"\s*:/.test((await readText($, 'package.json')) ?? ''),
     acceptanceDoc: acceptanceMd ? parseAcceptanceDoc(acceptanceMd) : null,
     design: featureDir ? designState(designMd, screensMd) : null,
     phaseNotes: tasksMd ? parsePhaseNotes(tasksMd) : {},
@@ -1929,7 +1930,14 @@ export const register: Register = (on, options) => {
     await update($, turnA, () => null)
     await update($, seenAtA, () => 0)
     // The acceptance drivers too: Maestro for mobile, npx for Playwright on the web.
-    cli = { specify: await onPath($, 'specify'), uvx: await onPath($, 'uvx'), maestro: await onPath($, 'maestro'), npx: await onPath($, 'npx') }
+    cli = {
+      specify: await onPath($, 'specify'),
+      uvx: await onPath($, 'uvx'),
+      maestro: await onPath($, 'maestro'),
+      npx: await onPath($, 'npx'),
+      // A browser already here: Playwright drives it instead of downloading one.
+      chrome: (await exists($, '/Applications/Google Chrome.app')) || (await onPath($, 'google-chrome')) || (await onPath($, 'google-chrome-stable')) || (await onPath($, 'chromium')),
+    }
     // SPECKIT_XREF_AUTOPILOT=on|night|<steps> switches it on for this session: the way into a -p run, where /xref auto on starts no model turn.
     const fromEnv = ((await $.env.get('SPECKIT_XREF_AUTOPILOT')) ?? '').trim().toLowerCase()
     const envSteps = Number(fromEnv) > 0 ? Math.floor(Number(fromEnv)) : null

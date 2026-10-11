@@ -12,6 +12,7 @@ The finished app is played through before it counts as done. Mod 0.6.0, extensio
 - **Fix loop.** A scenario that fails because of the app becomes a task under `## Phase N: Acceptance fixes` (no code changes in the acceptance step); the autopilot builds it, verifies and accepts again. Verify and acceptance share one round counter: after three rounds, **Call it done** or Resume is yours.
 - **Your part**: what no driver here can check (a real device, real users, a paid service, a store review) is listed in `specs/<feature>/acceptance.md` with its steps, and shown in the pane and the dashboard.
 - **Time box**: if the app is not up after about 20 minutes, the remaining scenarios go to your part instead of an endless setup.
+- **Nothing is downloaded in the step.** Playwright drives the installed Google Chrome (`channel: 'chrome'`); without Chrome the web scenarios go to your part. A project without `@playwright/test` gets a setup task first (devDependency, config, npm script), built and verified like any task, and the next acceptance run plays the scenarios.
 - Pane row `Accept 6/9 accepted · 1 failing · 2 your part`; a dashboard section with each scenario's state, flow, report and screenshot. The dashboard's matrix now gives SC rows their rung and scenarios their acceptance state.
 - Extension command `speckit.xref.accept` does the same for any agent.
 - What acceptance writes (tests, reports, screenshots, acceptance.md, the runbook) does not count as a change of the verified tree, so it cannot start another verify.

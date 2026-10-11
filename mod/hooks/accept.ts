@@ -105,13 +105,19 @@ export function acceptanceCounts(snap: Pick<Snapshot, 'spec' | 'acceptanceDoc'>,
 export function acceptPrompt(snap: Snapshot): string {
   const dir = snap.featureDir ?? 'specs/<feature>'
   const p = snap.platforms ?? { web: false, ios: false, android: false }
-  const playwright = p.web && !!snap.tools.npx
+  const web = p.web && !!snap.tools.npx
   const maestro = (p.ios || p.android) && !!snap.tools.maestro
   const scenarios = scenariosOf(snap.spec)
+  // The web driver plays only where it can without downloading anything: a browser on this machine, the runner in the project.
+  const webLine = !web
+    ? null
+    : !snap.tools.chrome
+      ? 'Web: no Google Chrome is installed here, and this step never downloads a browser: the web scenarios go under Your part, with a note that Playwright needs a browser.'
+      : !snap.playwright
+        ? `Web: Playwright is not set up in this project yet, so play nothing on the web in this step. Append one task under '## Phase N: Acceptance setup' in ${dir}/tasks.md: add @playwright/test as a devDependency, a playwright.config.ts whose \`use\` has \`channel: 'chrome'\` (the installed Google Chrome; no browser download), and an npm script test:acceptance that writes ${ACCEPT_REPORTS}/acceptance-web.xml. The autopilot builds it, and the next acceptance run plays the scenarios.`
+        : `Web first, with Playwright and the installed Google Chrome (\`channel: 'chrome'\`; never download a browser): one test file per scenario in ${ACCEPT_DIR}/<id>.spec.ts whose test title starts with the scenario id; run them with PLAYWRIGHT_JUNIT_OUTPUT_NAME=${ACCEPT_REPORTS}/acceptance-web.xml npx playwright test ${ACCEPT_DIR} --reporter=junit.`
   const drivers = [
-    playwright
-      ? `Web first, with Playwright: one test file per scenario in ${ACCEPT_DIR}/<id>.spec.ts whose test title starts with the scenario id; run them with PLAYWRIGHT_JUNIT_OUTPUT_NAME=${ACCEPT_REPORTS}/acceptance-web.xml npx playwright test ${ACCEPT_DIR} --reporter=junit.`
-      : null,
+    webLine,
     maestro
       ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Test a development build, not Expo Go, where one can be built.`
       : null,
