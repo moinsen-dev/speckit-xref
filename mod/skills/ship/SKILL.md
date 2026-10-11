@@ -50,10 +50,11 @@ Write the exact commands, in order, with the tools that are here; the person app
   - Do not put an `ascAppId` placeholder into `eas.json`: leave it out until EAS created the app and printed the id.
   - Install `expo-updates` before the first `eas build` when the app uses updates, or the CLI stops on a question.
   - `npm install` conflicts with peer dependencies of config plugins: an `.npmrc` with `legacy-peer-deps=true` (a readiness task, not a change now).
+  - EAS builds what git has: with uncommitted changes, committing them is a box of the person's part before the release (the release step does not commit).
 
 **Other stacks**: what the project already set up (a fastlane lane, `fly deploy`, a container registry, a deploy script in `package.json`). Nothing set up: the person's part.
 
-**Your part** is split. **Before the release**: accounts (Apple Developer, Google Play Console, the host), one-time logins (`eas login`, `wrangler login`), keys, the first interactive build, a store listing. **After the release**: the store review, testers, the privacy answers, announcing it. Each is a `- [ ]` item; the person ticks what they did, and the autopilot waits on the open ones before the release.
+**Your part** is split. **Before the release** is only what the release commands need to run: accounts (Apple Developer, Google Play Console, the host), one-time logins (`eas login`, `wrangler login`), keys, the first interactive build, a store listing. **After the release** is everything that needs the release first (a URL it creates, a build it uploads) and what follows it: the store review, testers, the privacy answers, announcing it. Each is a `- [ ]` item; the person ticks what they did, and the autopilot waits on the open ones before the release.
 
 ## 5. `.specify/memory/release.md`
 

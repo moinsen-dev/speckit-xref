@@ -1507,6 +1507,15 @@ async function startShip($: $, text = 'Ship it'): Promise<string> {
   return `Ship: the release check runs first (${RELEASE}); nothing goes out without your yes.`
 }
 
+/** Not now: the release under way is put aside; the feature is done, and Ship starts a fresh check later. */
+async function dropShip($: $): Promise<string> {
+  await update($, ledgerA, resetShip)
+  await persist($)
+  await update($, autopilotA, a => ({ ...a, next: a.next?.kind === 'ship' ? null : a.next, paused: a.on ? a.paused : null }))
+  if ((await read($, autopilotA)).on) $.clock.after(0, () => void advance($).catch(() => undefined))
+  return 'The release is put aside; Ship checks again when you want it.'
+}
+
 /** The pane's New feature, Change and Bug: the autopilot waits for the person's words on it. */
 async function chooseNext($: $, kind: NextWork['kind']): Promise<void> {
   if (kind === 'ship') {
@@ -1541,7 +1550,11 @@ async function nextByCommand($: $, words: string[]): Promise<string> {
   if (!snap) return 'No Spec Kit project here.'
   const ledger = await read($, ledgerA)
   const ap = await read($, autopilotA)
-  if (nextStep(snap, ledger, ap.idea, flowOf(ap)).phase !== 'done') return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
+  const at = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  // At a release that waits, other work puts the release aside first.
+  const atRelease = (at.phase === 'ship' && !!at.needsUser) || at.approve?.key === 'release'
+  if (at.phase !== 'done' && !atRelease) return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
+  if (atRelease) await dropShip($)
   if (kind) await update($, autopilotA, a => ({ ...a, nextKind: kind }))
   const next = await takeNext($, text)
   if (!next) return 'That reads as a question, not new work: /xref next feature|change|bug <words> names the kind.'
@@ -2750,6 +2763,7 @@ export const register: Register = (on, options) => {
             <Button key="approve" label={approveLabel(step.approve.key)} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
             {step.approve.key === 'design' ? <Button key="mocks" label="Open the mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} /> : null}
             {step.approve.key === 'release' ? <Button key="ship-again" label="Check again" onPress={() => void startShip($).then(text => $.ui.toast(text))} /> : null}
+            {step.approve.key === 'release' ? <Button key="ship-later" label="Not now" onPress={() => void dropShip($).then(text => $.ui.toast(text))} /> : null}
           </Box>
           {step.approve.key === 'release' && snap.release ? releaseDetails(snap.release, row) : null}
           {step.approve.key === 'design'
@@ -2805,6 +2819,7 @@ export const register: Register = (on, options) => {
           {releaseBlockers(snap, ledger, ap.lastTest, gatesOf(review).spec).slice(0, 6).map(b => row('', `· ${b}`))}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
             <Button key="ship-check" label="Check again" variant="primary" onPress={() => void startShip($).then(text => $.ui.toast(text))} />
+            <Button key="ship-drop" label="Not now" onPress={() => void dropShip($).then(text => $.ui.toast(text))} />
           </Box>
         </Box>
       ) : null

@@ -341,3 +341,46 @@ test('a release\'s yes holds for its step only: stopped mid-release and started 
   await xref($, 'auto on')
   expect((await $.tool.check(deploy as never)).decision).toBe('deny')
 })
+
+test('a release under way holds across sessions: the gate comes back without a new check; released or put aside, the feature is done', () => {
+  const release = parseRelease(RELEASE_MD)
+  const snap = doneSnap({ release })
+  const key = verifyKey(snap, tasksFingerprint(snap.tasks))
+  const checked: Ledger = { ...emptyLedger(), checkpoints: { converge: tasksFingerprint(snap.tasks), verify: key, ship: key } }
+  // A new session: no words, no button, the ledger alone.
+  expect(nextStep(snap, checked, null, { review: 'none' }).approve?.key).toBe('release')
+  expect(nextStep(snap, { ...checked, checkpoints: { ...checked.checkpoints, released: release.fingerprint } }, null, { review: 'none' }).phase).toBe('done')
+  // A check for another tree is no release under way.
+  expect(nextStep(snap, { ...checked, checkpoints: { ...checked.checkpoints, ship: 'older' } }, null, { review: 'none' }).phase).toBe('done')
+  // Other work the person names wins over the release.
+  expect(nextStep(snap, checked, null, { review: 'none', next: { kind: 'bug', text: 'The link is blank' } }).phase).toBe('bug')
+})
+
+test('at the release gate: Not now puts it aside; /xref next names other work and puts it aside too', async ($, on) => {
+  const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, classify: 'a new feature, separate from the finished one' })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  await xref($, 'ship')
+  await seen.clock.advance(0)
+  seen.write(RELEASE, RELEASE_MD)
+  await runTurn($, 'Written.')
+  await seen.clock.advance(0)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(toText(await pane.drawn())).toContain('[Ship it] [Check again] [Not now]')
+  await pane.press({ key: 'ship-later' })
+  expect(seen.toasts).toContain('The release is put aside; Ship checks again when you want it.')
+  expect(toText(await pane.drawn())).toContain('[Ship]')
+  // Again at the gate, then other work by command.
+  await xref($, 'ship')
+  await seen.clock.advance(0)
+  await runTurn($, 'Written.')
+  await seen.clock.advance(0)
+  expect((await xref($, 'next feature Passkeys')).text).toBe('Next: a new feature: "Passkeys". The autopilot takes it from here.')
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen).at(-1)).toContain('Passkeys')
+})

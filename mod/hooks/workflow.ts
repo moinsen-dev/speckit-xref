@@ -414,7 +414,9 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     }
     const next = flow.next
     // Ship: a release check first (nothing goes out), its gaps built as tasks, then the person's yes, then the release.
-    if (next?.kind === 'ship') {
+    // A release under way stays under way in a later session: a check for this tree that has not gone out yet.
+    const underWay = ledger.checkpoints.ship === verified && !(snap.release && ledger.checkpoints.released === snap.release.fingerprint)
+    if (next ? next.kind === 'ship' : underWay) {
       if (ledger.checkpoints.ship !== verified) {
         return step('ship', null, `${snap.featureDir} is done: check that the app is ready to release; nothing goes out in this step.`, null, { approve: { key: 'ship', value: verified }, prompt: shipPrompt(snap) })
       }
