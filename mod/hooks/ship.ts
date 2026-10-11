@@ -176,8 +176,11 @@ const RELEASING: RegExp[] = [
   /\bxcrun\s+altool\b.*--upload/,
 ]
 
-/** Whether a shell command releases the app: deploys, builds or submits for a store, publishes. */
-export const releasesApp = (command: string) => RELEASING.some(re => re.test(command))
+/** Whether a shell command releases the app: deploys, builds or submits for a store, publishes. Asking a tool for its help does not. */
+export const releasesApp = (command: string) =>
+  command
+    .split(/\n|;|&&|\|\|?/)
+    .some(part => !/\s(?:--help|-h)(?:\s|$)/.test(part) && RELEASING.some(re => re.test(part)))
 
 /** An MCP tool that deploys, publishes or submits (`deploy_worker`, `submit_build`); reading tools pass. */
 export function releasesByTool(tool: string): boolean {

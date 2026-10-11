@@ -109,6 +109,10 @@ test('the rail: deploys, store builds, submits and publishes wait for the person
   for (const command of ['ls wrangler* vercel.json netlify.toml firebase.json fastlane 2>&1 | head', 'which fastlane vercel', 'echo vercel']) {
     expect([command, releasesApp(command)]).toEqual([command, false])
   }
+  // Asking for help is no release; a release after it still is.
+  expect(releasesApp('wrangler pages deploy --help')).toBe(false)
+  expect(releasesApp('eas build -h')).toBe(false)
+  expect(releasesApp('wrangler pages deploy --help && wrangler pages deploy dist')).toBe(true)
   for (const command of ['VERCEL_ORG_ID=x vercel deploy', '(cd web; vercel --prod)', 'npx vercel@39 --prod', 'cd ios && fastlane beta']) {
     expect([command, releasesApp(command)]).toEqual([command, true])
   }
