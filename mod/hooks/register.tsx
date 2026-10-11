@@ -7,7 +7,7 @@ import type { DashboardDoc } from './dashboard'
 import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan } from './accept'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, verifyKey } from './brief'
-import { DEPLOY_TOOLS, RELEASE, deployToolsOf, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool } from './ship'
+import { DEPLOY_TOOLS, RELEASE, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool } from './ship'
 import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
 import { LADDER, isActive, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
@@ -1093,7 +1093,7 @@ async function approve($: $): Promise<string> {
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
   if (ap.on && ap.paused) await resumeAutopilot($)
-  if (key === 'release') return `Approved the release: ${releaseLine(snap.release)}. Its commands run now.`
+  if (key === 'release') return `Approved the release: ${releaseLine(snap.release)}. ${ap.on ? 'Its commands run now.' : 'Its commands run when the autopilot goes on (/xref auto on).'}`
   return key === 'checklists' ? 'Going on despite the open checklist items.' : `Approved the ${key} of ${snap.featureDir}.`
 }
 
@@ -1345,8 +1345,8 @@ async function advance($: $): Promise<void> {
   if (ap.lastPhase === 'release') await update($, permitsA, ps => ps.filter(p => !(p.label === 'releasing' && p.many)))
   // After a release: the run ends with what went out.
   if (step.phase === 'done' && ap.lastPhase === 'release') {
-    const last = snap.release?.releases.at(-1)
-    return stopAutopilot($, last ? `Release ${last.ok ? 'out' : 'failed'}: ${last.version} → ${last.target}${last.where ? ` · ${last.where}` : ''} (${RELEASE}).` : `The release left no row in ${RELEASE}: read its answer, then Ship again.`)
+    const last = lastRelease(snap.release)
+    return stopAutopilot($, last ? `Release ${last.status}: ${last.version} → ${last.line} (${RELEASE}).` : `The release left no row in ${RELEASE}: read its answer, then Ship again.`)
   }
   // The release check starts from proof: the drift is not red and the tests pass once more.
   if (step.phase === 'ship' && !step.needsUser) {
@@ -1771,9 +1771,9 @@ function bandPhase(snap: Snapshot): string {
 
 /** The ship row: the release check at a glance, and the last release. */
 function shipRow<T>(release: NonNullable<Snapshot['release']>, row: (label: string, text: string, color?: Color) => T): T {
-  const last = release.releases.at(-1)
-  const tail = last ? ` · last: ${last.ok ? 'out' : 'failed'} ${last.date} ${last.target}` : ''
-  return row('Ship', `${releaseLine(release)}${tail}`, last && !last.ok ? 'error' : release.checks.some(c => c.result === 'fail') ? 'warning' : 'subtle')
+  const last = lastRelease(release)
+  const tail = last ? ` · last: ${last.status} ${last.date}` : ''
+  return row('Ship', `${releaseLine(release)}${tail}`, last && last.status !== 'out' ? 'error' : release.checks.some(c => c.result === 'fail') ? 'warning' : 'subtle')
 }
 
 /** What the person says yes to: the commands that run, and what stays theirs after the release. */

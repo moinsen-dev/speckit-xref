@@ -96,11 +96,21 @@ export function releaseLine(release: ReleaseNote | null | undefined): string {
   const fail = release.checks.filter(c => c.result === 'fail').length
   const yours = release.yourPart.filter(y => !y.done).length
   return [
-    `${release.version ? `v${release.version.replace(/^v/i, '')}` : 'no version'} → ${release.targets.join(', ') || 'no target'}`,
+    `${release.version ? `v${release.version.replace(/^v/i, '').split(/\s/)[0]}` : 'no version'} → ${release.targets.map(t => t.split(/\s/)[0]).join(', ') || 'no target'}`,
     `${pass} pass`,
     ...(fail ? [`${fail} fail${fail === 1 ? 's' : ''}`] : []),
     ...(yours ? [`${yours} your part`] : []),
   ].join(' · ')
+}
+
+/** The last release: the rows it appended (one per target), whether all went out, and one line on each. */
+export function lastRelease(release: ReleaseNote | null | undefined): { status: 'out' | 'partly out' | 'failed'; date: string; version: string; line: string } | null {
+  const last = release?.releases.at(-1)
+  if (!last) return null
+  const rows = release!.releases.filter(r => r.date === last.date && r.version === last.version)
+  const status = rows.every(r => r.ok) ? 'out' : rows.some(r => r.ok) ? 'partly out' : 'failed'
+  const line = rows.map(r => `${r.target} ${r.ok ? 'out' : 'failed'}${r.where ? `: ${r.where.length > 90 ? r.where.slice(0, 89) + '…' : r.where}` : ''}`).join('; ')
+  return { status, date: last.date, version: last.version, line }
 }
 
 /**

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { NEXT_LABELS, NO_WORK, nextKindOf, treeOf, verifyKey } from '../hooks/brief'
 import { railFor } from '../hooks/register'
-import { RELEASE, deployToolsOf, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool, shipPrompt } from '../hooks/ship'
+import { RELEASE, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool, shipPrompt } from '../hooks/ship'
 import { emptyLedger } from '../hooks/xref'
 import { nextStep, phaseStrip, tasksFingerprint } from '../hooks/workflow'
 import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
@@ -61,7 +61,12 @@ test('release.md: the checks, the commands, the person\'s part before and after;
     { text: 'Send the link to the first five testers', done: false, when: 'after' },
   ])
   expect(r.releases).toEqual([])
-  expect(releaseLine(r)).toBe('v1.0.0 → web (Cloudflare Pages) · 2 pass · 1 your part')
+  expect(releaseLine(r)).toBe('v1.0.0 → web · 2 pass · 1 your part')
+  expect(releaseLine(parseRelease('**Version**: 1.0.0 (iOS build set by EAS)\n**Targets**: web (Cloudflare Pages), ios (EAS → TestFlight)\n'))).toBe('v1.0.0 → web, ios · 0 pass')
+  // Found live: the last release is all its rows, not the last one.
+  const failed = parseRelease(RELEASE_MD + '| 2026-10-11 | 1.0.0 | web | failed | wrangler: not logged in |\n| 2026-10-11 | 1.0.0 | ios | failed | not run |\n')
+  expect(lastRelease(failed)).toEqual({ status: 'failed', date: '2026-10-11', version: '1.0.0', line: 'web failed: wrangler: not logged in; ios failed: not run' })
+  expect(lastRelease(parseRelease(RELEASE_MD + ROW))?.status).toBe('out')
   // The release appends to its log: the approval still holds. A changed command needs a new yes.
   const shipped = parseRelease(RELEASE_MD + ROW)
   expect(shipped.fingerprint).toBe(r.fingerprint)
@@ -171,7 +176,7 @@ test('ship from a done feature: the check, its blockers, the person\'s yes, the 
   const ready = doneSnap({ release })
   const gate = nextStep(ready, checked, null, flow)
   expect([gate.phase, gate.approve]).toEqual(['review', { key: 'release', value: release.fingerprint }])
-  expect(gate.why).toBe('The release check is written: v1.0.0 → web (Cloudflare Pages) · 2 pass · 1 your part.')
+  expect(gate.why).toBe('The release check is written: v1.0.0 → web · 2 pass · 1 your part.')
   expect(phaseStrip(ready, gate)).toContain('▶ship')
   // Approved: the release step, once.
   const approved: Ledger = { ...checked, approvals: { release: release.fingerprint } }
@@ -233,14 +238,14 @@ test('Ship live: the check, the pane\'s Ship it, the release through the rail, t
   await seen.clock.advance(0)
   expect(seen.toasts.at(-1)).toContain(`Autopilot waits for you: Read ${RELEASE}: its release commands go out only with your yes.`)
   const drawn = toText(await pane.drawn())
-  expect(drawn).toContain('Shipv1.0.0 → web (Cloudflare Pages) · 2 pass · 1 your part')
+  expect(drawn).toContain('Shipv1.0.0 → web · 2 pass · 1 your part')
   expect(drawn).toContain('[Ship it] [Check again]')
   expect(drawn).toContain(`$ ${DEPLOY}`)
   expect(drawn).toContain('after: Send the link to the first five testers')
   await pane.press({ key: 'approve' })
   await seen.clock.advance(0)
   const go = autopilotPrompts(seen).at(-1)!
-  expect(go).toContain('release: You approved the release: v1.0.0 → web (Cloudflare Pages)')
+  expect(go).toContain('release: You approved the release: v1.0.0 → web · 2 pass')
   expect(go).toContain(`1. \`${DEPLOY}\``)
   // The yes holds for the release step: both commands of a two-step release go through.
   expect((await $.tool.check(deploy as never)).decision).not.toBe('deny')
@@ -248,12 +253,12 @@ test('Ship live: the check, the pane\'s Ship it, the release through the rail, t
   seen.write(RELEASE, RELEASE_MD + ROW)
   await runTurn($, 'Released.')
   await seen.clock.advance(0)
-  expect(seen.toasts.at(-1)).toBe(`Release out: 1.0.0 → web · https://magic-link.pages.dev (${RELEASE}).`)
+  expect(seen.toasts.at(-1)).toBe(`Release out: 1.0.0 → web out: https://magic-link.pages.dev (${RELEASE}).`)
   // After the release the yes is spent: a new run holds the deploy again.
   await xref($, 'auto on')
   await seen.clock.advance(0)
   expect((await $.tool.check(deploy as never)).decision).toBe('deny')
-  expect(toText(await pane.drawn())).toContain('last: out 2026-10-11 web')
+  expect(toText(await pane.drawn())).toContain('last: out 2026-10-11')
   await xref($, 'web')
   const html = seen.files['.specify/xref/local/dashboard.html']!
   expect(html).toContain('<a href="#release">Release</a>')
