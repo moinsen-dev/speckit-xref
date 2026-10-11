@@ -15,7 +15,7 @@ The acceptance scenarios of `specs/<feature>/spec.md` (`US1-AS1` …), in order;
 
 - Read `.specify/memory/runbook.md` first: what earlier steps learned about this environment. Add a line for each new thing you learn.
 - **Web first** when the platforms include the web: it is the fastest. Expo: `npx expo start --web` (or `npx expo export -p web` and a static server); other stacks: the dev server the quickstart names.
-- **Mobile** only when Maestro is installed and a simulator or emulator can come up. Build and install a development build (`npx expo run:ios`, `npx expo run:android`) rather than Expo Go: Expo Go adds its own dialogs and overlays.
+- **Mobile** only when Maestro is installed and a simulator or emulator can come up. Play on what the device already has: a development build of the app if one is installed (fewer dialogs and overlays), else Expo Go (`host.exp.exponent` on Android, `host.exp.Exponent` on iOS), opened on the app's `exp://` link with `openLink`. Building a development build (`npx expo run:android`, `npx expo run:ios`) downloads native dependencies: never in this step. When neither is on the device, append a task for the development build under `## Phase N: Acceptance setup`, and the mobile scenarios are the person's part until it is built.
 - Start servers, simulators and emulators in the background, and stop the ones you started at the end.
 - **Time box:** if the app is not up after about 20 minutes, stop setting up. The scenarios you could not play go under Your part with their steps.
 

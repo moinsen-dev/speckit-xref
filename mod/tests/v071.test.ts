@@ -7,6 +7,7 @@ import { nextStep, tasksFingerprint } from '../hooks/workflow'
 import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
 import { rulesFrom } from '../hooks/rules'
 import { RELEASE } from '../hooks/ship'
+import { acceptPrompt } from '../hooks/accept'
 import type { Ledger, Snapshot } from '../types'
 import { DEMO } from './fixtures/demo'
 import { FEATURE, PANE, ledgerOf, project, runTurn, startSession, toText, xref } from './harness'
@@ -116,4 +117,22 @@ test('found live: while the check still runs, the pane offers no Ship it; after 
   await pane.press({ key: 'ship-later' })
   await seen.clock.advance(0)
   expect(seen.toasts.at(-1)).toContain('Autopilot waits for you: The feature is done.')
+})
+
+test('found live: mobile acceptance plays on Expo Go when no development build is installed, and never builds one in the step', () => {
+  const prompt = acceptPrompt(doneSnap({ platforms: { web: false, ios: false, android: true }, tools: { specify: true, uvx: true, maestro: true } } as Partial<Snapshot>))
+  expect(prompt).toContain('a development build of the app if one is installed, else Expo Go')
+  expect(prompt).toContain("downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup'")
+})
+
+test('found live: a failing run reaches the repair step without the runner\'s colour codes', async ($, on) => {
+  const seen = project(on, { ...DEMO }, { tests: { exits: [1], output: '\u001b[31mFAIL\u001b[39m tests/flows/moment.test.tsx\n  \u001b[1m● FR-019 shows new ideas\u001b[22m' } })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  await runTurn($)
+  await seen.clock.advance(0)
+  const repair = seen.submitted.map(e => e.text as string).filter(t => t.includes('] repair:')).at(-1) ?? ''
+  expect(repair).toContain('FAIL tests/flows/moment.test.tsx')
+  expect(repair).not.toContain('\u001b[')
 })

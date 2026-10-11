@@ -119,7 +119,7 @@ export function acceptPrompt(snap: Snapshot): string {
   const drivers = [
     webLine,
     maestro
-      ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Test a development build, not Expo Go, where one can be built.`
+      ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Play on what the emulator or simulator already has: a development build of the app if one is installed, else Expo Go (opened on the app's exp:// link). Building a development build (npx expo run:android, run:ios) downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup' when Expo Go is not there either.`
       : null,
   ].filter((d): d is string => !!d)
   return [

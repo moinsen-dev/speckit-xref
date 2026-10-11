@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.1 — 2026-10-11
+
+Friction from the first real runs of 0.7.0, and the parts so far proven by unit tests only, played live: the pane in a real terminal, and acceptance on an Android emulator. Mod 0.7.1, extension 0.7.1; preset 0.2.0 unchanged.
+
+### Ship
+
+- **Ship holds until the release.** The person's Ship is kept in the local ledger (`checkpoints.shipWanted`): through the readiness tasks and their verify and acceptance rounds, and across sessions, until the release step is handed over. Not now, or other work (a feature, a change, a bug, the roadmap's next), puts it aside.
+- **No approve while a step runs.** While the autopilot's step still runs, the pane shows "Claude is still on this step" instead of Ship it, Check again and Not now (found live: an earlier release.md made the gate appear while the check was rewriting it). The same holds for every review card.
+- **Not now asks again** what comes next; before, the band kept the release's question.
+
+### Tests
+
+- **Vitest's reports reach the anchors.** Vitest writes no `file` attribute but the test file's path as `classname`; a classname that is a source file's path is now the test's file (contract §9, both implementations, a new shared case), so a test's `@spec` anchors count, not only ids in its name. Playwright writes its reports the same way.
+
+### Live
+
+- The pane in a real terminal, driven by keyboard and mouse: Ship, the release dialog that names its commands, the band, Not now; the spec review's Keep and Change (Change hands the person's words to Claude, and the spec changes).
+
 ## 0.7.0 — 2026-10-11
 
 The done app can go out: a release check, a release plan you approve, and a rail that holds every deploy until then. Mod 0.7.0, extension 0.7.0; preset 0.2.0 unchanged.

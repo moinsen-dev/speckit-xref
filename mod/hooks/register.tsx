@@ -1240,7 +1240,8 @@ async function runTests($: $): Promise<{ ran: boolean; ok: boolean; output: stri
     // CI=true: test runners run once and never wait for a key.
     const ran = await $.process.run(['sh', '-c', snap.testCommand], { cwd: root, timeoutMs: 600_000, env: { CI: 'true' } })
     exitCode = ran.exitCode
-    output = `${ran.stdout}\n${ran.stderr}`.trim().slice(-4000)
+    // Without the runner's colours: a repair step reads the failure, not its escape codes (found live in 0.7.1).
+    output = `${ran.stdout}\n${ran.stderr}`.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim().slice(-4000)
   } catch {
     // No shell here, or the suite outlived ten minutes: the run goes on without a verdict.
     return { ran: false, ok: true, output: '' }
