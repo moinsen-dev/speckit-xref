@@ -281,6 +281,8 @@ export type Autopilot = {
   verifies?: number
   /** The acceptance reports as they were when the acceptance step was handed over: only newer ones count. */
   acceptBaseline?: Record<string, number> | null
+  /** The rows of release.md's log when the release step was handed over: only rows it adds report on it. */
+  releaseRows?: number | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

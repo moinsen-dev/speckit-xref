@@ -558,6 +558,7 @@ export const idleAutopilot = (): Autopilot => ({
   nextKind: null,
   verifies: 0,
   acceptBaseline: null,
+  releaseRows: null,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */

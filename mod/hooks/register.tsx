@@ -1346,8 +1346,10 @@ async function advance($: $): Promise<void> {
   if (ap.lastPhase === 'release') await update($, permitsA, ps => ps.filter(p => !(p.label === 'releasing' && p.many)))
   // After a release: the run ends with what went out.
   if (step.phase === 'done' && ap.lastPhase === 'release') {
-    const last = lastRelease(snap.release)
-    return stopAutopilot($, last ? `Release ${last.status}: ${last.version} → ${last.line} (${RELEASE}).` : `The release left no row in ${RELEASE}: read its answer, then Ship again.`)
+    // Only rows the release step added report on it.
+    const fresh = (snap.release?.releases.length ?? 0) > (ap.releaseRows ?? 0)
+    const last = fresh ? lastRelease(snap.release) : null
+    return stopAutopilot($, last ? `Release ${last.status}: ${last.version} → ${last.line} (${RELEASE}).` : `The release step left no new row in ${RELEASE}: read its answer, then Ship again.`)
   }
   // The release check starts from proof: the drift is not red and the tests pass once more.
   if (step.phase === 'ship' && !step.needsUser) {
@@ -1438,6 +1440,7 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     const until = (await $.clock.now()) + 60 * 60_000
     const commands = snap.release?.commands ?? []
     await update($, permitsA, ps => [...ps.filter(p => !(p.label === 'releasing' && p.many)), { label: 'releasing', until, many: true, commands }])
+    await update($, autopilotA, a => ({ ...a, releaseRows: snap.release?.releases.length ?? 0 }))
   }
   // Only a report the acceptance step writes counts: what is there now is the baseline.
   if (step.phase === 'accept') {

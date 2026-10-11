@@ -44,7 +44,8 @@ export function parseRelease(markdown: string): ReleaseNote {
   const ready = field('Ready')
   const note: ReleaseNote = {
     version: field('Version'),
-    targets: (field('Targets') ?? '').split(/,\s*/).map(plain).filter(Boolean),
+    // Commas inside a target's parentheses (`web (Cloudflare Pages, recommended)`) do not split it.
+    targets: (field('Targets') ?? '').split(/,\s*(?![^()]*\))/).map(plain).filter(Boolean),
     ready: ready === null ? null : /^yes\b/i.test(ready),
     readyNote: ready?.replace(/^(yes|no)\s*[—–:-]?\s*/i, '') || null,
     checks: [],
@@ -165,7 +166,7 @@ export function releasePrompt(release: ReleaseNote): string {
     `The person approved this release (${RELEASE}). Run its release commands now, in order, once each:`,
     ...release.commands.map((c, i) => `${i + 1}. \`${c}\``),
     'A command that asks for a login, a password, a two-factor code or any interactive answer: stop there and do not work around it; add it to Your part before the release. Stop at the first command that fails.',
-    `Then append a row to '## Releases' in ${RELEASE}: | today's date (YYYY-MM-DD) | version | target | shipped or failed | the URL, the build id or the error |, one per target. Do not change the app, do not commit, do not push.`,
+    `Then append a row to '## Releases' in ${RELEASE} for each target of this attempt, also when an earlier attempt left the same rows: | today's date (YYYY-MM-DD) | version | target | shipped or failed | the URL, the build id or the error |. Do not change the app, do not commit, do not push.`,
   ].join('\n')
 }
 
