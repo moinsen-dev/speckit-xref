@@ -56,6 +56,8 @@ Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question 
 
 **Verify sorts what it finds.** Only HIGH and MEDIUM findings (a requirement, a scenario or a point of your words not met, or met only in part) become tasks; LOW ones (polish, wording) are listed, not built. After two verify rounds in a run that each found new work, closing the feature is your call: **Call it done**, or Resume for one more round.
 
+**Acceptance before done.** A feature with a user interface is played through after verify, as a person would use it: one test per acceptance scenario under `e2e/acceptance/`, Playwright for the web (through npx), Maestro for iOS and Android where it is installed, a development build rather than Expo Go. Only the driver's fresh JUnit report accepts a scenario (`★ accepted` in the pane and the dashboard, with its screenshot); a scenario whose text changes has to be accepted again. A scenario that fails because of the app becomes a fix task, built before the next acceptance run (three rounds, then it is your call). What no driver here can check (a real device, real users, a paid service) is listed in `acceptance.md` as **your part**. Option `acceptance` (`auto`) switches it off.
+
 **After done comes the next thing.** A feature that passed converge, verify and the tests stays done while its spec, its tasks and the working tree stay as they are: the next start does not verify again, it asks what comes next. Press **New feature**, **Change** or **Bug** in the pane and say it in your own words, or type it, or `/xref next feature|change|bug <words>`:
 - a new feature goes to `/speckit-specify` and becomes the next feature;
 - a change reaches the spec first (new requirements, appended tasks), then gets built;
@@ -157,7 +159,7 @@ Pressing one of these counts as your go. Without a press or your request nothing
 
 The terminal seats a pane nobody asked for from 144 columns (110 once you have opened it); narrower, it waits and the Pane button opens it.
 
-Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec+design` | `spec` | `spec+plan` | `spec+plan+design` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`), `design` (`on` | `off`), `allowPush` (`off` | `on`).
+Options (`/config` or `pluginConfigs` in settings): `mode` (`advisory` | `strict`), `driftCheck` (`fork` | `off`), `mapModel` (default `haiku`), `autopilot` (`off` | `on`), `autopilotMaxSteps` (default 25), `review` (`spec+design` | `spec` | `spec+plan` | `spec+plan+design` | `none`), `testCommand`, `junitPath`, `commitPerTask` (`off` | `on`), `parallel` (`off` | `on`), `pane` (`auto` | `always` | `off`), `validate` (`on` | `off`), `shape` (`on` | `off`), `design` (`on` | `off`), `allowPush` (`off` | `on`), `acceptance` (`auto` | `off`).
 
 The active feature is found as Spec Kit finds it, then by the git branch (`001-…`), else the spec written last.
 

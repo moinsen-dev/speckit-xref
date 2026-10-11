@@ -3,6 +3,8 @@
 
 import type { Autopilot, Ledger, RunEntry, Screen, Snapshot, Task } from '../types'
 import type { designTokens } from './design'
+import { acceptanceCounts, scenarioState, scenariosOf } from './accept'
+import type { ScenarioState } from './accept'
 import { LADDER, owners } from './proof'
 import type { Rung } from './proof'
 import { isTestFile, localId } from './rules'
@@ -380,7 +382,9 @@ function matrix(input: DashboardInput): string {
     const body = `${active ? text(r.text) : `<s>${text(r.text)}</s>`}${flags ? ` ${flags}` : ''}`
     return row(r.id, body, rung, active ? '' : 'gone')
   })
-  const scenarios = spec.stories.flatMap(s => s.scenarios.map(x => row(x.id, `<span class="muted">${esc(s.id)} ${esc(s.title)}:</span> ${text(x.text)}`, '<span class="muted">—</span>', 'scenario')))
+  const scenarios = spec.stories.flatMap(s =>
+    s.scenarios.map(x => row(x.id, `<span class="muted">${esc(s.id)} ${esc(s.title)}:</span> ${text(x.text)}`, stateBadge(scenarioState(x.id, x.text, ledger)), 'scenario')),
+  )
   const all = [...rows, ...scenarios]
   const legend = `<p class="legend">${LADDER.map(r => `<span class="rung r-${r}">${RUNG_GLYPH[r]} ${r}</span>`).join(' ')}</p>`
   return section(
@@ -408,6 +412,40 @@ function tasks(input: DashboardInput): string {
     return `<h3 id="phase-${i}">${phaseNumber(p.title, i)} · ${esc(phaseLabel(p.title))} <span class="muted">${p.done}/${p.total}</span></h3>\n<div class="scroll"><table class="tasks"><tbody>${own.map(t => taskRow(t, input)).join('')}</tbody></table></div>`
   })
   return section('tasks', 'Tasks', body.join('\n'))
+}
+
+const STATE_BADGE: Record<ScenarioState, string> = {
+  accepted: '<span class="rung r-accepted">★ accepted</span>',
+  failing: '<span class="rung r-failing">✖ failing</span>',
+  stale: '<span class="rung r-stale">↻ re-accept</span>',
+  passing: '<span class="rung r-passing">● passing</span>',
+  untested: '<span class="muted">—</span>',
+}
+const stateBadge = (state: ScenarioState) => STATE_BADGE[state]
+
+/** Acceptance: each scenario as a person would play it, the driver's verdict and its evidence, and what is the person's. */
+function acceptance(input: DashboardInput): string {
+  const { snap, ledger, root } = input
+  const scenarios = scenariosOf(snap.spec)
+  if (!snap.ui || !scenarios.length) return ''
+  const counts = acceptanceCounts(snap, ledger)
+  const doc = snap.acceptanceDoc
+  const rows = scenarios.map(s => {
+    const state = scenarioState(s.id, s.text, ledger)
+    const a = ledger.acceptance?.[s.id]
+    const ev = doc?.evidence[s.id]
+    const shot = ev?.shot ? `<a href="${esc(fileUrl(root, ev.shot))}"><img class="shot" src="${esc(fileUrl(root, ev.shot))}" alt="${esc(s.id)}" loading="lazy"></a>` : ''
+    const flow = ev?.flow ? fileLink(root, ev.flow) : ''
+    const report = a ? `<span class="muted">${esc(a.file)} · ${esc(a.at.slice(0, 10))}</span>` : ''
+    return `<tr><td class="id">${esc(s.id)}</td><td>${text(s.text)}</td><td>${stateBadge(state)}</td><td>${[flow, report].filter(Boolean).join('<br>') || '<span class="muted">—</span>'}</td><td>${shot}</td></tr>`
+  })
+  const yours = doc?.yourPart.length ? `<h3>Your part</h3>\n${ul(doc.yourPart.map(t => text(t)))}` : ''
+  const summary = `<p class="state"><span class="pill${counts.accepted === counts.total ? ' drift-green' : ''}">★ ${counts.accepted}/${counts.total} accepted</span>${counts.failing ? ` <span class="pill drift-red">✖ ${counts.failing} failing</span>` : ''}${counts.stale ? ` <span class="pill wait">↻ ${counts.stale} to accept again</span>` : ''}${counts.yourPart ? ` <span class="pill quiet">${counts.yourPart} your part</span>` : ''}</p>`
+  return section(
+    'acceptance',
+    'Acceptance',
+    `${summary}\n<p class="muted">Only a driver's fresh JUnit report accepts a scenario.</p>\n<div class="scroll"><table class="acceptance"><thead><tr><th>Scenario</th><th>As the spec says</th><th>State</th><th>Flow and report</th><th>Evidence</th></tr></thead><tbody>${rows.join('\n')}</tbody></table></div>\n${yours}`,
+  )
 }
 
 function drift(input: DashboardInput): string {
@@ -528,6 +566,7 @@ td.files,td.ids,td.id{overflow-wrap:anywhere}td.id{white-space:nowrap}.matrix td
 tr.now td{background:var(--hl)}tr.done td{color:var(--muted)}tr.gone td{color:var(--muted)}tr:target td{background:var(--warn-bg)}
 .bar{display:inline-block;width:7em;height:.55em;background:var(--line);border-radius:999px;overflow:hidden;vertical-align:middle}.bar>span{display:block;height:100%;background:var(--accent)}tr.done .bar>span{background:var(--ok)}
 .rung{display:inline-block;white-space:nowrap;border:1px solid currentColor;border-radius:999px;padding:0 .5em;font-size:.85em}
+.r-accepted{color:var(--ok);background:var(--ok-bg);font-weight:600}.r-failing{color:var(--bad);background:var(--bad-bg)}.r-stale{color:var(--warn)}img.shot{max-width:120px;max-height:240px;border:1px solid var(--line);border-radius:6px}
 .r-specified{color:var(--r-specified)}.r-planned{color:var(--r-planned)}.r-implemented{color:var(--r-implemented)}.r-tested{color:var(--r-tested)}.r-passing{color:var(--r-passing);background:var(--ok-bg)}.r-gone{color:var(--muted)}
 .tag{display:inline-block;font-size:.78em;border:1px solid var(--line);border-radius:4px;padding:0 .3em;color:var(--muted)}.tag.warn{color:var(--warn);border-color:currentColor}
 .legend{display:flex;flex-wrap:wrap;gap:.35rem}.findings{padding-left:1.2em}
@@ -543,6 +582,7 @@ const NAV = [
   ['goal', 'Goal'],
   ['workflow', 'Workflow'],
   ['design', 'Design'],
+  ['acceptance', 'Acceptance'],
   ['phases', 'Phases'],
   ['matrix', 'Traceability'],
   ['tasks', 'Tasks'],
@@ -568,11 +608,12 @@ export function renderDashboard(input: DashboardInput): string {
     '</head>',
     '<body>',
     header(input),
-    `<nav>${NAV.filter(([id]) => id !== 'design' || input.design).map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
+    `<nav>${NAV.filter(([id]) => (id !== 'design' || input.design) && (id !== 'acceptance' || (input.snap.ui && scenariosOf(input.snap.spec).length))).map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`,
     '<main>',
     goal(input),
     workflow(input),
     design(input),
+    acceptance(input),
     phases(input),
     matrix(input),
     tasks(input),

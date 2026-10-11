@@ -17,6 +17,7 @@ export const emptyLedger = (): Ledger => ({
   semanticHistory: [],
   fingerprints: {},
   verification: {},
+  acceptance: {},
   approvals: {},
   decisions: [],
   checkpoints: {},
@@ -25,7 +26,7 @@ export const emptyLedger = (): Ledger => ({
 })
 
 const COMMITTED_KEYS = new Set(['schema_version', 'feature', 'map', 'links', 'accepted', 'fingerprints', 'fingerprintVersion'])
-const LOCAL_KEYS = new Set(['schema_version', 'feature', 'touched', 'unplanned', 'intents', 'semantic', 'semanticHistory', 'verification', 'approvals', 'decisions', 'anchors', 'checkpoints', 'fingerprintVersion'])
+const LOCAL_KEYS = new Set(['schema_version', 'feature', 'touched', 'unplanned', 'intents', 'semantic', 'semanticHistory', 'verification', 'acceptance', 'approvals', 'decisions', 'anchors', 'checkpoints', 'fingerprintVersion'])
 const MAX_HISTORY = 10
 
 /** Where the local half lives: `.specify/xref/local/<feature-slug>.json`. */
@@ -134,6 +135,7 @@ export function ledgerFromParts(committedText: string | null, localText: string 
   ledger.semantic = (local.semantic as Semantic | null) ?? null
   ledger.semanticHistory = arr(local.semanticHistory)
   ledger.verification = obj(local.verification) as Ledger['verification']
+  ledger.acceptance = obj(local.acceptance) as Ledger['acceptance']
   ledger.approvals = obj(local.approvals) as Ledger['approvals']
   ledger.decisions = arr(local.decisions)
   ledger.checkpoints = obj(local.checkpoints) as Ledger['checkpoints']
@@ -187,6 +189,7 @@ export function ledgerToParts(ledger: Ledger, featureDir: string): { committed: 
     semantic: ledger.semantic,
     semanticHistory: ledger.semanticHistory.slice(-MAX_HISTORY),
     verification: ledger.verification,
+    acceptance: ledger.acceptance,
     approvals: ledger.approvals,
     decisions: ledger.decisions,
     anchors: ledger.anchors,

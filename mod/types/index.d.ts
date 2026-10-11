@@ -45,7 +45,7 @@ export type Snapshot = {
   /** The Spec Kit release the project was set up with (`.specify/init-options.json`). */
   speckitVersion: string | null
   /** What can run Spec Kit's CLI on this machine. */
-  tools: { specify: boolean; uvx: boolean }
+  tools: { specify: boolean; uvx: boolean; maestro?: boolean; npx?: boolean }
   /** The project folder at a glance: nothing but dotfiles and a README (empty), or code already there (existing). */
   folder: 'empty' | 'existing'
   spec: Spec | null
@@ -102,7 +102,13 @@ export type Snapshot = {
   prdApproved?: boolean
   /** The PRD sections the active feature implements, for the intent check. */
   prdExcerpt?: string | null
+  /** The platforms plan.md names, and what acceptance.md says: evidence per scenario and what only the person can check. */
+  platforms?: { web: boolean; ios: boolean; android: boolean }
+  acceptanceDoc?: AcceptanceNote | null
 }
+
+/** `<feature>/acceptance.md` as the mod reads it. */
+export type AcceptanceNote = { evidence: Record<string, { shot: string | null; flow: string | null }>; yourPart: string[] }
 
 /** A feature of the roadmap cut from a PRD, in build order. */
 export type RoadmapItem = { title: string; phase: string | null; scope: string[]; sections: string[]; gate: string | null; spec: string }
@@ -201,6 +207,8 @@ export type Ledger = {
   /** A requirement's text fingerprint when it was last mapped, linked or verified. */
   fingerprints: Record<string, string>
   verification: Record<string, Verification>
+  /** Acceptance per scenario (USn-ASm): a driver's fresh JUnit report played it through as a person would (0.6.0). */
+  acceptance: Record<string, { ok: boolean; fingerprint: string; at: string; file: string }>
   /** `spec`/`plan`: the fingerprint the person approved. */
   approvals: Record<string, string>
   decisions: Decision[]
@@ -246,8 +254,10 @@ export type Autopilot = {
   /** After a done feature: what the person said comes next, and the kind they chose before saying it. */
   next?: NextWork | null
   nextKind?: NextWork['kind'] | null
-  /** The verify steps handed over in this run; past two, closing the feature is the person's call. */
+  /** The verify steps handed over in this run; past two (three with acceptance), closing the feature is the person's call. */
   verifies?: number
+  /** The acceptance reports as they were when the acceptance step was handed over: only newer ones count. */
+  acceptBaseline?: Record<string, number> | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

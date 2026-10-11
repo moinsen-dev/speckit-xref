@@ -1,0 +1,129 @@
+// Acceptance (0.6.0): after verify, a feature people use is played through as a person would, scenario by scenario,
+// by a driver that leaves evidence (Playwright for the web, Maestro for mobile). Only a fresh JUnit report of that
+// driver accepts a scenario; acceptance.md lists what only a person can check. Pure: register.tsx reads the files.
+
+import type { AcceptanceNote, Ledger, Snapshot, Spec } from '../types'
+import type { JunitCase } from './proof'
+import { fingerprint } from './rules'
+
+export const ACCEPT_DIR = 'e2e/acceptance'
+export const ACCEPT_REPORTS = 'reports'
+/** The driver's reports the step writes: `reports/acceptance-web.xml`, `reports/acceptance-mobile.xml`. */
+export const ACCEPT_REPORT = /^acceptance[\w.-]*\.xml$/
+export const acceptanceDoc = (featureDir: string) => `${featureDir}/acceptance.md`
+
+/** Files the acceptance step writes about the app, not into it: they do not change what was verified. */
+export const ACCEPTANCE_ARTIFACT = /(^|\/)(e2e\/acceptance\/|reports\/acceptance[^/]*$|specs\/[^/]+\/acceptance\.md$|\.specify\/memory\/runbook\.md$)/
+
+const SCENARIO = /\bUS\d+-AS\d+\b/g
+const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)
+
+/** The platforms plan.md's Target Platform names: what the app is played on. */
+export function platformsFromPlan(planMd: string | null): { web: boolean; ios: boolean; android: boolean } {
+  const line = /^\*\*Target Platform\*\*:\s*(.+)$/im.exec(planMd ?? '')?.[1] ?? ''
+  const type = /^\*\*Project Type\*\*:\s*(.+)$/im.exec(planMd ?? '')?.[1] ?? ''
+  const text = `${line} ${type}`
+  return {
+    web: /\b(web|browsers?|spa|website)\b/i.test(text),
+    ios: /\b(iOS|iPhone|iPad)\b/i.test(text),
+    android: /\bAndroid\b/i.test(text),
+  }
+}
+
+/** Every acceptance scenario of the spec, in order. */
+export const scenariosOf = (spec: Spec | null) => (spec?.stories ?? []).flatMap(s => s.scenarios)
+
+/**
+ * The scenarios a driver's report accepts or fails: a testcase counts for every scenario id in its name or class.
+ * A scenario with any failed case fails; one with only skipped cases says nothing. Each result keeps the scenario's
+ * fingerprint, so a changed scenario has to be accepted again.
+ */
+export function acceptanceFrom(cases: JunitCase[], spec: Spec | null, at: string, file: string): Ledger['acceptance'] {
+  const texts = new Map(scenariosOf(spec).map(s => [s.id, s.text]))
+  const out: Ledger['acceptance'] = {}
+  for (const c of cases) {
+    if (c.status === 'skipped') continue
+    for (const id of new Set(`${c.name} ${c.classname}`.match(SCENARIO) ?? [])) {
+      const text = texts.get(id)
+      if (text === undefined) continue
+      const ok = c.status === 'passed' && (out[id]?.ok ?? true)
+      out[id] = { ok, fingerprint: fingerprint(text), at, file }
+    }
+  }
+  return out
+}
+
+/** Where a scenario stands for the person: accepted by a driver, failing there, passing unit tests only, or untested. */
+export type ScenarioState = 'accepted' | 'failing' | 'stale' | 'passing' | 'untested'
+export function scenarioState(id: string, text: string, ledger: Ledger): ScenarioState {
+  const a = ledger.acceptance?.[id]
+  if (a) {
+    if (a.fingerprint !== fingerprint(text)) return 'stale'
+    return a.ok ? 'accepted' : 'failing'
+  }
+  return ledger.verification[id]?.status === 'passing' ? 'passing' : 'untested'
+}
+
+/** acceptance.md: the evidence per scenario (a screenshot, a flow) and the list of what only a person can check. */
+export function parseAcceptanceDoc(markdown: string): AcceptanceNote {
+  const evidence: Record<string, { shot: string | null; flow: string | null }> = {}
+  const yourPart: string[] = []
+  let inYourPart = false
+  for (const line of markdown.split('\n')) {
+    const h = /^##\s+(.+)$/.exec(line)
+    if (h) {
+      inYourPart = /your part|dein teil|by hand|manual/i.test(h[1]!)
+      continue
+    }
+    if (inYourPart) {
+      const bullet = /^\s*[-*]\s+(.+)$/.exec(line)
+      if (bullet) yourPart.push(clip(bullet[1]!.replace(/\*\*/g, '').trim(), 240))
+      continue
+    }
+    if (!/^\s*\|/.test(line)) continue
+    const id = /\bUS\d+-AS\d+\b/.exec(line)?.[0]
+    if (!id) continue
+    const paths = [...line.matchAll(/`?([\w./-]+\.(png|jpe?g|webp|yaml|yml|spec\.ts|test\.ts))`?/gi)].map(m => m[1]!)
+    evidence[id] = { shot: paths.find(p => /\.(png|jpe?g|webp)$/i.test(p)) ?? null, flow: paths.find(p => /\.(ya?ml|ts)$/i.test(p)) ?? null }
+  }
+  return { evidence, yourPart }
+}
+
+/** The pane's and the dashboard's count: accepted, failing, the rest, and what is the person's. */
+export function acceptanceCounts(snap: Pick<Snapshot, 'spec' | 'acceptanceDoc'>, ledger: Ledger): { total: number; accepted: number; failing: number; stale: number; yourPart: number } {
+  const states = scenariosOf(snap.spec).map(s => scenarioState(s.id, s.text, ledger))
+  return {
+    total: states.length,
+    accepted: states.filter(s => s === 'accepted').length,
+    failing: states.filter(s => s === 'failing').length,
+    stale: states.filter(s => s === 'stale').length,
+    yourPart: snap.acceptanceDoc?.yourPart.length ?? 0,
+  }
+}
+
+/** What the acceptance step hands Claude: the scenarios, the driver this machine has, the time box, the rules. */
+export function acceptPrompt(snap: Snapshot): string {
+  const dir = snap.featureDir ?? 'specs/<feature>'
+  const p = snap.platforms ?? { web: false, ios: false, android: false }
+  const playwright = p.web && !!snap.tools.npx
+  const maestro = (p.ios || p.android) && !!snap.tools.maestro
+  const scenarios = scenariosOf(snap.spec)
+  const drivers = [
+    playwright
+      ? `Web first, with Playwright: one test file per scenario in ${ACCEPT_DIR}/<id>.spec.ts whose test title starts with the scenario id; run them with PLAYWRIGHT_JUNIT_OUTPUT_NAME=${ACCEPT_REPORTS}/acceptance-web.xml npx playwright test ${ACCEPT_DIR} --reporter=junit.`
+      : null,
+    maestro
+      ? `Mobile with Maestro: one flow per scenario in ${ACCEPT_DIR}/<id>.yaml with \`name: "<id> …"\`; run them with maestro test --format junit --output ${ACCEPT_REPORTS}/acceptance-mobile.xml ${ACCEPT_DIR}. Test a development build, not Expo Go, where one can be built.`
+      : null,
+  ].filter((d): d is string => !!d)
+  return [
+    `Accept ${dir} as a person would use it, with the speckit-xref:accept skill: start the app and play each acceptance scenario of the spec through with a driver that leaves a JUnit report.`,
+    `Scenarios: ${scenarios.map(s => `${s.id} "${clip(s.text, 120)}"`).join('; ') || '(the spec names none: take the quickstart rows)'}.`,
+    ...(drivers.length
+      ? drivers
+      : ['No driver is available on this machine for these platforms: run nothing; list every scenario under Your part with the steps a person takes to check it.']),
+    'Time box: if bringing the app up takes more than about 20 minutes, stop setting up; the scenarios not played go under Your part with their manual steps. Start servers and simulators in the background and stop the ones you started at the end.',
+    `Do not change the app's code in this step: each scenario that fails because of the app becomes a task under '## Phase N: Acceptance fixes' in ${dir}/tasks.md (the next free T### id, the files in backticks, the scenario id), and the autopilot builds it.`,
+    `Write ${acceptanceDoc(dir)}: a table (Scenario | Driver | Flow | Result | Evidence, a screenshot path) and a '## Your part' list of what only a person can check (a real device, real users, a paid service), each with its steps.`,
+  ].join('\n')
+}

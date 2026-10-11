@@ -1,6 +1,7 @@
 // Where a project stands in Spec Kit's workflow, the step that comes next, and the autopilot's rules. Pure: register.tsx hands in the snapshot.
 
 import type { Autopilot, IdeaBrief, Ledger, NextWork, Snapshot, Task } from '../types'
+import { acceptPrompt, scenariosOf } from './accept'
 import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
 import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
@@ -29,6 +30,7 @@ export type Phase =
   | 'repair'
   | 'converge'
   | 'verify'
+  | 'accept'
   | 'bug'
   | 'done'
 export type Step = {
@@ -69,6 +71,8 @@ export type Flow = {
   nextKind?: NextWork['kind'] | null
   /** The verify steps handed over in this run. */
   verifies?: number
+  /** The acceptance step for a feature with a user interface (on unless switched off). */
+  acceptance?: boolean
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -79,6 +83,8 @@ const INIT = 'init --here --force --non-interactive --integration claude'
 export const MAX_REPAIRS = 3
 /** Verify rounds in one run before closing the feature becomes the person's call: verify can always find one more thing. */
 export const MAX_VERIFIES = 2
+/** With acceptance each round is verify and accept, and a failing scenario gets its fixes: three rounds. */
+export const MAX_ACCEPTS = 3
 
 /** How a verification sorts what it finds: only what matters becomes work. */
 export const VERIFY_RULE = [
@@ -390,6 +396,14 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       return step('review', null, `${snap.featureDir} is done, but the roadmap changed since you approved it.`,
         'Read the roadmap again (.specify/memory/roadmap.md), then press Approve roadmap in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'prd', value: snap.prdFingerprint } })
     }
+    // A feature people use is played through before it is done: once per tree, by a driver that leaves a report.
+    const accepting = flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0
+    if (accepting && ledger.checkpoints.accept !== verified) {
+      return step('accept', null, `${snap.featureDir} is verified: play its ${scenariosOf(snap.spec).length} acceptance scenarios through as a person would.`, null, {
+        approve: { key: 'accept', value: verified },
+        prompt: acceptPrompt(snap),
+      })
+    }
     const next = flow.next
     const quote = next ? `"${next.text.length > 80 ? next.text.slice(0, 79) + '…' : next.text}"` : ''
     if (next?.kind === 'feature' && snap.prd) notes.push(PRD_NOTE)
@@ -407,10 +421,13 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     const roadmapAsk = upcoming && !flow.nextKind ? ` Next in the roadmap: "${upcoming.title}"${upcoming.gate ? `, after the gate ${upcoming.gate} (your part)` : ''}; press Next from roadmap when it is time.` : ''
     return step('done', null, `${snap.featureDir} is done: every task is checked, converged and verified.`, doneAsk(flow.nextKind) + roadmapAsk)
   }
-  // Verify can always find one more thing: after two rounds in a run, closing the feature is the person's call.
-  if ((flow.verifies ?? 0) >= MAX_VERIFIES) {
-    return step('review', null, `Verify found new work in each of its last ${MAX_VERIFIES} rounds, and it is built.`,
-      'Look at what the last verifications added: press Call it done in the pane (or /xref approve) to close the feature as it is, or Resume for one more verification.', { approve: { key: 'done', value: verified } })
+  // Verify can always find one more thing: after two rounds in a run (three with acceptance and its fixes), closing the
+  // feature is the person's call. One counter for both, so the acceptance rounds are not cut short.
+  const accepting = flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0
+  const rounds = accepting ? MAX_ACCEPTS : MAX_VERIFIES
+  if ((flow.verifies ?? 0) >= rounds) {
+    return step('review', null, accepting ? `Verify and acceptance found new work in each of their last ${rounds} rounds, and it is built.` : `Verify found new work in each of its last ${rounds} rounds, and it is built.`,
+      `Look at what the last ${accepting ? 'verifications and acceptance runs' : 'verifications'} added: press Call it done in the pane (or /xref approve) to close the feature as it is, or Resume for one more round.`, { approve: { key: 'done', value: verified } })
   }
   if (xref) {
     const command = speckitCommand(snap, 'xref.check')
@@ -512,6 +529,7 @@ export const idleAutopilot = (): Autopilot => ({
   next: null,
   nextKind: null,
   verifies: 0,
+  acceptBaseline: null,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
@@ -597,7 +615,7 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ...(drawn ? [['design', ['design']] as [string, Phase[]]] : []),
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge', 'bug']],
-    ['verify', ['verify']],
+    ['verify', ['verify', 'accept']],
   ]
   // A review sits in the column of what it reviews.
   const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify' }

@@ -4,6 +4,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
+import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan } from './accept'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, verifyKey } from './brief'
 import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
@@ -88,6 +89,7 @@ type Options = {
   shape: string
   design: string
   allowPush: string
+  acceptance: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -138,7 +140,7 @@ let interactive = true
 let lastLevel: Level = 'none'
 let timer: { cancel: () => void } | null = null
 // What can run Spec Kit's CLI here, looked up once a session.
-let cli = { specify: false, uvx: false }
+let cli: Snapshot['tools'] = { specify: false, uvx: false }
 let mapModel = 'haiku'
 let defaultMax = 25
 let testCommandOption = ''
@@ -156,6 +158,8 @@ let shapeOn = true
 let designOn = true
 // On: the autopilot may push a feature branch (never main, never --force) once the tests are green.
 let allowPush = false
+// auto: a feature with a user interface is played through after verify. off: no acceptance step.
+let acceptanceOn = true
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -282,7 +286,7 @@ async function resolveFeature($: $, features?: { dir: string; time: number }[], 
 
 async function currentSignature($: $, featureDir: string | null): Promise<string> {
   const files = ['.specify/feature.json', '.specify/memory/constitution.md', '.specify/integration.json', '.specify/extensions.yml']
-  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json', DESIGN_FILE, screensPath(featureDir), `${featureDir}/quickstart.md`, RUNBOOK)
+  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json', DESIGN_FILE, screensPath(featureDir), `${featureDir}/quickstart.md`, RUNBOOK, acceptanceDoc(featureDir))
   const times = await Promise.all(files.map(f => mtime($, f)))
   return [featureDir ?? '-', ...times].join('|')
 }
@@ -303,7 +307,11 @@ async function scan($: $): Promise<void> {
     readText($, DESIGN_FILE),
     featureDir ? readText($, screensPath(featureDir)) : null,
   ])
-  const [quickstartMd, runbookMd] = await Promise.all([featureDir ? readText($, `${featureDir}/quickstart.md`) : null, readText($, RUNBOOK)])
+  const [quickstartMd, runbookMd, acceptanceMd] = await Promise.all([
+    featureDir ? readText($, `${featureDir}/quickstart.md`) : null,
+    readText($, RUNBOOK),
+    featureDir ? readText($, acceptanceDoc(featureDir)) : null,
+  ])
   let extensions: string[] = []
   try {
     extensions = (await $.fs.list(at('.specify/extensions'))).filter(e => e.kind === 'dir' && !e.name.startsWith('.')).map(e => e.name)
@@ -344,6 +352,8 @@ async function scan($: $): Promise<void> {
     ...(await ideaState($)),
     ...(await prdState($, featureDir, features.map(f => f.dir))),
     ui: uiFromPlan(planMd),
+    platforms: platformsFromPlan(planMd),
+    acceptanceDoc: acceptanceMd ? parseAcceptanceDoc(acceptanceMd) : null,
     design: featureDir ? designState(designMd, screensMd) : null,
     phaseNotes: tasksMd ? parsePhaseNotes(tasksMd) : {},
     quickstart: quickstartMd ? parseQuickstart(quickstartMd) : [],
@@ -560,7 +570,7 @@ async function writeDashboard($: $): Promise<string | null> {
   const report = evaluate(snap, ledger)
   const proof = { featureDir: snap.featureDir, tasks: snap.tasks, reqs: snap.spec?.reqs ?? [], realTests: snap.realTests }
   const levels: Record<string, Rung> = {}
-  for (const r of snap.spec?.reqs ?? []) if (r.kind === 'FR' && isActive(r)) levels[r.id] = levelOf(r.id, proof, ledger)
+  for (const r of snap.spec?.reqs ?? []) if ((r.kind === 'FR' || r.kind === 'SC') && isActive(r)) levels[r.id] = levelOf(r.id, proof, ledger)
   const step = nextStep(snap, ledger, ap.idea, flowOf(ap))
   const html = renderDashboard({
     generatedAt: await stamp($),
@@ -955,7 +965,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null, verifies: ap.verifies ?? 0 })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null, verifies: ap.verifies ?? 0, acceptance: acceptanceOn })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
@@ -1026,7 +1036,7 @@ async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
 const APPROVALS = new Set(['idea', 'prd', 'spec', 'plan', 'design', 'checklists', 'done'])
 /** The button an approval wears. */
 const approveLabel = (key: string) => ({ checklists: 'Proceed anyway', idea: 'Build', prd: 'Approve roadmap', done: 'Call it done' })[key] ?? `Approve ${key}`
-const CHECKPOINTS = new Set(['analyze', 'converge', 'verify'])
+const CHECKPOINTS = new Set(['analyze', 'converge', 'verify', 'accept'])
 
 /** The person approves what the autopilot waits on (spec, plan, design, open checklists); the run goes on. */
 async function approve($: $): Promise<string> {
@@ -1048,8 +1058,8 @@ async function approve($: $): Promise<string> {
   if (key === 'idea') return decideIdea($, 'build')
   if (key === 'prd') return decidePrd($, value)
   if (key === 'done') {
-    // Closing the feature as it is: the verification counts for this tree, and what comes next is asked.
-    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, verify: value } }))
+    // Closing the feature as it is: the verification and the acceptance count for this tree, and what comes next is asked.
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, verify: value, accept: value } }))
     await persist($)
     if (ap.on && ap.paused) await resumeAutopilot($)
     return `Closed ${snap.featureDir} as done.`
@@ -1269,7 +1279,7 @@ async function advance($: $): Promise<void> {
   // Importing a PRD is the mod's own work; only a file it cannot read goes to Claude.
   if (step.phase === 'prd' && !snap.prd && snap.prdSource && (await importPrd($, snap.prdSource))) return advance($)
   // The step after a verification: done, or (a verify that changed the tree) verify again; either ends the run here.
-  if ((step.phase === 'done' || step.phase === 'verify') && ap.lastPhase === 'verify') {
+  if ((step.phase === 'done' && (ap.lastPhase === 'verify' || ap.lastPhase === 'accept')) || (step.phase === 'verify' && ap.lastPhase === 'verify')) {
     const report = evaluate(snap, ledger)
     if (report.level === 'red') return pauseAutopilot($, 'the feature is built, but the drift is red; decide in the pane')
     const next = `Next: ${doneAsk(null).replace(/^The feature is done\. /, '')}`
@@ -1338,6 +1348,11 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, [point]: value } }))
   }
   if (step.resolves) await update($, ledgerA, l => resolveIntent(l, step.resolves!))
+  // Only a report the acceptance step writes counts: what is there now is the baseline.
+  if (step.phase === 'accept') {
+    const baseline = await acceptanceReports($)
+    await update($, autopilotA, a => ({ ...a, acceptBaseline: baseline }))
+  }
   // One phase per step: the focus starts on its first open task, wherever earlier edits left it.
   if (step.phase === 'implement' && snap.phase) {
     const first = snap.tasks.find(t => t.phase === snap.phase && !t.done)
@@ -1474,6 +1489,45 @@ async function commitTasks($: $): Promise<string | null> {
   }
 }
 
+/** The acceptance reports in reports/, by path, with when they were written. */
+async function acceptanceReports($: $): Promise<Record<string, number>> {
+  const out: Record<string, number> = {}
+  try {
+    for (const e of await $.fs.list(at(ACCEPT_REPORTS))) {
+      if (e.kind !== 'file' || !ACCEPT_REPORT.test(e.name)) continue
+      const path = `${ACCEPT_REPORTS}/${e.name}`
+      out[path] = await mtime($, path)
+    }
+  } catch {
+    // No reports folder: no report yet.
+  }
+  return out
+}
+
+/**
+ * After the acceptance step: each driver report written in it (new, or newer than the baseline) accepts or fails the
+ * scenarios its testcases name. What acceptance.md says is the model's word; only these reports count.
+ */
+async function recordAcceptance($: $, baseline: Record<string, number>): Promise<void> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir) return
+  const now = await acceptanceReports($)
+  const fresh = Object.entries(now).filter(([path, time]) => baseline[path] === undefined || time > baseline[path]!)
+  if (!fresh.length) return
+  const at = await stamp($)
+  const results: Ledger['acceptance'] = {}
+  for (const [path] of fresh) {
+    const xml = await readText($, path)
+    if (!xml) continue
+    const found = acceptanceFrom(parseJunit(xml), snap.spec, at, path)
+    // A scenario two drivers played is accepted only when both passed it.
+    for (const [id, r] of Object.entries(found)) results[id] = results[id] ? { ...r, ok: r.ok && results[id]!.ok } : r
+  }
+  if (!Object.keys(results).length) return
+  await update($, ledgerA, l => ({ ...l, acceptance: { ...l.acceptance, ...results } }))
+  await persist($)
+}
+
 type TurnEnd = { answer: string; reason: string; isAborted: boolean; durationMs: number; usage?: { input_tokens?: number; output_tokens?: number } }
 
 /** After a turn: the autopilot pauses where the model or the person needs the person, and moves on otherwise. */
@@ -1492,6 +1546,7 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
     }
     return advance($)
   }
+  if (ap.lastPhase === 'accept') await recordAcceptance($, ap.acceptBaseline ?? {})
   if (ap.lastPhase && ap.steps > 0) {
     const snap = await read($, snapshotA)
     const outcome = e.isAborted ? 'interrupted' : e.reason !== 'answer' ? e.reason : asked ? 'asked the person' : 'answered'
@@ -1571,6 +1626,13 @@ export function compactPrompt(text: string): string | null {
 function bandPhase(snap: Snapshot): string {
   const { phases, current } = taskPhases(snap.tasks)
   return phases.length > 1 && current >= 0 ? `P${phaseNumber(phases[current]!.title, current)} · ` : ''
+}
+
+/** The acceptance row: how many scenarios a driver accepted, how many fail, and what is the person's part. */
+function acceptRow<T>(snap: Snapshot, ledger: Ledger, row: (label: string, text: string, color?: Color) => T): T {
+  const c = acceptanceCounts(snap, ledger)
+  const parts = [`${c.accepted}/${c.total} accepted`, c.failing ? `${c.failing} failing` : '', c.stale ? `${c.stale} to accept again` : '', c.yourPart ? `${c.yourPart} your part` : ''].filter(Boolean)
+  return row('Accept', parts.join(' · '), c.failing ? 'error' : c.accepted === c.total ? 'success' : 'warning')
 }
 
 /** The PRD row: which roadmap feature this is, and how many of its PRD ids its spec carries. */
@@ -1851,6 +1913,7 @@ export const register: Register = (on, options) => {
   shapeOn = opts.shape !== 'off'
   designOn = opts.design !== 'off'
   allowPush = opts.allowPush === 'on'
+  acceptanceOn = opts.acceptance !== 'off'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -1865,7 +1928,8 @@ export const register: Register = (on, options) => {
     await update($, askedA, () => null)
     await update($, turnA, () => null)
     await update($, seenAtA, () => 0)
-    cli = { specify: await onPath($, 'specify'), uvx: await onPath($, 'uvx') }
+    // The acceptance drivers too: Maestro for mobile, npx for Playwright on the web.
+    cli = { specify: await onPath($, 'specify'), uvx: await onPath($, 'uvx'), maestro: await onPath($, 'maestro'), npx: await onPath($, 'npx') }
     // SPECKIT_XREF_AUTOPILOT=on|night|<steps> switches it on for this session: the way into a -p run, where /xref auto on starts no model turn.
     const fromEnv = ((await $.env.get('SPECKIT_XREF_AUTOPILOT')) ?? '').trim().toLowerCase()
     const envSteps = Number(fromEnv) > 0 ? Math.floor(Number(fromEnv)) : null
@@ -2602,6 +2666,7 @@ export const register: Register = (on, options) => {
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
         {phaseRow(snap, row)}
         {details && snap.prd && snap.roadmap?.length ? prdRow(snap, row) : null}
+        {snap.ui && acceptanceOn && (Object.keys(ledger.acceptance ?? {}).length || snap.acceptanceDoc) ? acceptRow(snap, ledger, row) : null}
         {details && snap.design?.screens?.length && step.approve?.key !== 'design' ? (
           <Box flexDirection="row" columnGap={1}>
             {row(

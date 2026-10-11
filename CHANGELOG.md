@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 — 2026-10-11
+
+The finished app is played through before it counts as done. Mod 0.6.0, extension 0.6.0; preset 0.2.0 unchanged.
+
+### Acceptance
+
+- **A new step after verify** (option `acceptance`, `auto`): a feature with a user interface (plan.md's Project Type) is played through as a person would use it, scenario by scenario, with the new `speckit-xref:accept` skill. Web first with Playwright (through npx), iOS and Android with Maestro where it is installed, a development build rather than Expo Go; the environment traps of the first live run (driver start-up time, permission names, IPv6, Expo Go's overlays) are in the skill, and what a step learns goes into the runbook.
+- **One test per scenario stays in the repository**, under `e2e/acceptance/`, named by its id (`US1-AS1 …`), so it can be played again.
+- **Only evidence accepts.** A scenario is `★ accepted` only by a JUnit report the driver wrote during the step (`reports/acceptance-*.xml`, newer than the step's start); what acceptance.md says is the model's word. A failed case fails the scenario, a changed scenario text asks for acceptance again. Results live in the local ledger (`acceptance`, contract §1, additive).
+- **Fix loop.** A scenario that fails because of the app becomes a task under `## Phase N: Acceptance fixes` (no code changes in the acceptance step); the autopilot builds it, verifies and accepts again. Verify and acceptance share one round counter: after three rounds, **Call it done** or Resume is yours.
+- **Your part**: what no driver here can check (a real device, real users, a paid service, a store review) is listed in `specs/<feature>/acceptance.md` with its steps, and shown in the pane and the dashboard.
+- **Time box**: if the app is not up after about 20 minutes, the remaining scenarios go to your part instead of an endless setup.
+- Pane row `Accept 6/9 accepted · 1 failing · 2 your part`; a dashboard section with each scenario's state, flow, report and screenshot. The dashboard's matrix now gives SC rows their rung and scenarios their acceptance state.
+- Extension command `speckit.xref.accept` does the same for any agent.
+- What acceptance writes (tests, reports, screenshots, acceptance.md, the runbook) does not count as a change of the verified tree, so it cannot start another verify.
+
+Not in this release: replaying the acceptance tests in CI through the extension and the GitHub Action (it needs emulators there) follows in 0.6.1.
+
 ## 0.5.3 — 2026-10-11
 
 A project can start from the PRD you wrote first, and verify stops finding one more thing forever. Mod 0.5.3, extension 0.5.0; preset 0.2.0 unchanged.

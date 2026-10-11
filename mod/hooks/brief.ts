@@ -4,6 +4,7 @@
 // and this working tree. Pure: register.tsx reads the files.
 
 import type { Autopilot, NextWork, PhaseNote, QuickRow, Snapshot } from '../types'
+import { ACCEPTANCE_ARTIFACT } from './accept'
 import { designDir } from './design'
 import { fingerprint, specFingerprint } from './rules'
 
@@ -99,7 +100,20 @@ export function verifyKey(snap: Snapshot, tasksFp: string): string {
  * The working tree's content from `git ls-tree -r` of `git stash create` (or HEAD) plus `<hash> <path>` of the untracked
  * files: one line per file, without the ledger's own file, which the mod rewrites as it links.
  */
-export const treeOf = (lines: string) => fingerprint(lines.split('\n').filter(l => l.trim() && !/(^|\/)xref\.json$/.test(l.trim())).sort().join('\n'))
+export const treeOf = (lines: string) =>
+  fingerprint(
+    lines
+      .split('\n')
+      .filter(l => {
+        if (!l.trim()) return false
+        // `<mode> <type> <hash>\t<path>` from ls-tree, `<hash> <path>` for an untracked file.
+        const path = l.includes('\t') ? l.slice(l.indexOf('\t') + 1) : l.trim().slice(l.trim().indexOf(' ') + 1)
+        // The ledger's own file, and what acceptance writes about the app, change nothing that was verified.
+        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path)
+      })
+      .sort()
+      .join('\n'),
+  )
 
 export const NEXT_LABELS = [
   'a new feature, separate from the finished one',

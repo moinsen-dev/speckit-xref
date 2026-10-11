@@ -6,7 +6,7 @@ Function names: TypeScript camelCase / Python snake_case of the same name.
 
 ## 1. Ledger v2: committed and local
 
-The in-memory ledger keeps the v1 shape (`tasks{touched,linked}`, `requirements{tasks,files,sources}`, `unplanned[]`, `intents[]`, `anchors[]`, `semantic`) plus new fields `fingerprints{}`, `verification{}`, `approvals{}`, `decisions[]`, `semanticHistory[]`. Only persistence changes.
+The in-memory ledger keeps the v1 shape (`tasks{touched,linked}`, `requirements{tasks,files,sources}`, `unplanned[]`, `intents[]`, `anchors[]`, `semantic`) plus new fields `fingerprints{}`, `verification{}`, `approvals{}`, `decisions[]`, `semanticHistory[]`. Only persistence changes. 0.6.0 adds `acceptance{}` to the local half (per scenario id: `ok`, the scenario text's `fingerprint`, `at`, the report `file`), written by the mod from an acceptance driver's JUnit report; a reader that does not know it keeps it as it is.
 
 **Committed — `specs/<feature>/xref.json`** (reviewable, merge-friendly):
 ```json
