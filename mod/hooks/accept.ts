@@ -128,7 +128,8 @@ export function acceptPrompt(snap: Snapshot): string {
     ...(drivers.length
       ? drivers
       : ['No driver is available on this machine for these platforms: run nothing; list every scenario under Your part with the steps a person takes to check it.']),
-    'Time box: if bringing the app up takes more than about 20 minutes, stop setting up; the scenarios not played go under Your part with their manual steps. Start servers and simulators in the background and stop the ones you started at the end.',
+    'Time box: about 20 minutes for bringing the app up and getting the flows to run. Then stop: keep what passed; a flow that still fails because of the flow itself goes under Your part with its manual steps. Start servers and simulators in the background and stop the ones you started at the end.',
+    "Select by label, text or testID, never by screen coordinates: a tap on a point is no evidence. An element with nothing to select it by gets a task under '## Phase N: Acceptance setup' (a testID or an accessibility label), and its scenario waits for it.",
     `Do not change the app's code in this step: each scenario that fails because of the app becomes a task under '## Phase N: Acceptance fixes' in ${dir}/tasks.md (the next free T### id, the files in backticks, the scenario id), and the autopilot builds it.`,
     `Write ${acceptanceDoc(dir)}: a table (Scenario | Driver | Flow | Result | Evidence, a screenshot path) and a '## Your part' list of what only a person can check (a real device, real users, a paid service), each with its steps.`,
   ].join('\n')

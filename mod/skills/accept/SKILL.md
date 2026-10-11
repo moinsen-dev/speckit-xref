@@ -18,7 +18,7 @@ The acceptance scenarios of `specs/<feature>/spec.md` (`US1-AS1` …), in order;
 - **Mobile** only when Maestro is installed and a simulator or emulator can come up. Play on what the device already has: a development build of the app if one is installed (fewer dialogs and overlays), else Expo Go (`host.exp.exponent` on Android, `host.exp.Exponent` on iOS), opened on the app's `exp://` link with `openLink`. Building a development build (`npx expo run:android`, `npx expo run:ios`) downloads native dependencies: never in this step. When neither is on the device, append a task for the development build under `## Phase N: Acceptance setup`, and the mobile scenarios are the person's part until it is built.
 - **Live data on mobile.** Playwright stubs a network service with `page.route`; Maestro cannot. Play on mobile now what holds without the live data (onboarding, navigation, what the device stores, an empty or offline state). For the scenarios that need the data, append a task under `## Phase N: Acceptance setup` for a fixture mode: an environment flag (e.g. `EXPO_PUBLIC_ACCEPTANCE=1`) that makes the app's service adapters return the same fixtures the web tests use, never active in a release build. It is built and verified like any task, and the next acceptance run plays those scenarios on mobile too. Never leave out the mobile platform as a whole while Maestro and a device are there.
 - Start servers, simulators and emulators in the background, and stop the ones you started at the end.
-- **Time box:** if the app is not up after about 20 minutes, stop setting up. The scenarios you could not play go under Your part with their steps.
+- **Time box:** about 20 minutes for bringing the app up and getting the flows to run, the driver's work included. Then stop: keep what passed; a flow that still fails because of the flow itself, and every scenario you could not play, goes under Your part with its steps.
 
 Known traps (Expo, iOS Simulator, Android emulator):
 - Maestro's iOS driver needs time on a fresh simulator: `MAESTRO_DRIVER_STARTUP_TIMEOUT=240000`.
@@ -60,7 +60,7 @@ properties:
 
 Run: `maestro test --format junit --output reports/acceptance-mobile.xml e2e/acceptance`.
 
-Select by role, label or `testID`, never by screen coordinates. Assert what the scenario's **Then** says, not just that a screen opened. A browser permission (location, notifications) is set on the Playwright context (`permissions`, `geolocation`), not answered in a dialog that never comes. Run the scenarios twice before you report: one that fails once and passes once is flaky, so make its waits explicit; flaky evidence is no evidence.
+Select by role, label or `testID`, never by screen coordinates: a tap on a point breaks on the next screen size and proves nothing. An element with nothing to select it by gets a task under `## Phase N: Acceptance setup` (a `testID` or an accessibility label), and its scenario waits for it. Assert what the scenario's **Then** says, not just that a screen opened. A browser permission (location, notifications) is set on the Playwright context (`permissions`, `geolocation`), not answered in a dialog that never comes. Run the scenarios twice before you report: one that fails once and passes once is flaky, so make its waits explicit; flaky evidence is no evidence.
 
 ## 4. Failures
 
