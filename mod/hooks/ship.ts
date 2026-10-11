@@ -103,6 +103,12 @@ export function releaseLine(release: ReleaseNote | null | undefined): string {
   ].join(' · ')
 }
 
+/** What the person's yes runs, in one line: the first commands as written and how many more. */
+export function releaseRuns(release: ReleaseNote): string {
+  const shown = release.commands.slice(0, 3).map(c => `\`${c}\``).join(', ')
+  return release.commands.length > 3 ? `${shown} (+${release.commands.length - 3} more)` : shown
+}
+
 /** The last release: the rows it appended (one per target), whether all went out, and one line on each. */
 export function lastRelease(release: ReleaseNote | null | undefined): { status: 'out' | 'partly out' | 'failed'; date: string; version: string; line: string } | null {
   const last = release?.releases.at(-1)
@@ -186,11 +192,32 @@ const RELEASING: RegExp[] = [
   /\bxcrun\s+altool\b.*--upload/,
 ]
 
+/** A shell command's parts: what `;`, `&&`, `||` and `|` separate. */
+const SEGMENTS = /\n|;|&&|\|\|?/
+
 /** Whether a shell command releases the app: deploys, builds or submits for a store, publishes. Asking a tool for its help does not. */
 export const releasesApp = (command: string) =>
   command
-    .split(/\n|;|&&|\|\|?/)
+    .split(SEGMENTS)
     .some(part => !/\s(?:--help|-h)(?:\s|$)/.test(part) && RELEASING.some(re => re.test(part)))
+
+const normalized = (command: string) =>
+  command
+    .replace(/\s+(?:\d*>>?|&>)\s*&?\S+/g, '')
+    .replace(/^\s*\(+|\)+\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/**
+ * Whether a shell command releases only what the person approved: every part of it that releases is one of the
+ * approved commands as written (`cd web && <cmd> 2>&1 | tail` is that command; `npx <cmd>`, another flag or another
+ * project is not). The person's yes is to these commands, not to releasing in general.
+ */
+export function approvedRelease(command: string, approved: string[]): boolean {
+  const ok = new Set(approved.flatMap(c => c.split(SEGMENTS).filter(part => releasesApp(part)).map(normalized)))
+  const releasing = command.split(SEGMENTS).filter(part => releasesApp(part))
+  return releasing.length > 0 && releasing.every(part => ok.has(normalized(part)))
+}
 
 /** An MCP tool that deploys, publishes or submits (`deploy_worker`, `submit_build`); reading tools pass. */
 export function releasesByTool(tool: string): boolean {

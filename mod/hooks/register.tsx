@@ -7,7 +7,7 @@ import type { DashboardDoc } from './dashboard'
 import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan } from './accept'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, verifyKey } from './brief'
-import { DEPLOY_TOOLS, RELEASE, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool } from './ship'
+import { DEPLOY_TOOLS, RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releaseRuns, releasesApp, releasesByTool } from './ship'
 import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
 import { LADDER, isActive, levelOf, parseJunit, verificationFrom, verificationFromExit } from './proof'
@@ -132,7 +132,7 @@ const seenAtA = atom({ plugin: 'speckit-xref', key: 'seenAt' } as const, 0)
 const chipsA = atom({ plugin: 'speckit-xref', key: 'chips' } as const, {} as Record<string, string>)
 const queueA = atom({ plugin: 'speckit-xref', key: 'queue' } as const, { auto: false, person: false })
 // What the person allowed once through the ask tool: a rail's label and until when it holds.
-const permitsA = atom({ plugin: 'speckit-xref', key: 'permits' } as const, [] as { label: string; until: number; many?: boolean }[])
+const permitsA = atom({ plugin: 'speckit-xref', key: 'permits' } as const, [] as { label: string; until: number; many?: boolean; commands?: string[] }[])
 
 // The module's own: they start over on a reload, and session.start or register fills them again.
 let root = ''
@@ -1182,13 +1182,14 @@ async function askApproval($: $, step: Step): Promise<void> {
     return
   }
   const yes = approveLabel(key)
+  const release = key === 'release' ? (await read($, snapshotA))?.release : null
   const question =
     key === 'checklists'
       ? `${step.why} Go on implementing anyway?`
       : key === 'design'
         ? `${step.why} Approve the design for the tasks?`
         : key === 'release'
-          ? `${step.why} Ship it: run the release commands of ${RELEASE} now?`
+          ? `${step.why} Ship it: run ${release ? releaseRuns(release) : `the release commands of ${RELEASE}`} now?`
           : `${step.why} Approve the ${key} as the contract?`
   // The terminal cannot show a mock: the browser can, and the question comes back once it is open.
   const look = 'Open the mocks'
@@ -1432,10 +1433,11 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, [point]: value } }))
   }
   if (step.resolves) await update($, ledgerA, l => resolveIntent(l, step.resolves!))
-  // The person's yes to a release lets its commands through the rail for this step.
+  // The person's yes to a release lets exactly its commands through the rail, for this step.
   if (step.phase === 'release') {
     const until = (await $.clock.now()) + 60 * 60_000
-    await update($, permitsA, ps => [...ps.filter(p => p.label !== 'releasing'), { label: 'releasing', until, many: true }])
+    const commands = snap.release?.commands ?? []
+    await update($, permitsA, ps => [...ps.filter(p => !(p.label === 'releasing' && p.many)), { label: 'releasing', until, many: true, commands }])
   }
   // Only a report the acceptance step writes counts: what is there now is the baseline.
   if (step.phase === 'accept') {
@@ -1910,7 +1912,7 @@ async function ask($: $, input: Record<string, unknown>): Promise<string> {
       await recordDecision($, question, [yes, 'No'], blocks, answer || 'No', 'permission')
       if (answer === yes) {
         const until = (await $.clock.now()) + 10 * 60_000
-        await update($, permitsA, ps => [...ps.filter(p => p.label !== allow), { label: allow, until }])
+        await update($, permitsA, ps => [...ps.filter(p => p.label !== allow || p.many), { label: allow, until }])
         return `The person allowed ${allow} once: run it now.`
       }
       return `The person said no: leave ${allow} to them, and say so in your answer.`
@@ -2409,10 +2411,13 @@ export const register: Register = (on, options) => {
       const snap = await read($, snapshotA)
       if (hit.label === 'pushing' && allowPush && pushAllowed(str(input.command), snap?.branch ?? null, ap.lastTest?.ok !== false)) return verdict
       const now = await $.clock.now()
-      const permit = (await read($, permitsA)).find(p => p.label === hit.label && p.until > now)
+      const valid = (await read($, permitsA)).filter(p => p.label === hit.label && p.until > now)
+      // An approved release lets its own commands through for its step, as written; a yes through the ask tool, one call.
+      const step = valid.find(p => p.many && e.tool === 'Bash' && approvedRelease(str(input.command), p.commands ?? []))
+      if (step) return verdict
+      const permit = valid.find(p => !p.many)
       if (permit) {
-        // A yes through the ask tool holds once; an approved release holds for its step.
-        if (!permit.many) await update($, permitsA, ps => ps.filter(p => !(p.label === permit.label && p.until === permit.until)))
+        await update($, permitsA, ps => ps.filter(p => !(p.label === permit.label && p.until === permit.until && !p.many)))
         return verdict
       }
       return { decision: 'deny' as const, reason: `speckit-xref autopilot: ${hit.reason}. Ask the person with mcp__${PLUGIN}__ask, passing allow: "${hit.label}"; their yes allows it once.` }

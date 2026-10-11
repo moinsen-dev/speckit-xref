@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { NEXT_LABELS, NO_WORK, nextKindOf, treeOf, verifyKey } from '../hooks/brief'
 import { railFor } from '../hooks/register'
-import { RELEASE, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool, shipPrompt } from '../hooks/ship'
+import { RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releasesApp, releasesByTool, shipPrompt } from '../hooks/ship'
 import { emptyLedger } from '../hooks/xref'
 import { nextStep, phaseStrip, tasksFingerprint } from '../hooks/workflow'
 import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
@@ -131,6 +131,16 @@ test('the rail: deploys, store builds, submits and publishes wait for the person
   expect(releasesByTool('Bash')).toBe(false)
   expect(railFor('Bash', { command: DEPLOY })).toBe("releasing the app (a deploy, a store build or submission, a publish) is the person's call")
   expect(railFor('mcp__expo__submit_build', {})).toContain('releasing the app')
+  // The yes is to the commands as written: wrapped they pass; another flag, another project, npx or an extra deploy do not.
+  const approved = ['wrangler pages deploy dist --project-name tagesinspiration', 'cd mobile && eas build -p ios --profile production --non-interactive']
+  expect(approvedRelease('wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(true)
+  expect(approvedRelease('cd web && wrangler  pages deploy dist --project-name tagesinspiration 2>&1 | tail -20', approved)).toBe(true)
+  expect(approvedRelease('cd mobile && eas build -p ios --profile production --non-interactive', approved)).toBe(true)
+  expect(approvedRelease('wrangler pages deploy dist --project-name other', approved)).toBe(false)
+  expect(approvedRelease('npx wrangler pages deploy dist --project-name tagesinspiration', approved)).toBe(false)
+  expect(approvedRelease('eas update --branch production', approved)).toBe(false)
+  expect(approvedRelease('wrangler pages deploy dist --project-name tagesinspiration && eas update --branch production', approved)).toBe(false)
+  expect(approvedRelease('npx expo export -p web', approved)).toBe(false)
   // A push stays a push: allowPush never opens a release.
   expect(railFor('Bash', { command: 'git push origin 001-x' })).toBe("pushing is the person's call")
 })
@@ -236,7 +246,7 @@ test('Ship live: the check, the pane\'s Ship it, the release through the rail, t
   seen.write(RELEASE, RELEASE_MD)
   await runTurn($, 'The release check is written.')
   await seen.clock.advance(0)
-  expect(seen.toasts.at(-1)).toContain(`Autopilot waits for you: Read ${RELEASE}: its release commands go out only with your yes.`)
+  expect(seen.toasts.at(-1)).toContain(`Autopilot waits for you: Read ${RELEASE}. On your yes these run, once each: \`${DEPLOY}\`.`)
   const drawn = toText(await pane.drawn())
   expect(drawn).toContain('Shipv1.0.0 → web · 2 pass · 1 your part')
   expect(drawn).toContain('[Ship it] [Check again]')
@@ -247,9 +257,12 @@ test('Ship live: the check, the pane\'s Ship it, the release through the rail, t
   const go = autopilotPrompts(seen).at(-1)!
   expect(go).toContain('release: You approved the release: v1.0.0 → web · 2 pass')
   expect(go).toContain(`1. \`${DEPLOY}\``)
-  // The yes holds for the release step: both commands of a two-step release go through.
+  // The yes holds for the release step and its commands as written, retries included; nothing else goes out with it.
   expect((await $.tool.check(deploy as never)).decision).not.toBe('deny')
-  expect((await $.tool.check(deploy as never)).decision).not.toBe('deny')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: `${DEPLOY} 2>&1 | tail -20` } } as never)).decision).not.toBe('deny')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'eas update --branch production' } } as never)).decision).toBe('deny')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: DEPLOY.replace('magic-link', 'other') } } as never)).decision).toBe('deny')
+  expect((await $.tool.check({ tool: 'mcp__cloudflare__workers_deploy', input: {} } as never)).decision).toBe('deny')
   seen.write(RELEASE, RELEASE_MD + ROW)
   await runTurn($, 'Released.')
   await seen.clock.advance(0)

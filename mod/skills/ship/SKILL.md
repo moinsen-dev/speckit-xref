@@ -102,4 +102,4 @@ End the turn with one sentence: how many checks pass, how many became readiness 
 
 ## 6. After the person's yes
 
-Run the release commands as written, in order, once each. A command that asks for a login, a password, a two-factor code or any interactive answer: stop there, do not work around it, and add it to Your part before the release. Stop at the first command that fails. Then append one row per target to `## Releases` (the date, the version, the target, `shipped` or `failed`, the URL, the build id or the error). Do not change the app, do not commit, do not push.
+Run the release commands as written, in order, once each: the person's yes is to these commands, so a changed one (another flag, `npx` in front) waits for them again. A command that asks for a login, a password, a two-factor code or any interactive answer: stop there, do not work around it, and add it to Your part before the release. Stop at the first command that fails. Then append one row per target to `## Releases` (the date, the version, the target, `shipped` or `failed`, the URL, the build id or the error). Do not change the app, do not commit, do not push.

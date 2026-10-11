@@ -5,7 +5,7 @@ import { acceptPrompt, scenariosOf } from './accept'
 import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
 import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
-import { RELEASE, releaseBlockers, releaseLine, releasePrompt, shipPrompt } from './ship'
+import { RELEASE, releaseBlockers, releaseLine, releasePrompt, releaseRuns, shipPrompt } from './ship'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
@@ -427,7 +427,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       const release = snap.release!
       if (ledger.approvals.release !== release.fingerprint) {
         return step('review', null, `The release check is written: ${releaseLine(release)}.`,
-          `Read ${RELEASE}: its release commands go out only with your yes. Press Ship it in the pane (or /xref approve), or tell me what to change.`, { approve: { key: 'release', value: release.fingerprint } })
+          `Read ${RELEASE}. On your yes these run, once each: ${releaseRuns(release)}. Press Ship it in the pane (or /xref approve), or tell me what to change.`, { approve: { key: 'release', value: release.fingerprint } })
       }
       if (ledger.checkpoints.released !== release.fingerprint) {
         return step('release', null, `You approved the release: ${releaseLine(release)}.`, null, { approve: { key: 'released', value: release.fingerprint }, consumes: true, prompt: releasePrompt(release) })

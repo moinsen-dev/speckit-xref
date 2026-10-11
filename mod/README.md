@@ -47,7 +47,7 @@ It stops only for what is yours:
 - a `[NEEDS CLARIFICATION]` question, or open checklist items;
 - a request that contradicts the spec (one that only extends it becomes a revise step);
 - destructive or irreversible actions: while it runs, `git push`, `reset --hard`, `rm -rf` and writes to `.env` files are refused and turned into a question. Your **yes** in that dialog allows exactly that action once; `allowPush: on` lets it push a feature branch by itself once the tests are green (never main, never `--force`).
-- releasing the app: deploys, store builds and submissions, publishes (`wrangler deploy`, `eas build|submit|update`, `vercel`, `netlify deploy`, `firebase deploy`, `fastlane`, `npm publish`, `npm run deploy`, `gh release create` …, and MCP tools that deploy, publish or submit) are refused the same way. Only **Ship it** opens them, for the release step it approves.
+- releasing the app: deploys, store builds and submissions, publishes (`wrangler deploy`, `eas build|submit|update`, `vercel`, `netlify deploy`, `firebase deploy`, `fastlane`, `npm publish`, `npm run deploy`, `gh release create` …, and MCP tools that deploy, publish or submit) are refused the same way. Only **Ship it** opens them: for the release step it approves, and only the commands it approves, as written (another flag, another project, `npx` in front or an MCP deploy tool still waits for you).
 
 Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question opens as a dialog and the run goes on with your answer in the same turn. A question that blocks only some stories waits in the pane's **Decide** row while the rest goes on. When an answer ends on a question anyway, a small model decides whether it is a real decision or just "shall I go on?".
 
