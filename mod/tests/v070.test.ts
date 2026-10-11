@@ -197,6 +197,8 @@ test('what holds a release: the proof first, then what release.md says; the pers
   expect(releaseBlockers(doneSnap({ release: parseRelease('**Ready**: yes\n') }), emptyLedger(), null, false)).toEqual([`${RELEASE} names no release command`])
   // The check never plans with a tool it would have to download.
   expect(shipPrompt(doneSnap({ tools: { specify: true, uvx: true } } as Partial<Snapshot>))).toContain('Deploy tools on this machine: none')
+  expect(shipPrompt(doneSnap({ testCommand: 'npm test' }))).toContain('The mod ran the test suite (`npm test`) right before this step and stops on a failure: do not run it again.')
+  expect(shipPrompt(doneSnap())).not.toContain('right before this step')
 })
 
 test('Ship live: the check, the pane\'s Ship it, the release through the rail, then the run ends with what went out', async ($, on) => {
