@@ -92,7 +92,23 @@ export type Snapshot = {
   runbook?: string | null
   /** A fingerprint of the working tree's content (committed or not), for the verification that marks a feature done. */
   tree?: string | null
+  /** A PRD file at the root (`PRD_Show.md`), and whether it is imported to `.specify/memory/prd.md`. */
+  prdSource?: string | null
+  prd?: boolean
+  /** The PRD's review and roadmap, their fingerprint, and whether the person approved the roadmap. */
+  prdReview?: PrdReview | null
+  roadmap?: RoadmapItem[]
+  prdFingerprint?: string | null
+  prdApproved?: boolean
+  /** The PRD sections the active feature implements, for the intent check. */
+  prdExcerpt?: string | null
 }
+
+/** A feature of the roadmap cut from a PRD, in build order. */
+export type RoadmapItem = { title: string; phase: string | null; scope: string[]; sections: string[]; gate: string | null; spec: string }
+
+/** What the PRD review recommends and which open decisions block the first feature. */
+export type PrdReview = { recommendation: 'build' | 'sharpen' | null; blocking: string[] }
 
 /** A phase of tasks.md: what it is for, how it is tested on its own, and when it is done. */
 export type PhaseNote = { goal: string | null; test: string | null; checkpoint: string | null }
@@ -230,6 +246,8 @@ export type Autopilot = {
   /** After a done feature: what the person said comes next, and the kind they chose before saying it. */
   next?: NextWork | null
   nextKind?: NextWork['kind'] | null
+  /** The verify steps handed over in this run; past two, closing the feature is the person's call. */
+  verifies?: number
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: xref
   name: "Spec X-Ref"
-  version: "0.4.1"
+  version: "0.5.0"
   description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, a coverage ladder proven by tests, intent"
   author: moinsen-dev
   repository: https://github.com/moinsen-dev/speckit-xref
@@ -46,6 +46,9 @@ provides:
     - name: speckit.xref.shape
       file: commands/speckit.xref.shape.md
       description: "Settle the first version with the person (scope, platforms, language, design, data) before the spec"
+    - name: speckit.xref.prd
+      file: commands/speckit.xref.prd.md
+      description: "Review a PRD and cut it into features: blocking decisions, a roadmap in build order with the PRD's ids, sections and gates"
     - name: speckit.xref.design
       file: commands/speckit.xref.design.md
       description: "Settle a feature's look after the plan: DESIGN.md (Google Stitch's format) and one HTML mock per screen, traced to its user stories"

@@ -54,6 +54,8 @@ Claude asks through `mcp__speckit-xref__ask`. Where you are there, the question 
 
 **Each phase gets its brief.** An implement step does not just say "run /speckit-implement": it hands over the phase's goal, its **Independent Test** and **Checkpoint** from tasks.md, the acceptance scenarios it has to prove (tests named after `US2-AS1`), the quickstart rows and the screens that show them, and the last test run. What a step learns about the environment (a port, a flag, a permission's name) goes into `.specify/memory/runbook.md`, and every later step starts from it.
 
+**Verify sorts what it finds.** Only HIGH and MEDIUM findings (a requirement, a scenario or a point of your words not met, or met only in part) become tasks; LOW ones (polish, wording) are listed, not built. After two verify rounds in a run that each found new work, closing the feature is your call: **Call it done**, or Resume for one more round.
+
 **After done comes the next thing.** A feature that passed converge, verify and the tests stays done while its spec, its tasks and the working tree stay as they are: the next start does not verify again, it asks what comes next. Press **New feature**, **Change** or **Bug** in the pane and say it in your own words, or type it, or `/xref next feature|change|bug <words>`:
 - a new feature goes to `/speckit-specify` and becomes the next feature;
 - a change reaches the spec first (new requirements, appended tasks), then gets built;
@@ -85,6 +87,17 @@ In an empty folder the autopilot does not go straight to a spec:
 3. Then the constitution and the spec, which treat those decisions as yours.
 
 Options `validate` and `shape` (both `on`) switch the two off; a project that already has a feature skips them.
+
+## A project that starts from a PRD
+
+Wrote a PRD first? Put it in the empty folder (`PRD_Show.md`, or a `.docx`; a file with "PRD" or "product requirements" in its name), or import it from anywhere with `/xref prd <path>`. Instead of Validate:
+
+1. **Import.** The mod copies it to `.specify/memory/prd.md` (a `.docx` through pandoc or macOS textutil; otherwise Claude converts it).
+2. **Review and roadmap.** Claude reads it as the one who has to build it: `.specify/memory/prd-review.md` (contradictions, untestable criteria, gaps, the open decisions that block the first feature) and `.specify/memory/roadmap.md` (the features in build order, each with its phase, the PRD's own ids, the PRD sections it implements, and the gate before it). It does not rewrite the PRD or research it again.
+3. **Your approval.** The pane shows the roadmap and the open decisions: **Approve roadmap**.
+4. Shape asks only the blocking decisions; the PRD's other decisions are yours already. Then the constitution, and the first feature is specified from the roadmap.
+
+Every requirement carries the PRD id it comes from (`(PRD F01)`), stories and scenarios theirs; the pane's PRD row counts the feature's PRD ids its spec carries, and the intent check reads the PRD sections the feature implements. When a feature is done, **Next from roadmap** specifies the next one; a gate before it (a test with real users, a review) is named as your part.
 
 ## A feature's look: Design
 

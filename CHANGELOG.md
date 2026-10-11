@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.3 — 2026-10-11
+
+A project can start from the PRD you wrote first, and verify stops finding one more thing forever. Mod 0.5.3, extension 0.5.0; preset 0.2.0 unchanged.
+
+### Start from a PRD
+
+- A PRD in the empty folder (a `.md` or `.docx` with "PRD" or "product requirements" in its name), or `/xref prd <path>`, takes Validate's place. The folder still counts as a new project; before, a PRD made it "existing code" and skipped Validate and Shape.
+- The mod imports it to `.specify/memory/prd.md` (a `.docx` through pandoc or macOS textutil, otherwise Claude converts it). Claude reviews it with the new `speckit-xref:prd` skill: `prd-review.md` (contradictions, untestable criteria, gaps, the open decisions that block the first feature) and `roadmap.md` (features in build order: phase, the PRD's own ids, the PRD sections, the gate before each, the spec text). It neither rewrites nor re-researches the PRD.
+- **You approve the roadmap** in the pane (it lists the features, their gates and the open decisions). Shape then asks only the blocking decisions, and the first feature is specified from the roadmap, with its PRD sections and ids named.
+- Specs carry the PRD's ids (`FR-001 … (PRD F01)`, stories and scenarios theirs); the pane's PRD row counts the feature's PRD ids the spec carries and names the missing ones; the intent check reads the PRD sections the feature implements instead of a one-line request.
+- When a feature is done, **Next from roadmap** specifies the next one in the PRD's words; the gate before it (a test with real users, a review) is named as your part.
+- Extension command `speckit.xref.prd` does the review and the roadmap for any agent.
+
+### Verify sorts what it finds
+
+- Each finding is rated HIGH, MEDIUM or LOW; only HIGH and MEDIUM become tasks, LOW ones are listed. In the live runs every verify found "one more thing" (an anchor, a test name).
+- After two verify rounds in a run, closing the feature is your call: **Call it done** (pane, `/xref approve`) closes it for this tree, Resume asks for one more round.
+
 ## 0.5.2 — 2026-10-10
 
 The autopilot no longer ends at "done", and it hands each step what it needs to know. Mod 0.5.2, extension 0.4.1; preset 0.2.0 unchanged.

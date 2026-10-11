@@ -2,6 +2,7 @@
 
 import type { Autopilot, IdeaBrief, Ledger, NextWork, Snapshot, Task } from '../types'
 import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } from './brief'
+import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
@@ -9,6 +10,7 @@ import { evaluate, speckitCommand } from './xref'
 export type Phase =
   | 'setup'
   | 'integration'
+  | 'prd'
   | 'validate'
   | 'shape'
   | 'constitution'
@@ -65,6 +67,8 @@ export type Flow = {
   /** After a done feature: what comes next in the person's words, or the kind they chose before saying it. */
   next?: NextWork | null
   nextKind?: NextWork['kind'] | null
+  /** The verify steps handed over in this run. */
+  verifies?: number
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -73,6 +77,14 @@ export type Flow = {
 
 const INIT = 'init --here --force --non-interactive --integration claude'
 export const MAX_REPAIRS = 3
+/** Verify rounds in one run before closing the feature becomes the person's call: verify can always find one more thing. */
+export const MAX_VERIFIES = 2
+
+/** How a verification sorts what it finds: only what matters becomes work. */
+export const VERIFY_RULE = [
+  "Rate each finding: HIGH (a requirement, a scenario or a point of the person's words is not met), MEDIUM (it is met only in part, or no test proves it), LOW (polish, wording, an anchor or a comment, a nice-to-have).",
+  "Only HIGH and MEDIUM findings become tasks; name the LOW ones in your answer under 'Low, no task'. What an earlier verification raised and what was built or decided since is no new finding.",
+].join(' ')
 
 /** How Spec Kit's CLI runs here: installed, or through uvx without installing. */
 export const specifyCli = (snap: Snapshot) => (snap.tools.specify ? 'specify' : `uvx --from 'specify-cli>=1.1,<2' specify`)
@@ -201,7 +213,22 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   // A new project's first feature starts at the idea: researched (Validate) and shaped with the person (Shape)
   // before the constitution and the spec are written from it.
   const greenfield = snap.folder === 'empty' && snap.features.length === 0 && (!snap.featureDir || !snap.spec)
-  if (greenfield && flow.validate !== false) {
+  // A PRD the person wrote first takes Validate's place: imported, reviewed, cut into features, approved as a roadmap.
+  const fromPrd = !!(snap.prd || snap.prdSource)
+  if (greenfield && fromPrd) {
+    if (!snap.prd) {
+      return step('prd', null, `A PRD is in the folder (${snap.prdSource}): it is imported to ${PRD} first.`, null, {
+        prompt: `Convert ${snap.prdSource} to Markdown at ${PRD}, keeping its headings, tables and ids as they are, then end your turn.`,
+      })
+    }
+    if (!snap.prdReview || !snap.roadmap?.length) return step('prd', null, 'The PRD is imported: review it and cut it into features before the spec.', null, { prompt: PRD_PROMPT })
+    if (!snap.prdApproved) {
+      const blocking = snap.prdReview.blocking.length
+      return step('review', null, `The PRD review is written: ${snap.roadmap.length} feature${snap.roadmap.length === 1 ? '' : 's'} in the roadmap, ${blocking} open decision${blocking === 1 ? '' : 's'} block${blocking === 1 ? 's' : ''} the first.`,
+        'Read the PRD review and the roadmap, then press Approve roadmap in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'prd', value: snap.prdFingerprint ?? '' } })
+    }
+  }
+  if (greenfield && flow.validate !== false && !fromPrd) {
     const brief = snap.ideaBrief
     const decided = brief && snap.ideaDecision?.fingerprint === brief.fingerprint ? snap.ideaDecision.decision : null
     if (!brief && !idea) {
@@ -217,10 +244,11 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     }
   }
   if (greenfield && flow.shape !== false && !snap.productBrief) {
-    return step('shape', null, 'Before the spec: settle with the person what the first version is (scope, platforms, language, design, data).', null, { prompt: SHAPE_PROMPT })
+    return step('shape', null, 'Before the spec: settle with the person what the first version is (scope, platforms, language, design, data).', null, { prompt: fromPrd ? PRD_SHAPE_PROMPT : SHAPE_PROMPT })
   }
   if (!snap.constitution || snap.constitution.principles.length === 0) {
     if (snap.ideaBrief || snap.productBrief) notes.push(BRIEFS_NOTE)
+    if (snap.prd) notes.push(PRD_NOTE)
     return step('constitution', speckitCommand(snap, 'constitution'), 'The constitution is missing or still the template.')
   }
   if ((!snap.featureDir || !snap.spec) && snap.commits === false) {
@@ -229,6 +257,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
   if (!snap.featureDir || !snap.spec) {
     if (snap.ideaBrief || snap.productBrief) notes.push(BRIEFS_NOTE)
+    if (snap.prd) notes.push(PRD_NOTE)
+    // With an approved roadmap the first feature is named already: the person's words are the PRD.
+    const first = snap.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
+    if (!idea && first) return step('specify', `${speckitCommand(snap, 'specify')} ${roadmapSpecify(first)}`, `No feature yet; the roadmap names the first one: ${first.title}.`)
     return idea
       ? step('specify', `${speckitCommand(snap, 'specify')} ${idea}`, 'No feature yet; the person has said what to build.')
       : step('specify', speckitCommand(snap, 'specify'), 'No feature yet: describe what to build.', 'Describe the feature you want built; your own words become the spec.')
@@ -346,6 +378,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (ledger.checkpoints.verify === verified) {
     const next = flow.next
     const quote = next ? `"${next.text.length > 80 ? next.text.slice(0, 79) + '…' : next.text}"` : ''
+    if (next?.kind === 'feature' && snap.prd) notes.push(PRD_NOTE)
     if (next?.kind === 'feature') return step('specify', `${speckitCommand(snap, 'specify')} ${next.text}`, `${snap.featureDir} is done; the person named the next feature: ${quote}.`, null, { consumes: true })
     if (next?.kind === 'change') {
       const revise = xref && has('xref-revise') ? speckitCommand(snap, 'xref.revise') : null
@@ -355,16 +388,31 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       if (runbook) notes.push(runbook)
       return step('bug', null, `A bug in ${snap.featureDir}: ${quote}.`, null, { consumes: true, prompt: bugPrompt(snap, next.text, name => speckitCommand(snap, name), has) })
     }
-    return step('done', null, `${snap.featureDir} is done: every task is checked, converged and verified.`, doneAsk(flow.nextKind))
+    // A roadmap names the next feature, and the gate before it is the person's part.
+    const upcoming = snap.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
+    const roadmapAsk = upcoming && !flow.nextKind ? ` Next in the roadmap: "${upcoming.title}"${upcoming.gate ? `, after the gate ${upcoming.gate} (your part)` : ''}; press Next from roadmap when it is time.` : ''
+    return step('done', null, `${snap.featureDir} is done: every task is checked, converged and verified.`, doneAsk(flow.nextKind) + roadmapAsk)
   }
-  if (xref) return step('verify', speckitCommand(snap, 'xref.check'), 'Every task is checked: check the code against the spec.', null, { approve: { key: 'verify', value: verified } })
+  // Verify can always find one more thing: after two rounds in a run, closing the feature is the person's call.
+  if ((flow.verifies ?? 0) >= MAX_VERIFIES) {
+    return step('review', null, `Verify found new work in each of its last ${MAX_VERIFIES} rounds, and it is built.`,
+      'Look at what the last verifications added: press Call it done in the pane (or /xref approve) to close the feature as it is, or Resume for one more verification.', { approve: { key: 'done', value: verified } })
+  }
+  if (xref) {
+    const command = speckitCommand(snap, 'xref.check')
+    return step('verify', command, 'Every task is checked: check the code against the spec.', null, {
+      approve: { key: 'verify', value: verified },
+      prompt: `Run ${command} now through the Skill tool and carry it through. ${VERIFY_RULE}`,
+    })
+  }
   // Without the extension there is no command the model can run: it checks by itself, and the mod's intent check follows.
   return step('verify', null, 'Every task is checked: check the code against the spec.', null, {
     approve: { key: 'verify', value: verified },
     prompt: [
       "Check the code against the spec and against the person's own words (the spec's Input), by yourself: /xref check is the person's command, not one you can run.",
       'For each requirement name the code and the test that prove it. For each point the person made, say whether the app does it.',
-      "Whatever is missing or differs becomes a new task at the end of tasks.md under '## Phase N: Verification' (the next free T### ids). Then end your turn.",
+      VERIFY_RULE,
+      "Each HIGH or MEDIUM finding becomes a new task at the end of tasks.md under '## Phase N: Verification' (the next free T### ids). Then end your turn.",
     ].join('\n'),
   })
 }
@@ -449,6 +497,7 @@ export const idleAutopilot = (): Autopilot => ({
   testNote: null,
   next: null,
   nextKind: null,
+  verifies: 0,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
@@ -522,12 +571,12 @@ export const QUESTION_LABELS = ['needs a decision only the person can make', 'as
 /** The phase strip: `✓setup ✓const ✓spec ✓plan ✓tasks ▶impl 7/8 ·verify`; `◌spec` is a spec passed without your review. */
 export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): string {
   // The idea column shows only for a project that started at an idea (Validate, Shape).
-  const ideas = !!snap.ideaBrief || !!snap.productBrief || step.phase === 'validate' || step.phase === 'shape'
+  const ideas = !!snap.ideaBrief || !!snap.productBrief || !!snap.prd || step.phase === 'validate' || step.phase === 'shape' || step.phase === 'prd'
   // The design column shows for a feature with screens, and while its design is drawn or reviewed.
   const drawn = !!snap.design?.screens?.length || step.phase === 'design' || step.approve?.key === 'design'
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
-    ...(ideas ? [['idea', ['validate', 'shape']] as [string, Phase[]]] : []),
+    ...(ideas ? [['idea', ['prd', 'validate', 'shape']] as [string, Phase[]]] : []),
     ['const', ['constitution']],
     ['spec', ['specify', 'clarify', 'review', 'revise']],
     ['plan', ['plan']],
@@ -537,7 +586,7 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ['verify', ['verify']],
   ]
   // A review sits in the column of what it reviews.
-  const reviewed: Record<string, Phase> = { idea: 'validate', plan: 'plan', design: 'design' }
+  const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify' }
   const phase = step.phase === 'review' && step.approve ? (reviewed[step.approve.key] ?? 'review') : step.phase
   // Done: every column is behind it.
   const at = phase === 'done' ? order.length : order.findIndex(([, phases]) => phases.includes(phase))

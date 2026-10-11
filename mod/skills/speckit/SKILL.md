@@ -69,6 +69,7 @@ Spec Kit set up for another agent only (phase `integration`): `specify integrati
 
 | Phase | Command | What matters here |
 | --- | --- | --- |
+| `prd` | skill `speckit-xref:prd` | New projects that start from a PRD: review `.specify/memory/prd.md` and cut it into `.specify/memory/roadmap.md` (features in build order with the PRD's ids, sections and gates) and `prd-review.md` (blocking decisions). The person approves the roadmap; never approve it yourself. Specs then carry the PRD ids (`(PRD F01)`). |
 | `validate` | skill `speckit-xref:validate` | New projects only: research the idea (who has the problem, what exists, what differs, the riskiest assumption) into `.specify/memory/idea-brief.md`. Never invent a source. The person decides Build, Sharpen or Drop; never write that decision. |
 | `shape` | skill `speckit-xref:shape` | New projects only: ask the person what the idea leaves open (first-version scope, platforms, language, design, data) and write `.specify/memory/product-brief.md`. |
 | `constitution` | `/speckit-constitution` | 3 to 7 principles, each a short, checkable MUST rule (tests, dependencies, privacy, …). Ask the person, or on autopilot draft them from the repository and mark them as assumptions. The mod puts every MUST rule into every prompt, so few and sharp beats many. |

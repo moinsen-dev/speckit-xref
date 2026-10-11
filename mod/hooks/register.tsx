@@ -4,6 +4,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
+import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, verifyKey } from './brief'
 import { DESIGN_FILE, designChangeFromGit, designDir, designState, designTokens, screensPath, uiFromPlan } from './design'
 import { LOCAL_IGNORE, ledgerFromParts, ledgerToParts, localPath, rebaseline, runLogPath } from './ledger'
@@ -203,12 +204,14 @@ async function projectRoot($: $, cwd: string): Promise<string> {
   return cwd
 }
 
+// A PRD the person wrote first does not make the folder a codebase: it is where a new product starts.
 const IGNORABLE = /^(\.|README|LICENSE|CHANGELOG)/i
+const ignorable = (name: string) => IGNORABLE.test(name) || (PRD_NAME.test(name) && /\.(md|markdown|docx|pdf)$/i.test(name))
 
 /** Empty: nothing at the top but dotfiles, a README, a license or a changelog. */
 async function folderKind($: $): Promise<'empty' | 'existing'> {
   try {
-    return (await $.fs.list(root)).some(entry => !IGNORABLE.test(entry.name)) ? 'existing' : 'empty'
+    return (await $.fs.list(root)).some(entry => !ignorable(entry.name)) ? 'existing' : 'empty'
   } catch {
     return 'existing'
   }
@@ -339,6 +342,7 @@ async function scan($: $): Promise<void> {
     persistence: persistenceModel(constitutionMd),
     commits: await hasCommits($),
     ...(await ideaState($)),
+    ...(await prdState($, featureDir, features.map(f => f.dir))),
     ui: uiFromPlan(planMd),
     design: featureDir ? designState(designMd, screensMd) : null,
     phaseNotes: tasksMd ? parsePhaseNotes(tasksMd) : {},
@@ -369,6 +373,84 @@ async function projectTestScript($: $): Promise<string | null> {
 const IDEA_BRIEF = '.specify/memory/idea-brief.md'
 const PRODUCT_BRIEF = '.specify/memory/product-brief.md'
 const PROJECT_STATE = '.specify/xref/local/project.json'
+
+/** The PRD's state: a PRD file at the root, its import, review and roadmap, and whether the person approved the roadmap. */
+async function prdState($: $, featureDir: string | null, features: string[]): Promise<Pick<Snapshot, 'prdSource' | 'prd' | 'prdReview' | 'roadmap' | 'prdFingerprint' | 'prdApproved' | 'prdExcerpt'>> {
+  let names: string[] = []
+  try {
+    names = (await $.fs.list(root)).filter(e => e.kind === 'file').map(e => e.name)
+  } catch {
+    names = []
+  }
+  const [prd, review, roadmap] = await Promise.all([readText($, PRD), readText($, PRD_REVIEW), readText($, ROADMAP)])
+  const items = roadmap ? parseRoadmap(roadmap) : []
+  const fp = review !== null && roadmap !== null ? prdFingerprint(review, roadmap) : null
+  let approved: string | null = null
+  try {
+    approved = (JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as { prd?: { fingerprint?: string } }).prd?.fingerprint ?? null
+  } catch {
+    approved = null
+  }
+  const item = roadmapItemOf({ featureDir, features, roadmap: items })
+  return {
+    prdSource: prdSourceOf(names),
+    prd: prd !== null,
+    prdReview: review !== null ? parsePrdReview(review) : null,
+    roadmap: items,
+    prdFingerprint: fp,
+    prdApproved: !!fp && approved === fp,
+    prdExcerpt: prd && item ? prdSections(prd, item.sections) || null : null,
+  }
+}
+
+/** Imports the PRD: Markdown as it is, Word through pandoc or macOS textutil; false where neither can read it. */
+async function importPrd($: $, source: string): Promise<boolean> {
+  const rel = relPath(source, root)
+  if (/\.(md|markdown)$/i.test(rel)) {
+    const text = await readText($, rel)
+    if (text === null) return false
+    await $.fs.write(at(PRD), text)
+    return true
+  }
+  for (const argv of [['pandoc', '-f', 'docx', '-t', 'gfm', '--wrap=none', at(rel)], ['textutil', '-convert', 'txt', '-stdout', at(rel)]]) {
+    try {
+      const ran = await $.process.run(argv, { cwd: root, timeoutMs: 30_000 })
+      if (ran.exitCode === 0 && ran.stdout.trim()) {
+        await $.fs.write(at(PRD), ran.stdout)
+        return true
+      }
+    } catch {
+      // Not installed here: the next converter, or Claude converts it.
+    }
+  }
+  return false
+}
+
+/** The person approves the roadmap: kept in the local project state with its fingerprint, like the idea decision. */
+async function decidePrd($: $, value: string): Promise<string> {
+  let state: Record<string, unknown> = {}
+  try {
+    state = JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as Record<string, unknown>
+  } catch {
+    state = {}
+  }
+  await $.fs.write(at(PROJECT_STATE), JSON.stringify({ ...state, prd: { fingerprint: value, at: await stamp($) } }, null, 2) + '\n')
+  if (!(await exists($, LOCAL_IGNORE.path))) await $.fs.write(at(LOCAL_IGNORE.path), LOCAL_IGNORE.text)
+  await scan($)
+  const ap = await read($, autopilotA)
+  if (ap.on && ap.paused) await resumeAutopilot($)
+  const first = (await read($, snapshotA))?.roadmap?.[0]
+  return `Approved the roadmap${first ? `: the first feature is "${first.title}"` : ''}.`
+}
+
+/** `/xref prd <path>`: imports a PRD now, from any path in the project. */
+async function prdByCommand($: $, path: string): Promise<string> {
+  const source = path || (await read($, snapshotA))?.prdSource
+  if (!source) return 'Name the PRD: /xref prd <path to the .md or .docx>.'
+  if (!(await importPrd($, source))) return `Could not read ${source} here (pandoc or textutil converts a .docx); ask Claude to convert it to ${PRD}.`
+  await scan($)
+  return `Imported ${source} to ${PRD}. Next: the PRD review and the roadmap (the autopilot, or the speckit-xref:prd skill).`
+}
 
 /** The idea's state before the first feature: the brief Validate wrote, the person's decision on it, Shape's brief. */
 async function ideaState($: $): Promise<Pick<Snapshot, 'ideaBrief' | 'ideaDecision' | 'productBrief'>> {
@@ -470,6 +552,9 @@ async function dashboardDocs($: $, featureDir: string): Promise<DashboardDoc[]> 
       // The feature has none.
     }
   }
+  await add(ROADMAP, 'Roadmap')
+  await add(PRD_REVIEW, 'PRD review')
+  await add(PRD, 'PRD')
   await add(screensPath(featureDir), 'Screens')
   await add(DESIGN_FILE, 'Design system')
   await add('.specify/memory/constitution.md', 'Constitution')
@@ -882,13 +967,13 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null, verifies: ap.verifies ?? 0 })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
   const cost = await sessionCost($)
   const now = await $.clock.now()
-  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null }))
+  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null, verifies: 0 }))
   await update($, seenAtA, () => now)
   await retitle($)
   $.clock.after(0, () => void advance($).catch(() => undefined))
@@ -896,7 +981,8 @@ async function startAutopilot($: $, max?: number, night = false): Promise<void> 
 
 /** Goes on after a pause; a run whose budget is spent gets a new one. */
 async function resumeAutopilot($: $): Promise<void> {
-  await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, repairs: a.repairs > MAX_REPAIRS ? 0 : a.repairs, steps: a.steps >= a.max ? 0 : a.steps }))
+  // Resume past the verify limit is the person asking for one more verification.
+  await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, repairs: a.repairs > MAX_REPAIRS ? 0 : a.repairs, steps: a.steps >= a.max ? 0 : a.steps, verifies: 0 }))
   await retitle($)
   $.clock.after(0, () => void advance($).catch(() => undefined))
 }
@@ -949,7 +1035,9 @@ async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
 }
 
 /** Approvals only the person gives: the idea, the spec, the plan, the design, open checklists. The autopilot records checkpoints, never these. */
-const APPROVALS = new Set(['idea', 'spec', 'plan', 'design', 'checklists'])
+const APPROVALS = new Set(['idea', 'prd', 'spec', 'plan', 'design', 'checklists', 'done'])
+/** The button an approval wears. */
+const approveLabel = (key: string) => ({ checklists: 'Proceed anyway', idea: 'Build', prd: 'Approve roadmap', done: 'Call it done' })[key] ?? `Approve ${key}`
 const CHECKPOINTS = new Set(['analyze', 'converge', 'verify'])
 
 /** The person approves what the autopilot waits on (spec, plan, design, open checklists); the run goes on. */
@@ -970,6 +1058,14 @@ async function approve($: $): Promise<string> {
   }
   const { key, value } = step.approve
   if (key === 'idea') return decideIdea($, 'build')
+  if (key === 'prd') return decidePrd($, value)
+  if (key === 'done') {
+    // Closing the feature as it is: the verification counts for this tree, and what comes next is asked.
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, verify: value } }))
+    await persist($)
+    if (ap.on && ap.paused) await resumeAutopilot($)
+    return `Closed ${snap.featureDir} as done.`
+  }
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
   if (ap.on && ap.paused) await resumeAutopilot($)
@@ -1037,7 +1133,7 @@ async function askApproval($: $, step: Step): Promise<void> {
     else if (answer.trim()) void $.prompt.submit({ text: `About the idea: ${answer}`, asUser: true })
     return
   }
-  const yes = key === 'checklists' ? 'Proceed anyway' : `Approve ${key}`
+  const yes = approveLabel(key)
   const question =
     key === 'checklists' ? `${step.why} Go on implementing anyway?` : key === 'design' ? `${step.why} Approve the design for the tasks?` : `${step.why} Approve the ${key} as the contract?`
   // The terminal cannot show a mock: the browser can, and the question comes back once it is open.
@@ -1182,6 +1278,8 @@ async function advance($: $): Promise<void> {
   if (!snap) return
   const ledger = await read($, ledgerA)
   const step = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  // Importing a PRD is the mod's own work; only a file it cannot read goes to Claude.
+  if (step.phase === 'prd' && !snap.prd && snap.prdSource && (await importPrd($, snap.prdSource))) return advance($)
   // The step after a verification: done, or (a verify that changed the tree) verify again; either ends the run here.
   if ((step.phase === 'done' || step.phase === 'verify') && ap.lastPhase === 'verify') {
     const report = evaluate(snap, ledger)
@@ -1242,6 +1340,7 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     idea: step.phase === 'specify' ? null : a.idea,
     scope: step.phase === 'implement' ? snap.phase : a.scope,
     remediations: (a.remediations ?? 0) + (step.phase === 'remediate' ? 1 : 0),
+    verifies: (a.verifies ?? 0) + (step.phase === 'verify' ? 1 : 0),
     ...(step.consumes ? { next: null, nextKind: null } : {}),
   }))
   if (step.phase === 'remediate') await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, remediate: 'done' } }))
@@ -1289,6 +1388,16 @@ async function chooseNext($: $, kind: NextWork['kind']): Promise<void> {
   // Starting asks by itself: its first step is the done feature's question, now for this kind.
   if (!(await read($, autopilotA)).on) return startAutopilot($)
   await pauseAutopilot($, doneAsk(kind))
+}
+
+/** Next from roadmap: the roadmap's next feature becomes what comes next, in the PRD's words. */
+async function chooseRoadmap($: $): Promise<void> {
+  const snap = await read($, snapshotA)
+  const item = snap?.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
+  if (!item) return
+  await update($, autopilotA, a => ({ ...a, next: { kind: 'feature', text: roadmapSpecify(item) }, nextKind: null, paused: null, stalls: 0 }))
+  if (!(await read($, autopilotA)).on) return startAutopilot($)
+  $.clock.after(0, () => void advance($).catch(() => undefined))
 }
 
 /** `/xref next <feature|change|bug> <words>`: what comes after a done feature, in one line. */
@@ -1474,6 +1583,16 @@ export function compactPrompt(text: string): string | null {
 function bandPhase(snap: Snapshot): string {
   const { phases, current } = taskPhases(snap.tasks)
   return phases.length > 1 && current >= 0 ? `P${phaseNumber(phases[current]!.title, current)} · ` : ''
+}
+
+/** The PRD row: which roadmap feature this is, and how many of its PRD ids its spec carries. */
+function prdRow<T>(snap: Snapshot, row: (label: string, text: string, color?: Color) => T): T {
+  const item = roadmapItemOf(snap)
+  if (!item) return row('PRD', `${snap.roadmap?.length ?? 0} features in the roadmap`, 'subtle')
+  const index = snap.roadmap!.indexOf(item) + 1
+  const { covered, missing } = prdCoverage(item.scope, snap.spec)
+  const ids = item.scope.length ? ` · PRD ids ${covered.length}/${item.scope.length}${missing.length ? ` (missing ${missing.slice(0, 4).join(' ')}${missing.length > 4 ? ' …' : ''})` : ''}` : ''
+  return row('PRD', `feature ${index} of ${snap.roadmap!.length}: ${item.title}${ids}`, missing.length ? 'warning' : 'subtle')
 }
 
 /** The pane's Phase row: which of tasks.md's phases runs, how far it is, and the ones around it (`✓1 ✓2 ▶3 ·4`). */
@@ -1769,7 +1888,7 @@ export const register: Register = (on, options) => {
     }
     await scan($)
     const commands = [
-      { name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | approve | focus T### | auto on|night|off | next feature|change|bug <words> | pane | web', argumentHint: '[check | map | ack | approve | focus T### | auto on [steps]|night|off | next feature|change|bug <words> | pane | web]' },
+      { name: COMMAND, description: 'Spec X-Ref: status, or check | map | ack | approve | focus T### | auto on|night|off | next feature|change|bug <words> | prd <path> | pane | web', argumentHint: '[check | map | ack | approve | focus T### | auto on [steps]|night|off | next feature|change|bug <words> | prd <path> | pane | web]' },
       // Runs mid-turn: the one way to stop the autopilot while its step is still working.
       { name: STOP_COMMAND, description: 'Spec X-Ref: stop the autopilot now, the running turn included', immediate: true as const },
     ]
@@ -2111,6 +2230,8 @@ export const register: Register = (on, options) => {
         return { text: await openDashboard($) }
       case 'next':
         return { text: await nextByCommand($, rest) }
+      case 'prd':
+        return { text: await prdByCommand($, rest.join(' ')) }
       case 'auto': {
         const [mode = '', budget = ''] = rest
         if (mode === 'off') {
@@ -2221,7 +2342,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Box flexDirection="row" columnGap={1}>
           {approval ? (
-            <Button key="band-approve" label={approval === 'checklists' ? 'Proceed anyway' : approval === 'idea' ? 'Build' : `Approve ${approval}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+            <Button key="band-approve" label={approveLabel(approval)} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
           ) : (
             <Button key="band-resume" label="Resume" variant="primary" onPress={() => void resumeAutopilot($)} />
           )}
@@ -2309,6 +2430,22 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
       ) : null
+      // A PRD: the roadmap cut from it, what blocks the first feature, and the person's approval.
+      const prdCard =
+        snap?.prd && snap.roadmap?.length ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold>{`Roadmap from the PRD: ${snap.roadmap.length} feature${snap.roadmap.length === 1 ? '' : 's'}`}</Text>
+            {snap.roadmap.slice(0, 6).map((item, i) => (
+              <Text dimColor wrap="truncate-end">{`${i + 1}. ${item.title}${item.phase ? ` (${item.phase})` : ''}${item.gate ? ` · after ${item.gate}` : ''}`}</Text>
+            ))}
+            {(snap.prdReview?.blocking ?? []).slice(0, 4).map(b => (
+              <Text color="warning" wrap="truncate-end">{`Open: ${b}`}</Text>
+            ))}
+            <Box flexDirection="row" columnGap={1} marginTop={1}>
+              {snap.prdApproved ? <Text color="success">● You approved the roadmap</Text> : <Button key="prd-approve" label="Approve roadmap" variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />}
+            </Box>
+          </Box>
+        ) : null
       return (
         <Box flexDirection="column">
           <Text bold>{next?.why ?? 'No Spec Kit feature found.'}</Text>
@@ -2320,6 +2457,7 @@ export const register: Register = (on, options) => {
             </Box>
           ) : null}
           {ideaCard}
+          {prdCard}
           {/* The autopilot shows here only while it runs; it is started where there is a workflow to run. */}
           {ap.on ? <Box marginTop={1}>{autoRow}</Box> : null}
         </Box>
@@ -2368,12 +2506,14 @@ export const register: Register = (on, options) => {
               ? 'plan.md is written: read it, then approve it as the plan.'
               : step.approve.key === 'design'
                 ? 'The look is drafted: open the mocks, then approve it for the tasks.'
-                : 'Is this what you meant? Approve it as the contract.',
+                : step.approve.key === 'done'
+                  ? 'Verify keeps finding small things: close the feature as it is, or Resume for one more round.'
+                  : 'Is this what you meant? Approve it as the contract.',
             'warning',
           )}
           {/* The way on first: on a short pane the card's details may run past the bottom. */}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
-            <Button key="approve" label={`Approve ${step.approve.key}`} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
+            <Button key="approve" label={approveLabel(step.approve.key)} variant="primary" onPress={() => void approve($).then(text => $.ui.toast(text))} />
             {step.approve.key === 'design' ? <Button key="mocks" label="Open the mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} /> : null}
           </Box>
           {step.approve.key === 'design'
@@ -2390,12 +2530,15 @@ export const register: Register = (on, options) => {
         </Box>
       ) : null
     // A done feature: what comes next is the person's, and the pane offers the three ways on.
+    const upcoming = snap.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
     const doneCard =
       step.phase === 'done' ? (
         <Box flexDirection="column" marginTop={1}>
           {row('Done', ap.nextKind ? doneAsk(ap.nextKind) : 'Every task is checked, converged and verified. What comes next?', 'success')}
+          {upcoming ? row('', `Roadmap: ${upcoming.title}${upcoming.gate ? ` · after ${upcoming.gate} (your part)` : ''}`, 'subtle') : null}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
-            <Button key="next-feature" label="New feature" variant="primary" onPress={() => void chooseNext($, 'feature')} />
+            {upcoming ? <Button key="next-roadmap" label="Next from roadmap" variant="primary" onPress={() => void chooseRoadmap($)} /> : null}
+            <Button key="next-feature" label="New feature" variant={upcoming ? undefined : 'primary'} onPress={() => void chooseNext($, 'feature')} />
             <Button key="next-change" label="Change" onPress={() => void chooseNext($, 'change')} />
             <Button key="next-bug" label="Bug" onPress={() => void chooseNext($, 'bug')} />
           </Box>
@@ -2459,6 +2602,7 @@ export const register: Register = (on, options) => {
         {details ? row('Todo', open.length ? open.slice(0, 3).map(t => t.id).join(' · ') + (open.length > 3 ? ` · +${open.length - 3}` : '') : '-') : null}
         {row('Status', `${bar(report.done, report.tasks, 10)} ${report.done}/${report.tasks} tasks · FR ${report.covered}/${report.total}`)}
         {phaseRow(snap, row)}
+        {details && snap.prd && snap.roadmap?.length ? prdRow(snap, row) : null}
         {details && snap.design?.screens?.length && step.approve?.key !== 'design' ? (
           <Box flexDirection="row" columnGap={1}>
             {row(

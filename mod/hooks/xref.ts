@@ -398,6 +398,7 @@ export function forkPrompt(snap: Snapshot, ledger: Ledger, active: string | null
     '',
     `Spec: ${spec?.title ?? '-'} (${snap.featureDir ?? '-'})`,
     `Original request: ${spec?.input ?? '-'}`,
+    ...(snap.prdExcerpt ? ["The person's PRD, the sections this feature implements (their words, like the original request):", snap.prdExcerpt] : []),
     `Requirements:\n${reqs}`,
     `Out of scope: ${spec?.outOfScope.join('; ') || '-'}`,
     `Current task: ${task ? `${task.id} ${task.text}` : '-'}`,
