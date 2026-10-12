@@ -287,7 +287,7 @@ footer p { margin: 0 0 4px; }
   <div><span class="k">Project</span><span class="v">speckit-xref</span></div>
   <div class="subject"><span class="k">Subject</span><span class="v">Spec-to-code traceability and an autopilot for GitHub Spec Kit in Claude Code</span></div>
   <div class="cells">
-    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.7.1</span></span></div>
+    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.8.0</span></span></div>
     <div><span class="k">License</span><span class="v">MIT</span></div>
     <div><span class="k">Source</span><span class="v"><a href="https://github.com/moinsen-dev/speckit-xref">GitHub</a></span></div>
   </div>
@@ -431,7 +431,7 @@ footer p { margin: 0 0 4px; }
     <li><h3>Passing</h3><p>Its tests passed for the text the requirement has now.</p></li>
     <li><h3>Accepted</h3><p>A driver played its scenario through as a person would. Only a fresh report counts.</p></li>
   </ol>
-  <p class="scale-note">When a requirement's text changes, it drops back to planned until it is proven again. Acceptance runs in your installed Chrome with Playwright, and with Maestro on a simulator or emulator; a flow that taps by screen coordinates proves nothing.</p>
+  <p class="scale-note">When a requirement's text changes, it drops back to planned until it is proven again. Tests prove requirements, not tasks: one per requirement or scenario, where its behaviour shows. Scripted acceptance, when you ask for it, runs in your installed Chrome with Playwright and with Maestro on a simulator or emulator; a flow that taps by screen coordinates proves nothing.</p>
 </section>
 
 <section id="use-cases" aria-labelledby="use-cases-title">
@@ -447,6 +447,7 @@ footer p { margin: 0 0 4px; }
       <tr><td>An existing codebase, kept honest</td><td>Bring the project under Spec Kit, map requirements to tasks once, and every later edit is checked against the plan as it happens.</td><td>mod, preset</td></tr>
       <tr><td>Every pull request, traced</td><td>The Action writes requirement, tasks, files and tests into the job summary and fails the job on red drift or a failing acceptance scenario.</td><td>action, extension</td></tr>
       <tr><td>A release with a checklist and your yes</td><td>Ship checks store fields, permission texts, privacy and tracked secrets, builds locally, writes the exact release commands, and runs them only after Ship it.</td><td>mod</td></tr>
+      <tr><td>A cheaper, faster build</td><td>Each phase runs in a subagent with a fresh context and the model it needs, so the session's context stays small and the expensive model does what needs it: the spec, the reviews, verify.</td><td>mod</td></tr>
       <tr><td>An overnight run</td><td><code>/xref auto night</code> works through the steps while you sleep. Reviews and real decisions still wait for you, and a briefing says what happened.</td><td>mod</td></tr>
       <tr><td>Any agent Spec Kit supports</td><td>The extension's commands (validate, prd, design, accept, ship, check, verify and more) run wherever Spec Kit runs, and in CI.</td><td>extension</td></tr>
     </tbody>
@@ -520,7 +521,7 @@ footer p { margin: 0 0 4px; }
       <p>In a workflow on <code>pull_request</code>.</p>
       <div class="codebox"><pre><code>- uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.7.1</code></pre><button class="copy" type="button">Copy</button></div>
+- uses: moinsen-dev/speckit-xref/action@v0.8.0</code></pre><button class="copy" type="button">Copy</button></div>
     </div>
   </div>
 </section>
@@ -541,9 +542,9 @@ footer p { margin: 0 0 4px; }
     { key: 'plan', title: 'Plan', what: 'The technical plan and its data model. A request you make later reaches the spec first, as a new requirement with a new id, before it reaches the code.', commands: '/speckit-plan', yours: 'Optional: review the plan too (option review: spec+plan).' },
     { key: 'design', title: 'Design', what: 'A feature with a user interface gets its look before its tasks: a DESIGN.md design system and one HTML mock per screen, each traced to the user stories it serves.', commands: '/speckit.xref.design', yours: 'Look at the mocks in the browser and approve the design.' },
     { key: 'tasks', title: 'Tasks', what: 'tasks.md is written, each requirement is mapped to the tasks that implement it, and an analysis checks spec, plan and tasks against each other. Its fixes go in before the first task does.', commands: '/speckit-tasks, /speckit.xref.map, /speckit-analyze', yours: 'Nothing, unless a checklist item is still open.' },
-    { key: 'build', title: 'Build', what: 'One phase of tasks per step. Every edit is booked against the task in progress, an edit no task planned is flagged to Claude at once, and the tests gate every step: three repairs, then it is your call.', commands: '/speckit-implement', yours: 'A question the spec leaves open, or a request that contradicts it.' },
+    { key: 'build', title: 'Build', what: 'One phase of tasks per step, each in a subagent with a fresh context and the model it needs: Sonnet builds, Opus takes over a repair that failed, Haiku does docs and configuration. The session keeps the spec, your decisions and short reports. Every edit is booked against its task, an edit no task planned is flagged at once, and the tests gate every step.', commands: '/speckit-implement, speckit-xref:implementer', yours: 'A question the spec leaves open, or a request that contradicts it.' },
     { key: 'verify', title: 'Verify', what: 'Converge finds the work the tasks missed. Verify checks the code against the spec and against your own words. Only high and medium findings become new tasks; low ones are listed, not built.', commands: '/speckit-converge, /speckit.xref.check', yours: 'After rounds that keep finding new work: Call it done, or one more round.' },
-    { key: 'accept', title: 'Accept', what: 'A feature people use is played through scenario by scenario, as a person would: Playwright in your installed Chrome, Maestro on a simulator or emulator. One test per scenario stays in the repository, and a failure becomes a fix task.', commands: '/speckit.xref.accept', yours: 'What no driver can check: a real device, real users, a paid service.' },
+    { key: 'try', title: 'Try', what: 'Each story is used as a person would right after it is built, and the whole app before it counts as done: in the iOS Simulator of the Claude desktop app or in a browser, off the happy path too (a permission denied, offline, back and forth). Findings come with screenshots and become fix tasks. Scripted acceptance with Playwright or Maestro is there on request.', commands: '/speckit.xref.try, /speckit.xref.accept', yours: 'What no tool here can check: a real device, real users, a paid service.' },
     { key: 'ship', title: 'Ship', what: 'A release check: version and store fields, a usage text for every permission, privacy, tracked secrets, the production build. Its gaps become tasks. Then it writes the exact release commands for each platform.', commands: '/xref ship, /speckit.xref.ship', yours: 'Your part before the release, then Ship it. Nothing goes out before.' },
   ]
   const NOW = PHASES.findIndex(p => p.key === 'build')

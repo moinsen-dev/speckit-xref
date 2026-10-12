@@ -7,7 +7,7 @@ The speckit-xref Claude Code mod (`../mod`) keeps the same ledger live while Cla
 ## Install
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.7.1/speckit-xref-extension-v0.7.1.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.8.0/speckit-xref-extension-v0.8.0.zip
 ```
 
 From a checkout: `specify extension add --dev /path/to/speckit-xref/extension`.
@@ -23,6 +23,7 @@ Requires Spec Kit 0.12.17 or later and `python3` 3.9+ (standard library only). `
 | `/speckit.xref.validate` | Before a new project's first spec: researches the idea (who has the problem, what exists, what differs, the riskiest assumption, kill criteria, a score) into `.specify/memory/idea-brief.md`; you decide Build, Sharpen or Drop. Alternatives count as verified only with a fetched URL. |
 | `/speckit.xref.shape` | Settles the first version with you (scope, platforms, language, design, data) into `.specify/memory/product-brief.md`, so the spec treats it as decided. |
 | `/speckit.xref.accept` | Plays a finished feature through as a person would: one Playwright test or Maestro flow per acceptance scenario under `e2e/acceptance/`, JUnit reports, failures as fix tasks, and what only a person can check in `acceptance.md`. |
+| `/speckit.xref.try` | Uses the app as a person would, story by story and off the happy path (the iOS Simulator, a browser, or a headless Playwright script with the installed Chrome); findings with screenshots in `try.md`, HIGH and MEDIUM ones as fix tasks. |
 | `/speckit.xref.ship` | Checks that a finished app is ready to release (version, store fields, permission texts, privacy, accessibility, tracked secrets, the production build) and plans it in `.specify/memory/release.md`: the checks with evidence, the exact release commands per platform, and your part before and after. Gaps become tasks under `## Phase N: Release readiness`; nothing goes out until you say yes. |
 | `/speckit.xref.prd` | A project that starts from a PRD: reviews it (contradictions, untestable criteria, blocking decisions) into `.specify/memory/prd-review.md` and cuts it into `.specify/memory/roadmap.md`, features in build order with the PRD's own ids, sections and gates; specs then carry the PRD ids. |
 | `/speckit.xref.design` | After the plan, for a feature with a user interface: `DESIGN.md` at the root (Google Stitch's format: tokens plus the reasons) and one static HTML mock per screen in `specs/<feature>/design/`, with `screens.md` tracing each screen to its user stories and FRs. Optional `after_plan` hook. |
