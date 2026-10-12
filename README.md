@@ -26,10 +26,10 @@ Spec Kit gives the agent a spec, but nothing keeps the agent on it while it work
 
 ## Install
 
-**Claude Code mod**, at the prompt of a terminal session (Claude Code 2.1.295 or later):
+**Claude Code mod**, in a terminal (Claude Code 2.1.295 or later; the marketplace is added on the way):
 
-```text
-/plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
+```bash
+claude plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
 ```
 
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):

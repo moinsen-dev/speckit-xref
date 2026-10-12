@@ -31,10 +31,10 @@ A 0.3 `xref.json` is migrated on first load.
 
 ## Install
 
-At the prompt of a terminal session:
+In a terminal (the marketplace is added on the way):
 
-```text
-/plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
+```bash
+claude plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
 ```
 
 ## Autopilot
