@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Sets the release version everywhere it is written: the mod's plugin.json, the marketplace (twice), the extension's
-// manifest, and the download and Action links in the READMEs and the catalog submission.
+// manifest, the download and Action links in the READMEs and the catalog submission, and the project page's revision.
 //   node scripts/bump.mjs <version> [--extension <version>]
 // The extension follows the release unless --extension names its own version; the preset keeps its version.
 // Historical notes such as "(0.6.1)" in code and docs are never touched. Bumping to the current version changes nothing.
@@ -41,6 +41,10 @@ const edits = {
   'extension/README.md': [
     [new RegExp(`releases/download/v${esc(oldTag)}/`, 'g'), `releases/download/v${version}/`, 1],
     [new RegExp(`speckit-xref-extension-v${esc(oldExt)}\\.zip`, 'g'), `speckit-xref-extension-v${extension}.zip`, 1],
+  ],
+  'site/index.html': [
+    [new RegExp(`(<span class="rev">)${esc(oldTag)}(</span>)`), `$1${version}$2`, 1],
+    [new RegExp(`speckit-xref/action@v${esc(oldTag)}\\b`, 'g'), `speckit-xref/action@v${version}`, 1],
   ],
   'docs/spec-kit-submission.md': [
     [new RegExp(`(\\| Version \\| \`)${esc(oldExt)}(\` \\|)`), `$1${extension}$2`, 1],

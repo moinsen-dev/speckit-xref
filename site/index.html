@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>speckit-xref: keep the code on the spec</title>
+<meta name="description" content="A Claude Code mod and Spec Kit extension that traces every requirement to the tasks, files and tests that implement it, flags drift the moment it happens, and runs Spec Kit's workflow on autopilot, stopping only for decisions that are yours.">
+<meta property="og:title" content="speckit-xref: keep the code on the spec">
+<meta property="og:description" content="Spec-to-code traceability and an autopilot for GitHub Spec Kit in Claude Code. It stops only for decisions that are yours.">
+<meta property="og:type" content="website">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%2316233A' stroke-width='3'/%3E%3Cpath d='M11 11l10 10M21 11L11 21' stroke='%23C62A2A' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --ink: #16233A;
+  --graphite: #55627A;
+  --paper: #EEF2F0;
+  --grid: #D5DEDA;
+  --surface: #F7F9F8;
+  --redpen: #C62A2A;
+  --stamp: #1F4FA0;
+  --terminal: #0F1B2D;
+  --term-text: #DCE6F0;
+  --term-dim: #8DA2BA;
+  --term-ok: #7EE0A0;
+  --term-now: #F2C46D;
+  --display: "DIN Condensed", "Bahnschrift Condensed", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --measure: 68ch;
+  --section: clamp(64px, 10vw, 120px);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #E6EEF7; --graphite: #9FB3C8; --paper: #0E2238; --grid: #1C3654; --surface: #132B45;
+    --redpen: #FF6B5E; --stamp: #8FB4FF; --terminal: #081626;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #E6EEF7; --graphite: #9FB3C8; --paper: #0E2238; --grid: #1C3654; --surface: #132B45;
+  --redpen: #FF6B5E; --stamp: #8FB4FF; --terminal: #081626;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* The sheet's fine grid, as on drafting film. */
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  font: 400 1.0625rem/1.6 var(--body);
+}
+a { color: var(--stamp); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--stamp); outline-offset: 2px; }
+code, kbd, .mono { font-family: var(--mono); font-size: 0.92em; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: 0.005em; line-height: 1.02; margin: 0; }
+h1 { font-size: clamp(2.8rem, 6.4vw, 4.6rem); }
+h2 { font-size: clamp(2rem, 3.6vw, 2.7rem); }
+h3 { font-size: 1.35rem; line-height: 1.15; }
+p { margin: 0 0 1em; max-width: var(--measure); }
+
+.sheet { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .sheet { padding: 0 32px; } }
+
+/* ---- Title block: the drawing's corner, with the record's real data ---- */
+.titleblock {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+  margin-top: 16px;
+  font-size: 0.875rem;
+}
+.titleblock > div { padding: 8px 12px; border-bottom: 1px solid var(--ink); }
+.titleblock .mark { display: flex; align-items: center; justify-content: center; padding: 8px 14px; border-right: 1px solid var(--ink); }
+.titleblock .k { display: block; color: var(--graphite); font-size: 0.75rem; }
+.titleblock .v { font-weight: 600; }
+.titleblock .subject { grid-column: 1 / -1; }
+.titleblock .cells { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); padding: 0; }
+.titleblock .cells > div { padding: 8px 12px; border-right: 1px solid var(--ink); }
+.titleblock .cells > div:last-child { border-right: 0; }
+.titleblock nav { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 20px; padding: 9px 12px; }
+@media (min-width: 900px) {
+  .titleblock { grid-template-columns: auto 1fr 2.2fr 1.6fr; }
+  .titleblock > div { border-right: 1px solid var(--ink); }
+  .titleblock .subject { grid-column: auto; }
+  .titleblock .cells { grid-column: auto; border-right: 0; }
+}
+
+/* ---- Hero ---- */
+.hero { display: grid; gap: 40px; padding: 56px 0 var(--section); }
+@media (min-width: 1000px) { .hero { grid-template-columns: 5fr 7fr; gap: 56px; align-items: start; padding-top: 80px; } }
+.hero .lede { font-size: 1.2rem; color: var(--ink); margin-top: 22px; }
+.hero .works { color: var(--graphite); font-size: 0.95rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.button {
+  display: inline-block; padding: 11px 18px; border-radius: 4px; font-weight: 600; text-decoration: none;
+  border: 1.5px solid var(--ink); color: var(--ink); background: var(--surface);
+}
+.button.primary { background: var(--ink); color: var(--paper); }
+.button:hover { text-decoration: none; box-shadow: 3px 3px 0 var(--grid); }
+
+/* ---- The trace: requirement → task → code → test, and a red-pen drift mark ---- */
+.trace { margin: 0; position: relative; }
+.nodes { list-style: none; margin: 0; padding: 0; position: relative; }
+.node {
+  position: relative;
+  margin: 0 0 22px calc(var(--i) * 18px);
+  background: var(--surface);
+  border: 1.5px solid var(--ink);
+  padding: 10px 14px 12px 14px;
+}
+@media (min-width: 600px) { .node { margin-left: calc(var(--i) * 46px); } }
+/* The leader line down to the next node. */
+.nodes .node:not(:last-child)::after {
+  content: ""; position: absolute; left: 22px; top: 100%; height: 22px;
+  border-left: 1.5px solid var(--ink);
+}
+.node .file { font-family: var(--mono); font-size: 0.8rem; color: var(--graphite); display: block; margin-bottom: 4px; padding-right: 30px; overflow-wrap: anywhere; }
+.node .line { font-family: var(--mono); font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.node .id { font-weight: 700; }
+.node .ok { color: var(--ink); font-weight: 700; }
+.balloon {
+  position: absolute; top: -13px; right: -13px;
+  width: 28px; height: 28px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--paper); border: 1.5px solid var(--ink);
+  font: 700 0.95rem/1 var(--display);
+}
+.node.drift { margin-top: 30px; margin-left: 6%; border-style: dashed; border-color: var(--graphite); }
+@media (min-width: 600px) { .node.drift { margin-left: 34%; } }
+.node.drift .balloon { border-color: var(--redpen); color: var(--redpen); }
+.redline { position: absolute; inset: -14px -16px -14px -16px; width: calc(100% + 32px); height: calc(100% + 28px); pointer-events: none; overflow: visible; }
+.redline path { fill: none; stroke: var(--redpen); stroke-width: 2.4; stroke-linecap: round; }
+.drift .flag { color: var(--redpen); font-family: var(--mono); font-size: 0.82rem; margin-top: 6px; display: block; }
+.notes { margin: 30px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 0.95rem; }
+.notes li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: baseline; }
+.notes .n { width: 24px; height: 24px; border-radius: 999px; border: 1.5px solid var(--ink); display: grid; place-items: center; font: 700 0.85rem/1 var(--display); }
+.notes .n.red { border-color: var(--redpen); color: var(--redpen); }
+
+/* ---- Sections ---- */
+section { padding: var(--section) 0 0; }
+.section-head { max-width: var(--measure); margin-bottom: 32px; }
+.section-head p { color: var(--graphite); margin-top: 14px; font-size: 1.1rem; }
+.rule { border: 0; border-top: 1.5px solid var(--ink); margin: 0; }
+
+/* ---- Why: three plain observations ---- */
+.why { display: grid; gap: 24px 48px; }
+@media (min-width: 900px) { .why { grid-template-columns: repeat(3, 1fr); } }
+.why h3 { margin-bottom: 10px; }
+.why p { color: var(--ink); }
+
+/* ---- The workflow strip, as the pane draws it ---- */
+.strip { display: flex; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 0.95rem; margin-bottom: 18px; }
+.strip button {
+  font: inherit; color: var(--graphite); background: transparent; border: 1.5px solid transparent;
+  padding: 6px 9px; border-radius: 4px; cursor: pointer;
+}
+.strip button[aria-selected="true"] { color: var(--ink); border-color: var(--ink); background: var(--surface); font-weight: 700; }
+.strip button:hover { color: var(--ink); }
+.strip .done::before { content: "✓"; }
+.strip .now::before { content: "▶"; }
+.strip .ahead::before { content: "·"; }
+.phase-panel {
+  border: 1.5px solid var(--ink); background: var(--surface); padding: 22px 24px;
+  display: grid; gap: 18px 40px;
+}
+@media (min-width: 900px) { .phase-panel { grid-template-columns: 3fr 2fr; } }
+.phase-panel h3 { margin-bottom: 8px; }
+.phase-panel .commands { font-family: var(--mono); font-size: 0.85rem; color: var(--graphite); }
+.phase-panel .yours { border-left: 1.5px solid var(--ink); padding-left: 18px; }
+.phase-panel .yours .k { color: var(--graphite); font-size: 0.85rem; display: block; margin-bottom: 6px; }
+.phase-panel .fade { animation: fade 180ms ease-out; }
+@keyframes fade { from { opacity: 0.2; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .phase-panel .fade { animation: none; } html { scroll-behavior: auto; } }
+
+/* ---- Decisions: stamps; rails ---- */
+.decide { display: grid; gap: 32px 56px; }
+@media (min-width: 900px) { .decide { grid-template-columns: 1fr 1fr; } }
+.stamps { display: flex; flex-wrap: wrap; gap: 14px 12px; margin: 6px 0 18px; padding: 0; list-style: none; }
+.stamp {
+  display: inline-block; padding: 6px 12px 4px; border: 2.5px solid var(--stamp); color: var(--stamp);
+  border-radius: 4px; font: 700 1.15rem/1 var(--display); transform: rotate(var(--r, -2deg));
+}
+.held { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 10px; }
+.held li { display: grid; grid-template-columns: minmax(0, 15ch) 1fr; gap: 14px; align-items: baseline; border-bottom: 1px solid var(--grid); padding-bottom: 10px; }
+.held code { font-weight: 600; white-space: nowrap; }
+.held span { color: var(--graphite); font-size: 0.95rem; }
+.held .what { color: var(--ink); font-size: 1rem; }
+@media (max-width: 599px) { .held li { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---- The proof ladder as a measuring scale ---- */
+.scale { position: relative; margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 0; }
+@media (min-width: 900px) { .scale { grid-template-columns: repeat(6, 1fr); border-top: 1.5px solid var(--ink); } }
+.scale li { position: relative; padding: 18px 16px 0 0; }
+@media (min-width: 900px) {
+  .scale li::before { content: ""; position: absolute; left: 0; top: -1.5px; height: 14px; border-left: 1.5px solid var(--ink); }
+  .scale li::after { content: ""; position: absolute; left: 50%; top: -1.5px; height: 7px; border-left: 1px solid var(--ink); }
+}
+@media (max-width: 899px) { .scale li { border-left: 1.5px solid var(--ink); padding: 4px 0 18px 18px; } }
+.scale h3 { font-size: 1.3rem; margin-bottom: 6px; }
+.scale p { font-size: 0.95rem; color: var(--graphite); }
+.scale-note { margin-top: 20px; }
+
+/* ---- Use cases: a parts list ---- */
+.partslist { width: 100%; border-collapse: collapse; border: 1.5px solid var(--ink); background: var(--surface); font-size: 0.97rem; }
+.partslist th, .partslist td { border: 1px solid var(--ink); padding: 12px 14px; text-align: left; vertical-align: top; }
+.partslist thead th { font: 700 1.05rem/1.2 var(--display); background: var(--paper); }
+.partslist td:first-child { font-weight: 700; width: 26%; }
+.partslist td:last-child { width: 18%; font-family: var(--mono); font-size: 0.82rem; color: var(--graphite); }
+@media (max-width: 760px) {
+  .partslist thead { display: none; }
+  .partslist, .partslist tbody, .partslist tr, .partslist td { display: block; width: 100% !important; }
+  .partslist tr { border-bottom: 1.5px solid var(--ink); }
+  .partslist td { border: 0; padding: 6px 14px; }
+  .partslist td:first-child { padding-top: 14px; }
+  .partslist td:last-child { padding-bottom: 14px; }
+}
+
+/* ---- Parts ---- */
+.parts { display: grid; gap: 0; border: 1.5px solid var(--ink); background: var(--surface); }
+@media (min-width: 900px) { .parts { grid-template-columns: repeat(4, 1fr); } }
+.parts > div { padding: 18px 20px; border-bottom: 1px solid var(--ink); }
+@media (min-width: 900px) { .parts > div { border-bottom: 0; border-right: 1px solid var(--ink); } .parts > div:last-child { border-right: 0; } }
+.parts > div:last-child { border-bottom: 0; }
+.parts h3 { margin-bottom: 8px; }
+.parts p { font-size: 0.95rem; }
+.parts .for { color: var(--graphite); font-size: 0.85rem; margin: 0; }
+.parts code { white-space: nowrap; }
+
+/* ---- The pane, as it looks in the terminal ---- */
+.terminal {
+  background: var(--terminal); color: var(--term-text); border-radius: 4px; padding: 18px 20px;
+  font-family: var(--mono); font-size: 0.84rem; line-height: 1.55; overflow-x: auto; white-space: pre; margin: 0;
+}
+.terminal .dim { color: var(--term-dim); }
+.terminal .ok { color: var(--term-ok); }
+.terminal .now { color: var(--term-now); }
+.caption { color: var(--graphite); font-size: 0.92rem; margin-top: 12px; }
+.pane-grid { display: grid; gap: 28px 48px; align-items: start; }
+@media (min-width: 1000px) { .pane-grid { grid-template-columns: 7fr 5fr; } }
+.pane-grid ul { margin: 0; padding-left: 1.1em; }
+.pane-grid li { margin-bottom: 10px; }
+
+/* Grid children may shrink below their content (a long command scrolls inside its box, not the page). */
+.hero > *, .why > *, .decide > *, .pane-grid > *, .install > *, .phase-panel > *, .parts > * { min-width: 0; }
+.nowrap { white-space: nowrap; }
+
+/* ---- Install ---- */
+.install { display: grid; gap: 28px; }
+@media (min-width: 900px) { .install { grid-template-columns: 1fr 1fr; } }
+.install h3 { margin-bottom: 6px; }
+.install p { color: var(--graphite); font-size: 0.95rem; }
+.codebox { position: relative; }
+.codebox pre {
+  margin: 0; background: var(--terminal); color: var(--term-text); border-radius: 4px; padding: 40px 16px 14px;
+  font-family: var(--mono); font-size: 0.82rem; line-height: 1.55;
+  /* Long commands wrap on screen; Copy still takes them exactly as written. */
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.copy {
+  position: absolute; top: 8px; right: 8px; font: 600 0.75rem/1 var(--body); padding: 6px 8px; border-radius: 4px;
+  border: 1px solid var(--term-dim); background: transparent; color: var(--term-text); cursor: pointer;
+}
+.copy:hover { border-color: var(--term-text); }
+
+footer { margin-top: var(--section); border-top: 1.5px solid var(--ink); padding: 22px 0 40px; color: var(--graphite); font-size: 0.9rem; }
+footer p { margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<header class="titleblock" aria-label="speckit-xref at a glance">
+  <div class="mark" aria-hidden="true">
+    <svg width="40" height="40" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M11 11l10 10M21 11L11 21" stroke="var(--redpen)" stroke-width="2.6" stroke-linecap="round"/></svg>
+  </div>
+  <div><span class="k">Project</span><span class="v">speckit-xref</span></div>
+  <div class="subject"><span class="k">Subject</span><span class="v">Spec-to-code traceability and an autopilot for GitHub Spec Kit in Claude Code</span></div>
+  <div class="cells">
+    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.7.1</span></span></div>
+    <div><span class="k">License</span><span class="v">MIT</span></div>
+    <div><span class="k">Source</span><span class="v"><a href="https://github.com/moinsen-dev/speckit-xref">GitHub</a></span></div>
+  </div>
+  <nav aria-label="Sections">
+    <a href="#why">Why</a>
+    <a href="#workflow">The workflow</a>
+    <a href="#decisions">Your decisions</a>
+    <a href="#proof">Proof</a>
+    <a href="#use-cases">Use cases</a>
+    <a href="#install">Install</a>
+  </nav>
+</header>
+
+<main>
+<section class="hero" aria-labelledby="title">
+  <div>
+    <h1 id="title">Keep the code on the spec.</h1>
+    <p class="lede"><span class="nowrap">speckit-xref</span> traces every requirement of a GitHub Spec Kit feature to the tasks, files and tests that implement it, and flags drift the moment it happens. Its autopilot works through Spec Kit's whole workflow by itself and stops only for decisions that are yours.</p>
+    <p class="works">A Claude Code mod, a Spec Kit extension, a preset and a GitHub Action, sharing one record per feature.</p>
+    <div class="actions">
+      <a class="button primary" href="#install">Install the mod</a>
+      <a class="button" href="https://github.com/moinsen-dev/speckit-xref">Read the source</a>
+    </div>
+  </div>
+
+  <figure class="trace" aria-label="A requirement traced to its task, its code and its test, and one edit that no task planned">
+    <ol class="nodes">
+      <li class="node" style="--i:0">
+        <span class="balloon" aria-hidden="true">1</span>
+        <span class="file">specs/001-magic-link-login/spec.md</span>
+        <div class="line"><span class="id">FR-002</span> System MUST send a single-use link that expires after 15 minutes.</div>
+      </li>
+      <li class="node" style="--i:1">
+        <span class="balloon" aria-hidden="true">2</span>
+        <span class="file">specs/001-magic-link-login/tasks.md</span>
+        <div class="line"><span class="id">T004</span> Issue and store the token in <code>src/auth/token.ts</code> (FR-002)</div>
+      </li>
+      <li class="node" style="--i:2">
+        <span class="balloon" aria-hidden="true">3</span>
+        <span class="file">src/auth/token.ts</span>
+        <div class="line">// @spec 001-magic-link-login/FR-002<br>export function issueToken(email: string) { … }</div>
+      </li>
+      <li class="node" style="--i:3">
+        <span class="balloon" aria-hidden="true">4</span>
+        <span class="file">tests/auth/token.test.ts</span>
+        <div class="line">✓ FR-002 issues a single-use token <span class="ok">passing</span></div>
+      </li>
+    </ol>
+    <div class="node drift" style="--i:0">
+      <svg class="redline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M6 18 C 20 2, 80 0, 95 14 C 104 30, 99 78, 88 90 C 70 103, 22 101, 8 88 C -2 74, -1 32, 9 13" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <span class="balloon" aria-hidden="true">5</span>
+      <span class="file">src/ui/theme.ts</span>
+      <div class="line">+ export const dark = true</div>
+      <span class="flag">▲ not planned for any task</span>
+    </div>
+    <figcaption>
+      <ol class="notes">
+        <li><span class="n" aria-hidden="true">1</span><span>The requirement, in your words, with its id.</span></li>
+        <li><span class="n" aria-hidden="true">2</span><span>The task that implements it, mapped once and kept on record.</span></li>
+        <li><span class="n" aria-hidden="true">3</span><span>The code, anchored to the requirement; every edit is booked against the task in progress.</span></li>
+        <li><span class="n" aria-hidden="true">4</span><span>The test that proves it, for the requirement's current text.</span></li>
+        <li><span class="n red" aria-hidden="true">5</span><span>An edit no task planned. Claude is told at once; you link it to a task, accept it, or take it back.</span></li>
+      </ol>
+    </figcaption>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section id="why" aria-labelledby="why-title">
+  <div class="section-head">
+    <h2 id="why-title">Why it exists</h2>
+    <p>Spec Kit gives an agent a spec. Nothing keeps the agent on it while it works.</p>
+  </div>
+  <div class="why">
+    <div>
+      <h3>Requests never reach the spec</h3>
+      <p>Halfway through you add “also allow passwords”. The code gets it; <code>spec.md</code> never does. Next week nobody knows which version is the contract.</p>
+    </div>
+    <div>
+      <h3>Files appear that no task planned</h3>
+      <p>An agent fixes something on the side, renames a module, adds a dependency. <code>tasks.md</code> names a user story per task, but not the requirement it serves, so nobody can tell.</p>
+    </div>
+    <div>
+      <h3>Done means the boxes are checked</h3>
+      <p>Checked tasks are not proof. Drift tools that run afterwards report it once the code has settled. <span class="nowrap">speckit-xref</span> works while the code is written and keeps the record for CI.</p>
+    </div>
+  </div>
+</section>
+
+<section id="workflow" aria-labelledby="workflow-title">
+  <div class="section-head">
+    <h2 id="workflow-title">The whole workflow, one step at a time</h2>
+    <p>The autopilot hands Claude the next Spec Kit step after every turn, so nobody has to answer “next is X, shall I go on?”. This is the strip the pane shows. Pick a phase to see what happens there and where it waits for you.</p>
+  </div>
+  <div class="strip" role="tablist" aria-label="Workflow phases"></div>
+  <div class="phase-panel" id="phase-panel" role="tabpanel" aria-live="polite"></div>
+</section>
+
+<section id="decisions" aria-labelledby="decisions-title">
+  <div class="section-head">
+    <h2 id="decisions-title">It stops for you, and only for you</h2>
+    <p>Claude decides what you left open and records it as an assumption you can keep or change. What only you can decide comes to you, in the pane or a dialog.</p>
+  </div>
+  <div class="decide">
+    <div>
+      <h3>Your decisions</h3>
+      <ul class="stamps" aria-label="Decisions that are yours">
+        <li class="stamp" style="--r:-3deg">Build the idea</li>
+        <li class="stamp" style="--r:2deg">Approve roadmap</li>
+        <li class="stamp" style="--r:-1deg">Approve spec</li>
+        <li class="stamp" style="--r:3deg">Approve design</li>
+        <li class="stamp" style="--r:-2deg">Call it done</li>
+        <li class="stamp" style="--r:1.5deg">Ship it</li>
+      </ul>
+      <p>Each approval holds for the text you approved. Change the spec afterwards and it asks again. A question the spec leaves open, or a request that contradicts it, also comes to you; everything else does not.</p>
+    </div>
+    <div>
+      <h3>Held until you say yes</h3>
+      <ul class="held">
+        <li><span class="what"><code>git push</code></span><span>Your call. With <code>allowPush</code> on, a plain push of a feature branch after green tests goes through; never main, never forced.</span></li>
+        <li><span class="what"><code>rm -rf</code>, <code>reset --hard</code></span><span>Destructive commands wait for you, and so does every write to a <code>.env</code> file.</span></li>
+        <li><span class="what"><code>wrangler deploy</code>, <code>eas submit</code></span><span>Deploys, store builds, submissions and publishes, also through MCP tools. Only Ship it opens them, and only the commands you approved, as written.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="proof" aria-labelledby="proof-title">
+  <div class="section-head">
+    <h2 id="proof-title">Proof, not checkboxes</h2>
+    <p>Every requirement climbs a ladder. The pane, the dashboard and the pull request show how far each one is proven.</p>
+  </div>
+  <ol class="scale">
+    <li><h3>Specified</h3><p>It is in <code>spec.md</code>, with an id.</p></li>
+    <li><h3>Planned</h3><p>A task names it, or the map lists one.</p></li>
+    <li><h3>Implemented</h3><p>Its task is done and non-test code anchors, links or touches it.</p></li>
+    <li><h3>Tested</h3><p>A file with real tests anchors it. <code>test.todo</code> does not count.</p></li>
+    <li><h3>Passing</h3><p>Its tests passed for the text the requirement has now.</p></li>
+    <li><h3>Accepted</h3><p>A driver played its scenario through as a person would. Only a fresh report counts.</p></li>
+  </ol>
+  <p class="scale-note">When a requirement's text changes, it drops back to planned until it is proven again. Acceptance runs in your installed Chrome with Playwright, and with Maestro on a simulator or emulator; a flow that taps by screen coordinates proves nothing.</p>
+</section>
+
+<section id="use-cases" aria-labelledby="use-cases-title">
+  <div class="section-head">
+    <h2 id="use-cases-title">Use cases</h2>
+    <p>Where <span class="nowrap">speckit-xref</span> earns its place, and which parts do the work.</p>
+  </div>
+  <table class="partslist">
+    <thead><tr><th scope="col">Use case</th><th scope="col">What happens</th><th scope="col">Parts</th></tr></thead>
+    <tbody>
+      <tr><td>A new app from a one-line idea</td><td>Validate researches the idea: who has the problem, what exists, the riskiest assumption. Shape settles the first version with you. Then the autopilot carries it through spec, design, build, verify and acceptance.</td><td>mod</td></tr>
+      <tr><td>A product from the PRD you already wrote</td><td>The PRD is imported, reviewed for gaps and contradictions, and cut into a roadmap of features. Each spec carries the PRD's own ids, so the trace runs from PRD to spec to code.</td><td>mod, extension</td></tr>
+      <tr><td>An existing codebase, kept honest</td><td>Bring the project under Spec Kit, map requirements to tasks once, and every later edit is checked against the plan as it happens.</td><td>mod, preset</td></tr>
+      <tr><td>Every pull request, traced</td><td>The Action writes requirement, tasks, files and tests into the job summary and fails the job on red drift or a failing acceptance scenario.</td><td>action, extension</td></tr>
+      <tr><td>A release with a checklist and your yes</td><td>Ship checks store fields, permission texts, privacy and tracked secrets, builds locally, writes the exact release commands, and runs them only after Ship it.</td><td>mod</td></tr>
+      <tr><td>An overnight run</td><td><code>/xref auto night</code> works through the steps while you sleep. Reviews and real decisions still wait for you, and a briefing says what happened.</td><td>mod</td></tr>
+      <tr><td>Any agent Spec Kit supports</td><td>The extension's commands (validate, prd, design, accept, ship, check, verify and more) run wherever Spec Kit runs, and in CI.</td><td>extension</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="parts" aria-labelledby="parts-title">
+  <div class="section-head">
+    <h2 id="parts-title">Four parts, one record</h2>
+    <p>Spec Kit's files stay untouched. Each feature gets one committed record, <code>specs/NNN-feature/xref.json</code>, and one local file for your prompts and the run.</p>
+  </div>
+  <div class="parts">
+    <div><h3>Claude Code mod</h3><p>Live in the agent loop: the trace, drift checks after every turn, the autopilot, a band above the prompt, a pane and a local dashboard.</p><p class="for">Claude Code in the terminal, the desktop app and <code>claude -p</code></p></div>
+    <div><h3>Spec Kit extension</h3><p><code>/speckit.xref.*</code> commands and hooks after plan, tasks and implement, plus a deterministic check for CI.</p><p class="for">Every agent Spec Kit supports</p></div>
+    <div><h3>Spec Kit preset</h3><p>Spec Kit's own tasks and implement commands, told to name each task's files and requirements and to prove each task with tests.</p><p class="for">Spec Kit 1.1.2 or later</p></div>
+    <div><h3>GitHub Action</h3><p>The check on every pull request, with a job summary from requirement to tasks to files, and how far each is proven.</p><p class="for">GitHub Actions</p></div>
+  </div>
+</section>
+
+<section id="pane" aria-labelledby="pane-title">
+  <div class="section-head">
+    <h2 id="pane-title">What you see while it works</h2>
+  </div>
+  <div class="pane-grid">
+    <figure style="margin:0">
+<pre class="terminal" aria-label="The speckit-xref pane on a finished feature">Tagesinspiration gegen Freizeitstress
+<span class="ok">✓setup ✓const ✓spec ✓plan ✓tasks ✓impl ✓verify ✓ship</span>
+<span class="dim">Now</span>     every task is checked
+<span class="dim">Status</span>  ██████████ 74/74 tasks · FR 25/25
+<span class="dim">Phase</span>   <span class="ok">✓1 ✓2 ✓3 ✓4 ✓5 ✓6 ✓7 ✓8 ✓9 ✓10 ✓11 ✓12 ✓13 ✓14 ✓15</span>
+<span class="dim">Accept</span>  12/12 accepted · 5 your part
+<span class="dim">Ship</span>    v1.0.0 → web, ios, android · 17 pass · 4 your part
+<span class="dim">Done</span>    Every task is checked, converged and verified.
+        What comes next?
+        <span class="now">[ New feature ] [ Change ] [ Bug ] [ Ship ]</span>
+<span class="dim">Drift</span>   <span class="ok">●</span> ok · intent 95/100</pre>
+      <figcaption class="caption">The pane on a finished feature of a real test app: 74 tasks, 25 requirements passing, 12 scenarios accepted, a release checked.</figcaption>
+    </figure>
+    <ul>
+      <li><strong>The band</strong> above the prompt shows the task in progress, coverage and drift, and the autopilot's question when it waits.</li>
+      <li><strong>The pane</strong> shows where the feature stands, the review cards with their buttons, and every unplanned file with Link to task and Accept this.</li>
+      <li><strong>The dashboard</strong> (<code>/xref web</code>) opens a local page with your words, the traceability matrix, the design mocks, acceptance evidence and the run log.</li>
+      <li><strong>The transcript</strong> gets a chip under each edit: <code>T004 · FR-002</code>, or <code>▲ unplanned</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="install" aria-labelledby="install-title">
+  <div class="section-head">
+    <h2 id="install-title">Install</h2>
+    <p>Start with the mod. Add the extension and the preset in a Spec Kit project, and the Action for pull requests.</p>
+  </div>
+  <div class="install">
+    <div>
+      <h3>Claude Code mod</h3>
+      <p>At the prompt of a Claude Code session (2.1.295 or later). Then, in a Spec Kit project, <code>/xref pane</code> opens the pane and <code>/xref auto on</code> starts the autopilot.</p>
+      <div class="codebox"><pre><code>/plugin install speckit-xref --marketplace moinsen-dev/speckit-xref</code></pre><button class="copy" type="button">Copy</button></div>
+    </div>
+    <div>
+      <h3>Spec Kit extension</h3>
+      <p>In a Spec Kit project (Spec Kit 0.12.17 or later, Python 3).</p>
+      <div class="codebox"><pre><code>specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/latest/download/speckit-xref-extension.zip</code></pre><button class="copy" type="button">Copy</button></div>
+    </div>
+    <div>
+      <h3>Spec Kit preset</h3>
+      <p>Optional, recommended (Spec Kit 1.1.2 or later): tasks then name their files and requirements, so nothing has to be guessed.</p>
+      <div class="codebox"><pre><code>specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/latest/download/speckit-xref-preset.zip</code></pre><button class="copy" type="button">Copy</button></div>
+    </div>
+    <div>
+      <h3>GitHub Action</h3>
+      <p>In a workflow on <code>pull_request</code>.</p>
+      <div class="codebox"><pre><code>- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: moinsen-dev/speckit-xref/action@v0.7.1</code></pre><button class="copy" type="button">Copy</button></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p><span class="nowrap">speckit-xref</span> is open source under the MIT license. Built for <a href="https://github.com/github/spec-kit">GitHub Spec Kit</a> and Claude Code.</p>
+  <p>Source, issues and releases: <a href="https://github.com/moinsen-dev/speckit-xref">github.com/moinsen-dev/speckit-xref</a></p>
+</footer>
+</div>
+
+<script>
+(() => {
+  // The phases as the pane's strip names them, with what happens and where it waits for you.
+  const PHASES = [
+    { key: 'idea', title: 'Idea or PRD', what: 'In an empty folder, Validate researches your idea: who has the problem, what exists, where it falls short, the riskiest assumption and a score. Shape then settles the first version with you: scope, platforms, language, design, data. Start from a PRD instead, and it is reviewed for gaps and contradictions and cut into a roadmap of features that keep the PRD\'s ids.', commands: '/speckit.xref.validate, /speckit.xref.shape, /speckit.xref.prd', yours: 'Build, Sharpen or Drop the idea. Approve the roadmap.' },
+    { key: 'spec', title: 'Spec', what: 'The spec is written in your words. At the review, the pane puts what you decided beside what Claude assumed: keep each assumption, or change it and Claude rewrites the spec before you approve it.', commands: '/speckit-specify, /speckit-clarify', yours: 'Approve the spec. It is the contract every later check measures against.' },
+    { key: 'plan', title: 'Plan', what: 'The technical plan and its data model. A request you make later reaches the spec first, as a new requirement with a new id, before it reaches the code.', commands: '/speckit-plan', yours: 'Optional: review the plan too (option review: spec+plan).' },
+    { key: 'design', title: 'Design', what: 'A feature with a user interface gets its look before its tasks: a DESIGN.md design system and one HTML mock per screen, each traced to the user stories it serves.', commands: '/speckit.xref.design', yours: 'Look at the mocks in the browser and approve the design.' },
+    { key: 'tasks', title: 'Tasks', what: 'tasks.md is written, each requirement is mapped to the tasks that implement it, and an analysis checks spec, plan and tasks against each other. Its fixes go in before the first task does.', commands: '/speckit-tasks, /speckit.xref.map, /speckit-analyze', yours: 'Nothing, unless a checklist item is still open.' },
+    { key: 'build', title: 'Build', what: 'One phase of tasks per step. Every edit is booked against the task in progress, an edit no task planned is flagged to Claude at once, and the tests gate every step: three repairs, then it is your call.', commands: '/speckit-implement', yours: 'A question the spec leaves open, or a request that contradicts it.' },
+    { key: 'verify', title: 'Verify', what: 'Converge finds the work the tasks missed. Verify checks the code against the spec and against your own words. Only high and medium findings become new tasks; low ones are listed, not built.', commands: '/speckit-converge, /speckit.xref.check', yours: 'After rounds that keep finding new work: Call it done, or one more round.' },
+    { key: 'accept', title: 'Accept', what: 'A feature people use is played through scenario by scenario, as a person would: Playwright in your installed Chrome, Maestro on a simulator or emulator. One test per scenario stays in the repository, and a failure becomes a fix task.', commands: '/speckit.xref.accept', yours: 'What no driver can check: a real device, real users, a paid service.' },
+    { key: 'ship', title: 'Ship', what: 'A release check: version and store fields, a usage text for every permission, privacy, tracked secrets, the production build. Its gaps become tasks. Then it writes the exact release commands for each platform.', commands: '/xref ship, /speckit.xref.ship', yours: 'Your part before the release, then Ship it. Nothing goes out before.' },
+  ]
+  const NOW = PHASES.findIndex(p => p.key === 'build')
+  const strip = document.querySelector('.strip')
+  const panel = document.getElementById('phase-panel')
+  let selected = NOW
+
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
+  function render(i) {
+    selected = i
+    strip.querySelectorAll('button').forEach((b, j) => {
+      b.setAttribute('aria-selected', String(j === i))
+      b.tabIndex = j === i ? 0 : -1
+    })
+    const p = PHASES[i]
+    panel.innerHTML = `<div class="fade"><h3>${esc(p.title)}</h3><p>${esc(p.what)}</p><p class="commands">${esc(p.commands)}</p></div>` +
+      `<div class="yours fade"><span class="k">Where it waits for you</span><p>${esc(p.yours)}</p></div>`
+    panel.setAttribute('aria-labelledby', `phase-${p.key}`)
+  }
+  PHASES.forEach((p, i) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.id = `phase-${p.key}`
+    b.setAttribute('role', 'tab')
+    b.setAttribute('aria-controls', 'phase-panel')
+    b.className = i < NOW ? 'done' : i === NOW ? 'now' : 'ahead'
+    b.textContent = p.key + (i === NOW ? ' 7/8' : '')
+    b.addEventListener('click', () => render(i))
+    b.addEventListener('keydown', e => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+      if (!step) return
+      e.preventDefault()
+      const next = (selected + step + PHASES.length) % PHASES.length
+      render(next)
+      strip.children[next].focus()
+    })
+    strip.appendChild(b)
+  })
+  render(NOW)
+
+  // Copy buttons: the command, exactly as shown.
+  document.querySelectorAll('.copy').forEach(button => {
+    button.addEventListener('click', async () => {
+      const text = button.parentElement.querySelector('code').innerText
+      try {
+        await navigator.clipboard.writeText(text)
+        button.textContent = 'Copied'
+      } catch {
+        button.textContent = 'Select and copy'
+      }
+      setTimeout(() => { button.textContent = 'Copy' }, 1600)
+    })
+  })
+})()
+</script>
+</body>
+</html>
