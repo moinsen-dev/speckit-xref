@@ -43,7 +43,7 @@ specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/re
 **Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.
 
 ```bash
-specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.7.1/speckit-xref-preset-v0.2.0.zip
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.7.1/speckit-xref-preset-v0.3.0.zip
 ```
 
 **GitHub Action**, in a workflow on `pull_request` (see [`action/`](action/)):

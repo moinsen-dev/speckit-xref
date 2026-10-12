@@ -162,10 +162,42 @@
     "acceptance": {
       "type": "string",
       "title": "Acceptance",
-      "description": "auto: after verify, a feature with a user interface is played through as a person would, scenario by scenario: Playwright for the web (through npx), Maestro for iOS and Android where it is installed. Only the driver's fresh JUnit report accepts a scenario; failures become fix tasks; what only you can check is listed as your part. off: no acceptance step.",
+      "description": "auto: after verify, a feature with a user interface is also played through by a scripted driver, scenario by scenario: Playwright for the web (the installed Chrome), Maestro for iOS and Android where it is installed; only the driver's fresh JUnit report accepts a scenario. off (default since 0.8.0): the user test is the check; scripted acceptance runs only when asked.",
+      "default": "off",
+      "options": [
+        "auto",
+        "off"
+      ]
+    },
+    "orchestrate": {
+      "type": "string",
+      "title": "Orchestrate",
+      "description": "on (default): implement, repair and the user test run in subagents with a fresh context and a model per step, so the session's context stays small; the session only relays and keeps the spec, the decisions and the reports. off: every step in the session itself.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "models": {
+      "type": "string",
+      "title": "Models",
+      "description": "auto (default): Sonnet implements, repairs and tests, Opus takes over a repair that failed once already, Haiku does phases of docs and configuration only; the spec, the reviews, verify and ship stay with the session's own model. sonnet, opus or haiku: that model for every delegated step.",
       "default": "auto",
       "options": [
         "auto",
+        "sonnet",
+        "opus",
+        "haiku"
+      ]
+    },
+    "userTest": {
+      "type": "string",
+      "title": "User test",
+      "description": "on (default): a feature with a user interface is used as a person would, in the iOS Simulator of the desktop app or a browser: each story right after it is built, and the whole app before it counts as done; findings become fix tasks, with screenshots. off: no user test.",
+      "default": "on",
+      "options": [
+        "on",
         "off"
       ]
     }

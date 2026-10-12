@@ -283,6 +283,8 @@ export type Autopilot = {
   acceptBaseline?: Record<string, number> | null
   /** The rows of release.md's log when the release step was handed over: only rows it adds report on it. */
   releaseRows?: number | null
+  /** The step handed to a subagent (0.8.0): its agent type, model and brief, and whether the agent was started. */
+  delegation?: { agent: string; model: string; description: string; brief: string; spawned?: boolean } | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */
@@ -295,6 +297,8 @@ export type RunEntry = {
   durationMs: number
   tokens: number
   outcome: string
+  /** Who did the step's work (0.8.0): the subagent's model, or `main` for the session itself. */
+  model?: string
 }
 
 declare module 'claude-code' {
@@ -310,7 +314,7 @@ declare module 'claude-code' {
       /** The files written during the running turn, by tools or found changed at its end. */
       turnFiles: string[]
       /** The running turn's id and start, whether the autopilot handed it over, and the files dirty before it. */
-      turn: { id: string; startedAt: number; dirty: string[]; auto: boolean } | null
+      turn: { id: string; startedAt: number; dirty: string[]; auto: boolean; head?: string } | null
       /** Prompts waiting for the session to be idle: the autopilot's next step, or the person's own message. */
       queue: { auto: boolean; person: boolean }
       /** The pane's detail view on narrow widths. */

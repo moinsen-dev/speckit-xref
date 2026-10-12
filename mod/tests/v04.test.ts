@@ -79,7 +79,7 @@ test('review: none plans without the gate', { options: { review: 'none' } }, asy
   expect(autopilotPrompts(seen)[0]).toContain('Run /speckit-plan now')
 })
 
-test('failing tests become repair steps; after three repairs the person decides', async ($, on) => {
+test('failing tests become repair steps; after three repairs the person decides', { options: { orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [1] } })
   await startSession($)
   await xref($, 'auto on')
@@ -161,7 +161,7 @@ test('a question that blocks one story waits in the queue while the rest goes on
   expect(seen.submitted.at(-1).text).toBe('Decision D1 (Which mail provider?): SES. Apply it to US2.')
 })
 
-test('guard rails: while the autopilot runs, destructive commands and secrets wait for the person', async ($, on) => {
+test('guard rails: while the autopilot runs, destructive commands and secrets wait for the person', { options: { orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO })
   await startSession($)
   expect((await $.tool.check({ tool: 'Bash', input: { command: 'git push origin main' } })).decision).toBe('allow')
@@ -286,7 +286,7 @@ test('headless: in a -p run the Stop hook hands the next step over as its re-pro
   expect((await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Per email or per IP?' } as never)).block).toBeUndefined()
 })
 
-test('parallel: a phase\'s [P] tasks go to task-runner subagents', { options: { parallel: 'on' } }, async ($, on) => {
+test('parallel: a phase\'s [P] tasks go to task-runner subagents', { options: { orchestrate: 'off', parallel: 'on' } }, async ($, on) => {
   const tasks = DEMO[`${FEATURE}/tasks.md`]!.replace('- [ ] T004 [US1]', '- [ ] T004 [P] [US1]').replace('- [ ] T005 [US1]', '- [ ] T005 [P] [US1]')
   const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: tasks })
   await startSession($)

@@ -125,7 +125,7 @@ test('found live: mobile acceptance plays on Expo Go when no development build i
   expect(prompt).toContain("downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup'")
 })
 
-test('found live: a failing run reaches the repair step without the runner\'s colour codes', async ($, on) => {
+test('found live: a failing run reaches the repair step without the runner\'s colour codes', { options: { orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [1], output: '\u001b[31mFAIL\u001b[39m tests/flows/moment.test.tsx\n  \u001b[1m● FR-019 shows new ideas\u001b[22m' } })
   await startSession($)
   await xref($, 'auto on')
@@ -137,7 +137,7 @@ test('found live: a failing run reaches the repair step without the runner\'s co
   expect(repair).not.toContain('\u001b[')
 })
 
-test('found live: a flow that taps by screen coordinates accepts nothing, and the person hears why', async ($, on) => {
+test('found live: a flow that taps by screen coordinates accepts nothing, and the person hears why', { options: { acceptance: 'auto', userTest: 'off' } }, async ($, on) => {
   const PLAN = (DEMO[`${FEATURE}/plan.md`] ?? '').replace('**Testing**: vitest', '**Testing**: vitest\n**Project Type**: web-app\n**Target Platform**: modern browsers')
   const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, onPath: ['uvx', 'npx'] })
   await startSession($)

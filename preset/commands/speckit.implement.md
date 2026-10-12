@@ -150,6 +150,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **One phase when asked**: If the user input names one phase (e.g. `Phase 3: User Story 1`), execute only that phase's open tasks, then stop: run the post-execution hooks and report. Do not start the next phase
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
+   - **Lean tests**: Tests prove requirements, not tasks: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function's result, a screen's text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee; extend an existing test file before adding one
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding

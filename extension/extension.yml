@@ -55,6 +55,9 @@ provides:
     - name: speckit.xref.design
       file: commands/speckit.xref.design.md
       description: "Settle a feature's look after the plan: DESIGN.md (Google Stitch's format) and one HTML mock per screen, traced to its user stories"
+    - name: speckit.xref.try
+      file: commands/speckit.xref.try.md
+      description: "Use the app as a person would, story by story and off the happy path; findings with screenshots, HIGH and MEDIUM ones as fix tasks"
     - name: speckit.xref.ship
       file: commands/speckit.xref.ship.md
       description: "Check that a finished app is ready to release and plan it: release.md with the checks, the release commands per platform and the person's part; nothing goes out without their yes"

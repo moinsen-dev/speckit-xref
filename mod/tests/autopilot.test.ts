@@ -9,7 +9,7 @@ const turn = ($: any, answer = 'Done with this step.', isAborted = false) => run
 
 const band = async ($: any) => toText(await (await $.ui.mount({ ...BAND, surface: 'terminal' })).drawn())
 
-test('/xref auto on hands the next Spec Kit step to the model, and the next one after each turn', async ($, on) => {
+test('/xref auto on hands the next Spec Kit step to the model, and the next one after each turn', { options: { orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO })
   await startSession($)
   expect((await xref($, 'auto on')).text).toContain('Autopilot on')

@@ -4,7 +4,7 @@
 // and this working tree. Pure: register.tsx reads the files.
 
 import type { Autopilot, NextWork, PhaseNote, QuickRow, Snapshot } from '../types'
-import { ACCEPTANCE_ARTIFACT } from './accept'
+import { ACCEPTANCE_ARTIFACT, TRY_ARTIFACT } from './accept'
 import { SHIP_ARTIFACT } from './ship'
 import { designDir } from './design'
 import { fingerprint, specFingerprint } from './rules'
@@ -76,10 +76,15 @@ export function phaseBrief(snap: Snapshot, phase: string, lastTest: Autopilot['l
   if (screens.length && snap.featureDir) {
     lines.push(`Screens: ${screens.map(s => `${s.name}${s.mock ? ` (${designDir(snap.featureDir!)}/${s.mock})` : ''}`).join(', ')}; build them to DESIGN.md.`)
   }
+  lines.push(LEAN_TESTS)
   if (lastTest) lines.push(`Last test run: ${lastTest.ok ? 'green' : `red: ${clip(lastTest.output.trim().split('\n').at(-1) ?? '', 140)}`}.`)
   if (note?.checkpoint) lines.push(`Done when: ${note.checkpoint}. Check that before you end the step, and say how you checked it.`)
   return lines.length ? ['Phase brief (tasks.md, spec.md, quickstart.md):', ...lines.map(l => `- ${l}`)] : []
 }
+
+/** Tests prove requirements, not tasks (0.8.0): what makes a test worth its lines. */
+export const LEAN_TESTS =
+  'Tests prove requirements: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function\'s result, a screen\'s text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee, no test per task; extend an existing test file before adding one.'
 
 /** The runbook as a note: what earlier steps learned about this project's environment. */
 export function runbookNote(runbook: string | null | undefined): string | null {
@@ -110,7 +115,7 @@ export const treeOf = (lines: string) =>
         // `<mode> <type> <hash>\t<path>` from ls-tree, `<hash> <path>` for an untracked file.
         const path = l.includes('\t') ? l.slice(l.indexOf('\t') + 1) : l.trim().slice(l.trim().indexOf(' ') + 1)
         // The ledger's own file, and what acceptance and the release check write about the app, change nothing that was verified.
-        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path) && !SHIP_ARTIFACT.test(path)
+        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path) && !SHIP_ARTIFACT.test(path) && !TRY_ARTIFACT.test(path)
       })
       .sort()
       .join('\n'),

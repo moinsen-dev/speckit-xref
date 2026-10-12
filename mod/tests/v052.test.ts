@@ -47,7 +47,7 @@ test('tasks.md\'s phase notes, quickstart\'s rows and the brief they make', () =
   expect(treeOf('100644 blob a\tsrc/a.ts')).not.toBe(treeOf('100644 blob b\tsrc/a.ts'))
 })
 
-test('an implement step hands over its phase brief and the runbook; the rules ask for runbook lines and xref.json in commits', async ($, on) => {
+test('an implement step hands over its phase brief and the runbook; the rules ask for runbook lines and xref.json in commits', { options: { orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: TASKS, [`${FEATURE}/quickstart.md`]: QUICKSTART, '.specify/memory/runbook.md': RUNBOOK })
   await startSession($)
   await xref($, 'auto on')

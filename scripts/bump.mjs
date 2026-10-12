@@ -22,6 +22,8 @@ if (!SEMVER.test(version ?? '') || !SEMVER.test(extension ?? '')) {
 
 const read = rel => readFileSync(join(root, rel), 'utf8')
 const oldTag = JSON.parse(read('mod/.claude-plugin/plugin.json')).version
+// The preset keeps its own version; its download links follow preset/preset.yml.
+const preset = /^\s+version:\s*"([^"]+)"/m.exec(read('preset/preset.yml'))?.[1]
 const oldExt = /^\s+version:\s*"([^"]+)"/m.exec(read('extension/extension.yml'))?.[1]
 if (!oldTag || !oldExt) {
   console.error('could not read the current versions from mod/.claude-plugin/plugin.json and extension/extension.yml')
@@ -35,6 +37,7 @@ const edits = {
   'extension/extension.yml': [[new RegExp(`^(\\s+version:\\s*")${esc(oldExt)}"`, 'm'), `$1${extension}"`, 1]],
   'README.md': [
     [new RegExp(`releases/download/v${esc(oldTag)}/`, 'g'), `releases/download/v${version}/`, 2],
+    [/speckit-xref-preset-v\d+\.\d+\.\d+\.zip/g, `speckit-xref-preset-v${preset}.zip`, 1],
     [new RegExp(`speckit-xref-extension-v${esc(oldExt)}\\.zip`, 'g'), `speckit-xref-extension-v${extension}.zip`, 1],
     [new RegExp(`speckit-xref/action@v${esc(oldTag)}\\b`, 'g'), `speckit-xref/action@v${version}`, 2],
   ],

@@ -35,7 +35,9 @@ type Options = {
   /** What the project's test command does: exit codes in turn (the last repeats), and its output. */
   tests?: { exits: number[]; output?: string }
   /** What `git diff --name-only` lists, as the working tree changes; the default is src/auth/token.ts. */
-  changed?: () => string[]
+  changed?: (since?: string) => string[]
+  /** The commit `git rev-parse --short HEAD` answers with, asked each time (a turn may commit). */
+  head?: () => string
   /** The person's answers to `$.ui.ask`, in turn; none means the dialog is dismissed. */
   answers?: string[]
   /** The git branch checked out. */
@@ -131,7 +133,8 @@ export function project(on: any, files: Record<string, string>, options: Options
     }
     if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--cached')) return ok('')
     if (e.argv[0] === 'git' && e.argv[1] === 'hash-object') return ok(e.argv.slice(3).map((f: string) => `h-${f}-${mtimes[f] ?? 0}`).join('\n'))
-    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok((options.changed ? options.changed() : ['src/auth/token.ts']).join('\n') + '\n')
+    if (e.argv[0] === 'git' && e.argv[1] === 'diff' && e.argv.includes('--name-only')) return ok((options.changed ? options.changed(e.argv.at(-1)) : ['src/auth/token.ts']).join('\n') + '\n')
+    if (e.argv[0] === 'git' && e.argv[1] === 'rev-parse' && e.argv.includes('--short') && options.head) return ok(`${options.head()}\n`)
     if (e.argv[0] === 'git' && e.argv[1] === 'diff') return ok(`diff --git a/src/auth/token.ts b/src/auth/token.ts\n+export const ttl = 15 * 60\n`)
     if (e.argv[0] === 'git' && e.argv[1] === 'ls-files') return ok('')
     return { deny: 'ENOENT' }

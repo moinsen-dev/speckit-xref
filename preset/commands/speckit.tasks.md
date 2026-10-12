@@ -149,6 +149,8 @@ The tasks.md should be immediately executable - each task must be specific enoug
 
 **Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
 
+**Tests prove requirements, not tasks**: where tests are wanted, plan one test task per requirement or acceptance scenario (or one per story that proves its scenarios), never a test task per implementation task, and no task for render-only tests or for what the framework or the types already guarantee.
+
 ### Checklist Format (REQUIRED)
 
 Every task MUST strictly follow this format:

@@ -1229,12 +1229,37 @@ def acceptance_from(cases: list[dict], spec: dict | None, at: str, file: str) ->
 COORDINATE_TAP = re.compile(r"^\s*-?\s*point:|\bmouse\.click\s*\(", re.M)
 
 
-def by_coordinates(case_file: str, root) -> bool:
-    """Whether a testcase's flow (its `file`, under the project root) taps by screen coordinates."""
+RUN_FLOW = re.compile(r"runFlow:\s*(?:\n\s+(?:when:[\s\S]*?\n\s+)?file:\s*)?[\"']?([\w./-]+\.ya?ml)[\"']?")
+
+
+def flow_includes(flow: str, flow_path: str) -> list[str]:
+    """The sub-flows a Maestro flow runs, as paths relative to the project (0.8.0); mirrors flowIncludes in accept.ts."""
+    base = flow_path.rsplit("/", 1)[0] if "/" in flow_path else ""
+    out: list[str] = []
+    for m in RUN_FLOW.finditer(flow):
+        norm: list[str] = []
+        for p in [*(base.split("/") if base else []), *m.group(1).split("/")]:
+            if p == "..":
+                if norm:
+                    norm.pop()
+            elif p and p != ".":
+                norm.append(p)
+        path = "/".join(norm)
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def by_coordinates(case_file: str, root, depth: int = 0) -> bool:
+    """Whether a testcase's flow (its `file`, under the project root), or a sub-flow it runs, taps by screen coordinates."""
     if not case_file or root is None:
         return False
     text = read(Path(root) / case_file)
-    return bool(text and COORDINATE_TAP.search(text))
+    if not text:
+        return False
+    if COORDINATE_TAP.search(text):
+        return True
+    return depth < 3 and any(by_coordinates(sub, root, depth + 1) for sub in flow_includes(text, case_file))
 
 
 def acceptance_of(files: list[str], spec: dict | None, at: str, root=None) -> dict:

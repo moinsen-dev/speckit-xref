@@ -15,6 +15,9 @@ export const acceptanceDoc = (featureDir: string) => `${featureDir}/acceptance.m
 /** Files the acceptance step writes about the app, not into it: they do not change what was verified. */
 export const ACCEPTANCE_ARTIFACT = /(^|\/)(e2e\/acceptance\/|reports\/acceptance[^/]*$|specs\/[^/]+\/acceptance\.md$|\.specify\/memory\/runbook\.md$)/
 
+/** What the user test (0.8.0) writes about the app, not into it: its log and its screenshots. */
+export const TRY_ARTIFACT = /(^|\/)specs\/[^/]+\/(try\.md$|try\/)/
+
 const SCENARIO = /\bUS\d+-AS\d+\b/g
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)
 
@@ -56,6 +59,22 @@ export function acceptanceFrom(cases: JunitCase[], spec: Spec | null, at: string
 /** A flow that taps by screen coordinates proves nothing about its scenario (0.7.1): a Maestro `point:`, a Playwright `mouse.click(`. */
 export const COORDINATE_TAP = /^\s*-?\s*point:|\bmouse\.click\s*\(/m
 export const tapsByCoordinates = (flow: string) => COORDINATE_TAP.test(flow)
+
+/** The sub-flows a Maestro flow runs (`runFlow: common/start.yaml`, or `runFlow:` with `file:`), as paths relative to the project (0.8.0, Fund 39). */
+export function flowIncludes(flow: string, flowPath: string): string[] {
+  const dir = flowPath.includes('/') ? flowPath.slice(0, flowPath.lastIndexOf('/')) : ''
+  const out: string[] = []
+  for (const m of flow.matchAll(/runFlow:\s*(?:\n\s+(?:when:[\s\S]*?\n\s+)?file:\s*)?["']?([\w./-]+\.ya?ml)["']?/g)) {
+    const parts = [...(dir ? dir.split('/') : []), ...m[1]!.split('/')]
+    const norm: string[] = []
+    for (const p of parts) {
+      if (p === '..') norm.pop()
+      else if (p && p !== '.') norm.push(p)
+    }
+    out.push(norm.join('/'))
+  }
+  return [...new Set(out)]
+}
 
 /** Where a scenario stands for the person: accepted by a driver, failing there, passing unit tests only, or untested. */
 export type ScenarioState = 'accepted' | 'failing' | 'stale' | 'passing' | 'untested'

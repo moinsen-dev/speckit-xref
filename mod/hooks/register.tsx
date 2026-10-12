@@ -4,7 +4,9 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
-import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
+import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, flowIncludes, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
+import { IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, writesCode } from './orchestrate'
+import type { Models } from './orchestrate'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
 import { DEPLOY_TOOLS, RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releaseRuns, releasesApp, releasesByTool } from './ship'
@@ -92,6 +94,9 @@ type Options = {
   design: string
   allowPush: string
   acceptance: string
+  orchestrate: string
+  models: string
+  userTest: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -161,7 +166,12 @@ let designOn = true
 // On: the autopilot may push a feature branch (never main, never --force) once the tests are green.
 let allowPush = false
 // auto: a feature with a user interface is played through after verify. off: no acceptance step.
-let acceptanceOn = true
+let acceptanceOn = false
+// on: implement, repair and the user test run in subagents, a model per step (0.8.0). off: all in the session.
+let orchestrateOn = true
+let modelsOption: Models = 'auto'
+// on: each story is tried as a person would after it is built, and the whole app before done (0.8.0).
+let userTestOn = true
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -746,6 +756,20 @@ async function refresh($: $): Promise<void> {
   if (featureDir !== (snap?.featureDir ?? null) || (await currentSignature($, featureDir)) !== signature) await scan($)
 }
 
+/**
+ * After every turn: the anchors and the files with real tests as the repository has them now, so a test written
+ * outside a booked write (a Bash heredoc, a subagent, a commit) still lifts its requirement on the ladder (Fund 38).
+ */
+async function refreshProof($: $): Promise<void> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir) return
+  const anchors = await scanAnchors($)
+  if (!anchors) return
+  await update($, ledgerA, l => ({ ...l, anchors }))
+  const realTests = await findRealTests($, await read($, ledgerA))
+  await update($, snapshotA, s => (s ? { ...s, realTests } : s))
+}
+
 /** Every `@spec <id>` comment in the repository, by ripgrep or else git grep; none when neither runs. */
 async function scanAnchors($: $): Promise<Anchor[] | null> {
   const runs = [
@@ -832,10 +856,11 @@ async function afterWrite($: $, rel: string, c: Classified, newText: string): Pr
  * The files the working tree changed, for a check the person asked for between turns: relative to the project
  * and only inside it, since the project may be one folder of a larger repository.
  */
-async function changedFiles($: $): Promise<string[]> {
+async function changedFiles($: $, since = 'HEAD', max = 40): Promise<string[]> {
   const files = new Set<string>()
   for (const argv of [
-    ['git', 'diff', '--name-only', '--relative', 'HEAD'],
+    // Against the commit the turn started from: what was written and committed in the same turn counts too (Fund 38).
+    ['git', 'diff', '--name-only', '--relative', since],
     ['git', 'ls-files', '--others', '--exclude-standard'],
   ]) {
     try {
@@ -845,7 +870,7 @@ async function changedFiles($: $): Promise<string[]> {
       // No git, or no commit yet: the files of this session's turns are all there is.
     }
   }
-  return [...files].filter(f => !isSpecArtifact(f)).slice(0, 40)
+  return [...files].filter(f => !isSpecArtifact(f)).slice(0, max)
 }
 
 async function diffOf($: $, files: string[]): Promise<string> {
@@ -988,7 +1013,7 @@ async function linkFile($: $, file: string, id: string): Promise<string> {
 }
 
 /** What the workflow reads beside the snapshot: the review option and the last test run. */
-const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null, verifies: ap.verifies ?? 0, acceptance: acceptanceOn })
+const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repairs: ap.repairs, validate: validateOn, shape: shapeOn, design: designOn, next: ap.next ?? null, nextKind: ap.nextKind ?? null, verifies: ap.verifies ?? 0, acceptance: acceptanceOn, orchestrate: orchestrateOn, models: modelsOption, userTest: userTestOn })
 
 /** Starts a fresh autopilot run; its first step follows as soon as the session is free. */
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
@@ -1366,7 +1391,7 @@ async function advance($: $): Promise<void> {
   // Importing a PRD is the mod's own work; only a file it cannot read goes to Claude.
   if (step.phase === 'prd' && !snap.prd && snap.prdSource && (await importPrd($, snap.prdSource))) return advance($)
   // The step after a verification: done, or (a verify that changed the tree) verify again; either ends the run here.
-  if ((step.phase === 'done' && (ap.lastPhase === 'verify' || ap.lastPhase === 'accept')) || (step.phase === 'verify' && ap.lastPhase === 'verify')) {
+  if ((step.phase === 'done' && (ap.lastPhase === 'verify' || ap.lastPhase === 'accept' || ap.lastPhase === 'try')) || (step.phase === 'verify' && ap.lastPhase === 'verify')) {
     const report = evaluate(snap, ledger)
     if (report.level === 'red') return pauseAutopilot($, 'the feature is built, but the drift is red; decide in the pane')
     const next = `Next: ${doneAsk(null).replace(/^The feature is done\. /, '')}`
@@ -1408,6 +1433,39 @@ async function markVerified($: $): Promise<void> {
   const value = verifyKey(snap, snap.tasksFingerprint || tasksFingerprint(snap.tasks))
   await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, verify: value } }))
   await persist($)
+  await writeHandoff($).catch(() => null)
+}
+
+export const HANDOFF = '.specify/xref/local/handoff.md'
+
+/**
+ * A done feature's handoff (0.8.0): what the next feature needs from this conversation, so the next one can start
+ * after /clear with a small context. Everything else is in the spec, the constitution, the runbook and the ledger.
+ */
+async function writeHandoff($: $): Promise<void> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir || !snap.spec) return
+  const ledger = await read($, ledgerA)
+  const report = evaluate(snap, ledger)
+  const decided = ledger.decisions.filter(d => d.answer && d.kind !== 'permission').slice(-8)
+  const upcoming = snap.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
+  const text = [
+    `# Handoff: ${snap.featureDir}`,
+    '',
+    `Done ${await stamp($)}: ${report.done}/${report.tasks} tasks, ${report.covered}/${report.total} requirements covered, drift ${report.level}.`,
+    '',
+    '## Decisions the person made',
+    ...(decided.length ? decided.map(d => `- ${d.question} → ${d.answer}`) : ['- none beyond the spec']),
+    '',
+    '## Where the rest is',
+    `- The spec and its assumptions: ${snap.featureDir}/spec.md; the plan: ${snap.featureDir}/plan.md.`,
+    `- The environment: ${RUNBOOK}.`,
+    ...(upcoming ? [`- Next in the roadmap: ${upcoming.title}${upcoming.gate ? ` (after ${upcoming.gate}, the person's part)` : ''}.`] : []),
+    '',
+    'The next feature needs nothing from the old conversation: /clear before it keeps the context small, and the autopilot starts from these files.',
+    '',
+  ].join('\n')
+  await $.fs.write(at(HANDOFF), text)
 }
 
 /**
@@ -1435,6 +1493,8 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, [point]: value } }))
   }
   if (step.resolves) await update($, ledgerA, l => resolveIntent(l, step.resolves!))
+  // A delegated step (0.8.0): the spawn hook gives the agent its model and brief; the main loop writes no code meanwhile.
+  await update($, autopilotA, a => ({ ...a, delegation: step.delegate ? { ...step.delegate, spawned: false } : null }))
   // The person's yes to a release lets exactly its commands through the rail, for this step.
   if (step.phase === 'release') {
     const until = (await $.clock.now()) + 60 * 60_000
@@ -1594,7 +1654,7 @@ const RESEARCHER_PROMPT = [
 
 /** With the parallel option, a phase's open [P] tasks go to subagents of their own, one per task. */
 function parallelNote(snap: Snapshot, step: Step): string {
-  if (!parallel || step.phase !== 'implement' || !snap.phase) return ''
+  if (!parallel || step.delegate || step.phase !== 'implement' || !snap.phase) return ''
   const ready = snap.tasks.filter(t => !t.done && t.parallel && t.phase === snap.phase)
   if (ready.length < 2) return ''
   return [
@@ -1648,6 +1708,15 @@ async function commitTasks($: $): Promise<string | null> {
   }
 }
 
+/** Whether a flow, or a sub-flow it runs (to depth 3), taps by screen coordinates (Fund 39). */
+async function flowTapsByCoordinates($: $, flow: string, depth = 0): Promise<boolean> {
+  const text = (await readText($, flow)) ?? ''
+  if (tapsByCoordinates(text)) return true
+  if (depth >= 3) return false
+  for (const sub of flowIncludes(text, flow)) if (await flowTapsByCoordinates($, sub, depth + 1)) return true
+  return false
+}
+
 /** The acceptance reports in reports/, by path, with when they were written. */
 async function acceptanceReports($: $): Promise<Record<string, number>> {
   const out: Record<string, number> = {}
@@ -1681,7 +1750,7 @@ async function recordAcceptance($: $, baseline: Record<string, number>): Promise
     // A flow that taps by screen coordinates proves nothing: its cases accept nothing, and the person hears why.
     const cases = parseJunit(xml)
     const byPoint = new Set<string>()
-    for (const flow of new Set(cases.map(c => c.file).filter(Boolean))) if (tapsByCoordinates((await readText($, flow)) ?? '')) byPoint.add(flow)
+    for (const flow of new Set(cases.map(c => c.file).filter(Boolean))) if (await flowTapsByCoordinates($, flow)) byPoint.add(flow)
     if (byPoint.size) $.ui.toast(`Not accepted, the flow taps by screen coordinates: ${[...byPoint].join(', ')}.`)
     const found = acceptanceFrom(cases.filter(c => !byPoint.has(c.file)), snap.spec, at, path)
     // A scenario two drivers played is accepted only when both passed it.
@@ -1725,9 +1794,12 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
       files,
       durationMs: e.durationMs || (stepStartedAt ? (await $.clock.now()) - stepStartedAt : 0),
       tokens: (e.usage?.input_tokens ?? 0) + (e.usage?.output_tokens ?? 0),
-      outcome,
+      outcome: ap.delegation && !ap.delegation.spawned ? `${outcome}, not delegated` : outcome,
+      model: ap.delegation?.spawned ? ap.delegation.model : 'main',
     })
   }
+  // The delegation ends with its step.
+  if (ap.delegation) await update($, autopilotA, a => ({ ...a, delegation: null }))
   if (ap.paused) return
   if (e.isAborted) return pauseAutopilot($, 'you interrupted the turn; Resume, or a message from you, goes on')
   // An API error or a refusal is no answer: going on would hand the next step to a turn that never did this one.
@@ -1897,21 +1969,23 @@ async function hashFiles($: $, files: string[]): Promise<Record<string, string>>
  * Books what Bash wrote (sed, a code generator, npm): files the working tree changed during the turn that no
  * Write or Edit booked. Without this the live view and the CI check would disagree.
  */
-async function bookShellWrites($: $): Promise<void> {
+/** Books what Bash (or a subagent) wrote in the turn; true when the repository changed beyond the booked writes. */
+async function bookShellWrites($: $): Promise<boolean> {
   const turn = await read($, turnA)
   const snap = await read($, snapshotA)
-  if (!turn || !snap?.featureDir) return
+  if (!turn || !snap?.featureDir) return false
   const booked = new Set(await read($, turnFilesA))
   const before = new Map(turn.dirty.map(entry => [entry.slice(0, entry.lastIndexOf(':')), entry.slice(entry.lastIndexOf(':') + 1)]))
-  const now = (await changedFiles($)).filter(f => !booked.has(f) && !matchesAny(f, snap.rules.exempt))
+  const now = (await changedFiles($, turn.head || 'HEAD', 200)).filter(f => !booked.has(f) && !matchesAny(f, snap.rules.exempt))
   const hashes = await hashFiles($, now.filter(f => before.has(f)))
   // A file dirty before the turn counts only when its content provably changed.
-  const fresh = now.filter(f => !before.has(f) || (hashes[f] && before.get(f) && hashes[f] !== before.get(f))).slice(0, 40)
+  const fresh = now.filter(f => !before.has(f) || (hashes[f] && before.get(f) && hashes[f] !== before.get(f))).slice(0, 120)
   for (const rel of fresh) {
     const text = (await readText($, rel)) ?? ''
     const c = classify(rel, await read($, snapshotA) ?? snap, await read($, ledgerA), currentTask(snap, await read($, activeA))?.id ?? null, text)
     await afterWrite($, rel, c, text)
   }
+  return fresh.length > 0 || (!!turn.head && (await head($)) !== turn.head)
 }
 
 /**
@@ -2097,7 +2171,11 @@ export const register: Register = (on, options) => {
   shapeOn = opts.shape !== 'off'
   designOn = opts.design !== 'off'
   allowPush = opts.allowPush === 'on'
-  acceptanceOn = opts.acceptance !== 'off'
+  // Scripted acceptance (Playwright, Maestro) is asked for since 0.8.0; the user test is the default.
+  acceptanceOn = opts.acceptance === 'auto'
+  orchestrateOn = opts.orchestrate !== 'off'
+  modelsOption = MODELS.find(m => m === opts.models) ?? 'auto'
+  userTestOn = opts.userTest !== 'off'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -2211,6 +2289,15 @@ export const register: Register = (on, options) => {
         // Without it the validate skill researches in the main loop.
       }
     }
+    // The subagents of an orchestrated run (0.8.0): their model and brief are set when the autopilot starts them.
+    if (orchestrateOn) {
+      try {
+        await $.agent.register({ name: IMPLEMENTER, description: 'Implements one phase of a Spec Kit feature from the brief the speckit-xref autopilot gives it, or repairs failing tests.', prompt: IMPLEMENTER_PROMPT, model: 'sonnet', maxTurns: 300 })
+        await $.agent.register({ name: TESTER, description: 'Uses the running app as a person would (iOS Simulator, a browser) and reports what breaks, with screenshots.', prompt: TESTER_PROMPT, model: 'sonnet', maxTurns: 200 })
+      } catch {
+        // Without the agent types a delegated step falls back to the session's own work.
+      }
+    }
     if (parallel) {
       try {
         await $.agent.register({ name: RUNNER, description: 'Implements one Spec Kit task of a phase while sibling [P] tasks run in other agents; never edits tasks.md.', prompt: RUNNER_PROMPT })
@@ -2228,6 +2315,9 @@ export const register: Register = (on, options) => {
     await update($, turnA, () => ({ id: e.turnId, startedAt: 0, dirty: [], auto }))
     await update($, queueA, q => (auto ? { ...q, auto: false } : { ...q, person: false }))
     if (!root || !(await read($, snapshotA))?.featureDir) return result
+    // The commit the turn starts from: a write committed later in the turn is still booked against it (Fund 38).
+    const start = await head($)
+    if (start) await update($, turnA, t => (t && t.id === e.turnId ? { ...t, head: start } : t))
     // What the working tree looked like before: a file that changes during the turn without a Write or Edit came from Bash.
     const dirty = await changedFiles($)
     const hashes = await hashFiles($, dirty)
@@ -2348,7 +2438,8 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId || !root) return result
-    await bookShellWrites($)
+    // What Bash or a subagent wrote, or a commit made in the turn: the anchors and real tests are read again.
+    if (await bookShellWrites($)) await refreshProof($)
     const files = await read($, turnFilesA)
     const turn = await read($, turnA)
     // A turn the engine raised no turn.start for (a test's) counts as the autopilot's, as before 0.4.1.
@@ -2420,6 +2511,14 @@ export const register: Register = (on, options) => {
     return { text: 'Autopilot off; its running step was stopped.' }
   })
 
+  // A delegated step's agent (0.8.0): the autopilot's model and brief, in the foreground so the step waits for its report.
+  on('agent.spawn', async ($, e, next) => {
+    const d = (await read($, autopilotA)).delegation
+    if (!d || e.subagentType !== `${PLUGIN}:${d.agent}` || e.parentAgentId) return next(e)
+    await update($, autopilotA, a => (a.delegation ? { ...a, delegation: { ...a.delegation, spawned: true } } : a))
+    return next({ ...e, model: d.model, prompt: d.brief, description: d.description, background: false })
+  })
+
   // Guard rails while the autopilot runs: they only ever tighten what the engine decided.
   on('tool.check', async ($, e, next) => {
     const verdict = await next(e)
@@ -2427,6 +2526,11 @@ export const register: Register = (on, options) => {
     if (!ap.on) return verdict
     if (verdict.decision === 'deny') return verdict
     const input = (e.input ?? {}) as Record<string, unknown>
+    // A delegated step's work is its agent's: the session itself writes no code meanwhile (0.8.0).
+    const d = ap.delegation
+    if (d && !e.agentId && writesCode(e.tool, input, root)) {
+      return { decision: 'deny' as const, reason: `speckit-xref autopilot: this step is delegated. Call the Agent tool with subagent_type "${PLUGIN}:${d.agent}" and the prompt "Carry out your brief."; the agent does the work and reports back.` }
+    }
     const hit = railHit(e.tool, input)
     if (hit) {
       const snap = await read($, snapshotA)
@@ -2834,6 +2938,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" marginTop={1}>
           {row('Done', ap.nextKind ? doneAsk(ap.nextKind) : 'Every task is checked, converged and verified. What comes next?', 'success')}
           {upcoming ? row('', `Roadmap: ${upcoming.title}${upcoming.gate ? ` · after ${upcoming.gate} (your part)` : ''}`, 'subtle') : null}
+          {row('', `Before the next feature: /clear keeps the context small; the handoff is in ${HANDOFF}.`, 'subtle')}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
             {upcoming ? <Button key="next-roadmap" label="Next from roadmap" variant="primary" onPress={() => void chooseRoadmap($)} /> : null}
             <Button key="next-feature" label="New feature" variant={upcoming ? undefined : 'primary'} onPress={() => void chooseNext($, 'feature')} />

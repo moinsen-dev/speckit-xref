@@ -93,7 +93,7 @@ test('one counter for verify and acceptance: three rounds with acceptance, then 
   expect(nextStep({ ...snap, ui: false } as Snapshot, ledger, null, { review: 'none', verifies: 2 }).approve?.key).toBe('done')
 })
 
-test('the acceptance step live: a fresh passing report accepts the scenario, the run ends done, the pane and dashboard say so', async ($, on) => {
+test('the acceptance step live: a fresh passing report accepts the scenario, the run ends done, the pane and dashboard say so', { options: { acceptance: 'auto', userTest: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, onPath: ['uvx', 'npx'] })
   await startSession($)
   await xref($, 'auto on')
@@ -118,7 +118,7 @@ test('the acceptance step live: a fresh passing report accepts the scenario, the
   expect(html).toContain('<a href="#req-SC-001">SC-001</a> with five real testers: time to the first link.')
 })
 
-test('a report from before the step, or a failing one, accepts nothing', async ($, on) => {
+test('a report from before the step, or a failing one, accepts nothing', { options: { acceptance: 'auto', userTest: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE, 'reports/acceptance-web.xml': JUNIT('passed') }, { tests: { exits: [0] }, onPath: ['uvx', 'npx'] })
   await startSession($)
   await xref($, 'auto on')
@@ -134,7 +134,7 @@ test('a report from before the step, or a failing one, accepts nothing', async (
   expect(ledgerOf(seen.files).acceptance ?? {}).toEqual({})
 })
 
-test('a failing report fails the scenario', async ($, on) => {
+test('a failing report fails the scenario', { options: { acceptance: 'auto', userTest: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] }, onPath: ['uvx', 'npx'] })
   await startSession($)
   await xref($, 'auto on')

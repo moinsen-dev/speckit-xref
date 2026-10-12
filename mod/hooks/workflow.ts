@@ -6,6 +6,8 @@ import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } 
 import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { RELEASE, releaseBlockers, releaseLine, releasePrompt, releaseRuns, shipPrompt } from './ship'
+import { IMPLEMENTER, TESTER, TESTER_PROMPT, implementBrief, relayPrompt, repairBrief, routeModel, tryBrief } from './orchestrate'
+import type { Delegate, Models } from './orchestrate'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
 
@@ -32,6 +34,7 @@ export type Phase =
   | 'converge'
   | 'verify'
   | 'accept'
+  | 'try'
   | 'bug'
   | 'ship'
   | 'release'
@@ -54,6 +57,8 @@ export type Step = {
   resolves?: string
   /** The step carries out what the person said comes after a done feature: handing it over takes that off the list. */
   consumes?: boolean
+  /** The step runs in a subagent the main session relays to: its agent type, model and brief (0.8.0). */
+  delegate?: Delegate
 }
 
 /** Where the autopilot stops for the person: the spec always (unless none), the plan and the design when named. */
@@ -76,6 +81,11 @@ export type Flow = {
   verifies?: number
   /** The acceptance step for a feature with a user interface (on unless switched off). */
   acceptance?: boolean
+  /** Heavy steps (implement, repair, user test) run in subagents, with a model per step (0.8.0; off unless on). */
+  orchestrate?: boolean
+  models?: Models
+  /** The user test: each story tried as a person would right after it is built, and the whole app before done (off unless on). */
+  userTest?: boolean
   lastTest?: Autopilot['lastTest']
   repairs?: number
   /** The last analysis found something to fix: the next step applies its remediation. */
@@ -363,6 +373,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     if ((flow.repairs ?? 0) > MAX_REPAIRS) {
       return step('repair', null, `The tests still fail after ${MAX_REPAIRS} repairs.`, `The tests still fail after ${MAX_REPAIRS} attempts: look at the failure in the pane and decide how to go on.`)
     }
+    if (flow.orchestrate) {
+      const delegate: Delegate = { agent: IMPLEMENTER, model: routeModel('repair', flow.models ?? 'auto', { repairs: flow.repairs }), description: 'Repair the failing tests', brief: repairBrief(snap, flow.lastTest.output) }
+      return step('repair', snap.testCommand, `The tests fail (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, { delegate, prompt: relayPrompt(delegate) })
+    }
     return step('repair', snap.testCommand, `The tests fail (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, {
       prompt: `The tests fail. Run \`${snap.testCommand}\`, find the cause and fix the code (not the tests, unless a test contradicts the spec). Do not check off new tasks in this step.\nLast output:\n${flow.lastTest.output.slice(-1500)}`,
     })
@@ -373,11 +387,28 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     if (checklists.length && !started && ledger.approvals.checklists !== listFp) {
       return step('checklists', null, `${checklists.reduce((n, c) => n + c.open, 0)} checklist items are open (${checklists.map(c => c.file).join(', ')}).`, 'Checklist items are open: complete them, or press Proceed anyway in the pane (/xref approve).', { approve: { key: 'checklists', value: listFp } })
     }
+    // The story just built is tried as a person would, before the next phase builds on it (0.8.0).
+    if (flow.userTest && snap.ui && started) {
+      const { phases, current } = taskPhases(snap.tasks)
+      const built = current > 0 ? phases[current - 1] : null
+      if (built && /User Story\s+\d+/i.test(built.title)) {
+        const key = `try:${phaseNumber(built.title, current - 1)}`
+        const value = tasksFingerprint(snap.tasks.filter(t => t.phase === built.title))
+        if (ledger.checkpoints[key] !== value) {
+          return step('try', null, `${phaseLabel(built.title)} is built: try it as a person would before the next phase builds on it.`, null, { approve: { key, value }, ...tryStep(snap, flow, phaseLabel(built.title)) })
+        }
+      }
+    }
     // One phase per step (Spec Kit's own advice for larger features): the budget and the stall check then measure real work.
     const phase = snap.phase
     const command = speckitCommand(snap, 'implement')
     if (drawn) notes.push(drawn)
     const ids = (phase ? open.filter(t => t.phase === phase) : open).map(t => t.id)
+    if (flow.orchestrate && phase) {
+      const phaseTasks = open.filter(t => t.phase === phase)
+      const delegate: Delegate = { agent: IMPLEMENTER, model: routeModel('implement', flow.models ?? 'auto', { tasks: phaseTasks }), description: `Implement ${phaseLabel(phase).slice(0, 40)}`, brief: implementBrief(snap, phase, flow.lastTest ?? null) }
+      return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, { delegate, prompt: relayPrompt(delegate) })
+    }
     return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, {
       prompt: phase
         ? [
@@ -403,6 +434,10 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     if (snap.prd && snap.roadmap?.length && !snap.prdApproved && snap.prdFingerprint) {
       return step('review', null, `${snap.featureDir} is done, but the roadmap changed since you approved it.`,
         'Read the roadmap again (.specify/memory/roadmap.md), then press Approve roadmap in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'prd', value: snap.prdFingerprint } })
+    }
+    // A feature people use is tried as a person would before it is done: once per tree (0.8.0).
+    if (flow.userTest && snap.ui && ledger.checkpoints.try !== verified) {
+      return step('try', null, `${snap.featureDir} is verified: try the whole app as a person would before it counts as done.`, null, { approve: { key: 'try', value: verified }, ...tryStep(snap, flow, null) })
     }
     // A feature people use is played through before it is done: once per tree, by a driver that leaves a report.
     const accepting = flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0
@@ -452,7 +487,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
   // Verify can always find one more thing: after two rounds in a run (three with acceptance and its fixes), closing the
   // feature is the person's call. One counter for both, so the acceptance rounds are not cut short.
-  const accepting = flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0
+  const accepting = (flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0) || (!!flow.userTest && !!snap.ui)
   const rounds = accepting ? MAX_ACCEPTS : MAX_VERIFIES
   if ((flow.verifies ?? 0) >= rounds) {
     return step('review', null, accepting ? `Verify and acceptance found new work in each of their last ${rounds} rounds, and it is built.` : `Verify found new work in each of its last ${rounds} rounds, and it is built.`,
@@ -475,6 +510,14 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
       "Each HIGH or MEDIUM finding becomes a new task at the end of tasks.md under '## Phase N: Verification' (the next free T### ids). Then end your turn.",
     ].join('\n'),
   })
+}
+
+/** A user test step: relayed to the tester subagent when orchestrated, else carried out in the main session. */
+function tryStep(snap: Snapshot, flow: Flow, story: string | null): Pick<Step, 'delegate' | 'prompt'> {
+  const brief = tryBrief(snap, { story })
+  if (!flow.orchestrate) return { prompt: [TESTER_PROMPT, brief].join('\n') }
+  const delegate: Delegate = { agent: TESTER, model: routeModel('try', flow.models ?? 'auto'), description: story ? `Try ${story.slice(0, 40)}` : 'Try the whole app', brief }
+  return { delegate, prompt: relayPrompt(delegate) }
 }
 
 /** What Validate is handed: the person's words and the skill that researches them. */
@@ -560,6 +603,7 @@ export const idleAutopilot = (): Autopilot => ({
   verifies: 0,
   acceptBaseline: null,
   releaseRows: null,
+  delegation: null,
 })
 
 /** Whether the person's next words are the idea to specify: the autopilot waits on them for exactly that. */
@@ -647,7 +691,7 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ...(drawn ? [['design', ['design']] as [string, Phase[]]] : []),
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge', 'bug']],
-    ['verify', ['verify', 'accept']],
+    ['verify', ['verify', 'accept', 'try']],
     ...(shipping ? [['ship', ['ship', 'release']] as [string, Phase[]]] : []),
   ]
   // A review sits in the column of what it reviews.

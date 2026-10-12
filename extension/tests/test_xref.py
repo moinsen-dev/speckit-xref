@@ -383,6 +383,10 @@ class XrefCli(unittest.TestCase):
         report = '<testsuites><testsuite name="m"><testcase name="US1-AS1 requests a link" classname="US1-AS1 requests a link" file="e2e/acceptance/US1-AS1.yaml" status="SUCCESS"/></testsuite></testsuites>'
         out = self.xref("accept", "--junit", self.outside("acceptance-mobile.xml", report))
         self.assertEqual((out["accepted"], out["failing"]), ([], []))
+        # Fund 39: a sub-flow it runs counts too.
+        self.write("e2e/acceptance/common/start.yaml", "appId: host.exp.exponent\n---\n- tapOn:\n    point: '89%,47%'\n")
+        self.write("e2e/acceptance/US1-AS1.yaml", "appId: host.exp.exponent\nname: \"US1-AS1 requests a link\"\n---\n- runFlow: common/start.yaml\n- tapOn: \"Link anfordern\"\n")
+        self.assertEqual(self.xref("accept", "--junit", self.outside("acceptance-mobile.xml", report))["accepted"], [])
         self.write("e2e/acceptance/US1-AS1.yaml", "appId: host.exp.exponent\nname: \"US1-AS1 requests a link\"\n---\n- tapOn: \"Link anfordern\"\n")
         self.assertEqual(self.xref("accept", "--junit", self.outside("acceptance-mobile.xml", report))["accepted"], ["US1-AS1"])
 
