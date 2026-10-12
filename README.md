@@ -1,5 +1,7 @@
 # speckit-xref
 
+**Project page:** [moinsen-dev.github.io/speckit-xref](https://moinsen-dev.github.io/speckit-xref/): what it does, why, the workflow and the use cases at a glance.
+
 **Keep the code on the spec.** speckit-xref ties a [GitHub Spec Kit](https://github.com/github/spec-kit) feature and its code together and measures the drift between what the user asked for, what the spec says, and what the code does.
 
 It comes in four parts that share one contract ([`docs/contract-0.4.md`](docs/contract-0.4.md)) and one record per feature:
