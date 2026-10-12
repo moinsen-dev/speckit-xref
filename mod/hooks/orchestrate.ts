@@ -37,6 +37,7 @@ export const IMPLEMENTER_PROMPT = [
   'Read the spec.md and plan.md of the feature and the files the tasks name. Work through the tasks in order. Before each task call mcp__speckit-xref__focus with its id; a file no task names gets mcp__speckit-xref__link to the task it serves.',
   'Mark code that implements a requirement with a comment `@spec <feature>/FR-###`; a test carries the anchor of what it proves and the id in its name.',
   LEAN_TESTS,
+  'A task that asks for a check by hand (the app on a simulator, an emulator or in a browser, screenshots against the design, a measured time) is done only when you did it now, on this code: results written down earlier (quickstart.md, notes, an older run) are no evidence. Look for the tools before you give up (the simulator and browser tools, maestro, adb, also outside PATH); when none here can do it, leave the task open, say so in your report and ask the person with mcp__speckit-xref__ask.',
   'Check a task off ([X] in tasks.md) only when its code is in place and the test command passes. Do not edit spec.md or plan.md. Decide what the brief leaves open and note it in your report; a product decision only the person can make goes to mcp__speckit-xref__ask.',
   'When you get past a problem of the environment (a port, a flag, a permission name), add one line to .specify/memory/runbook.md.',
   'End with a report of at most eight lines: tasks done, tasks left and why, the test run (passed/failed, counts), files changed, decisions you took.',

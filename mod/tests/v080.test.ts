@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { flowIncludes } from '../hooks/accept'
 import { LEAN_TESTS, treeOf, verifyKey } from '../hooks/brief'
-import { IMPLEMENTER, TESTER, implementBrief, relayPrompt, routeModel, tryBrief, writesCode } from '../hooks/orchestrate'
+import { IMPLEMENTER, IMPLEMENTER_PROMPT, TESTER, implementBrief, relayPrompt, routeModel, tryBrief, writesCode } from '../hooks/orchestrate'
 import { emptyLedger } from '../hooks/xref'
 import { nextStep, phaseStrip, tasksFingerprint } from '../hooks/workflow'
 import { parseConstitution, parseSpec, parseTasks } from '../hooks/speckit'
@@ -185,4 +185,26 @@ test('a done feature leaves a handoff, and the pane says /clear keeps the contex
   expect(handoff).toContain('/clear before it keeps the context small')
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(toText(await pane.drawn())).toContain('Before the next feature: /clear keeps the context small')
+})
+
+test('Fund 40: a check by hand counts only when done now; one the agent cannot do waits for the person instead of being relayed again', async ($, on) => {
+  expect(IMPLEMENTER_PROMPT).toContain('results written down earlier (quickstart.md, notes, an older run) are no evidence')
+  expect(LEAN_TESTS).toContain('fixes them (a set date and time, a seeded random)')
+  on('agent.spawn', ($: any, e: any) => ({ model: e.model, agentId: 'agent-1' }))
+  const seen = project(on, { ...DEMO }, { tests: { exits: [0] } })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  for (let i = 0; i < 4 && !autopilotPrompts(seen).at(-1)?.includes('] implement:'); i++) {
+    await runTurn($)
+    await seen.clock.advance(0)
+  }
+  const relayed = autopilotPrompts(seen).length
+  expect(autopilotPrompts(seen).at(-1)).toContain('subagent_type "speckit-xref:implementer"')
+  // The agent finds no simulator for the native smoke test: it leaves the task open and asks.
+  await $.tool.call({ tool: 'mcp__speckit-xref__ask', question: 'No simulator here for the native smoke test (T004): will you run it?', agentId: 'agent-1' } as never)
+  await runTurn($, 'T004 left open: no simulator here; asked the person.')
+  await seen.clock.advance(0)
+  expect(autopilotPrompts(seen)).toHaveLength(relayed)
+  expect(seen.toasts.at(-1)).toContain('Autopilot waits for you: No simulator here')
 })

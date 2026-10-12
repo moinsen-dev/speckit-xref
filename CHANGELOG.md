@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.0 — 2026-10-12
+
+The mod orchestrates: the heavy steps run in subagents with a fresh context and a model per step, the app is used as a person would before it counts as done, and the tests shrink to what proves a requirement. Mod 0.8.0, extension 0.8.0, preset 0.3.0.
+
+### Orchestration
+
+- **Implement, repair and the user test run in subagents.** The mod decides the step, the model and the brief; the session relays: it calls the Agent tool with the mod's agent type (`speckit-xref:implementer`, `speckit-xref:tester`), and the mod's spawn hook gives the agent its model and its brief and runs it in the foreground. The session keeps the spec, your decisions and the agents' short reports instead of every phase's work, so its context stays small. While a step is delegated the session writes no code: a Write or Edit outside `specs/` and `.specify/`, a shell redirect, `tee` or an in-place `sed`/`perl` is refused with the reason.
+- **A model per step** (option `models`, `auto`): Sonnet implements, repairs and tests; Opus takes over a repair that failed once already; Haiku does a phase whose files are all docs or configuration. The spec, the reviews, verify, converge and ship stay with the session's own model. `sonnet`, `opus` or `haiku` sets one model for every delegated step. The run log names the model of each step (`main` for the session), and a step the session did itself although it was delegated is logged as `not delegated`.
+- Option `orchestrate` (`on`) switches it off: every step in the session, as before.
+- **A check by hand counts only when done now.** A task that asks for the app on a simulator, an emulator or in a browser, for screenshots against the design or a measured time is checked off only when the implementer did it on this code; results written down earlier are no evidence. It looks for the tools first (the simulator and browser tools, maestro, adb, also outside PATH); when none here can do it, the task stays open and the person is asked, and the autopilot waits instead of handing the phase over again (found in the A/B run below: Sonnet checked off a validation, a native smoke test and a visual check with an earlier version's results).
+- **A handoff when a feature is done.** `.specify/xref/local/handoff.md` holds what the next feature needs from the conversation (the done state, the decisions you made, where the spec, the plan and the runbook are, the roadmap's next feature); the done card says that `/clear` before the next feature keeps the context small.
+
+### The user test
+
+- **The app is used as a person would**, in the iOS Simulator of the Claude desktop app or in a browser (a short Playwright script with the installed Chrome where neither is there; nothing is downloaded): each story right after its phase is built, before the next phase builds on it, and the whole app before the feature counts as done. The tester follows the stories and the paths people take by accident (a permission denied, offline, back and forth, empty or long input, a second try), writes `specs/<feature>/try.md` with screenshots under `try/`, and turns each HIGH or MEDIUM finding into a task under `## Phase N: User test fixes`, built before the next step. Option `userTest` (`on`) switches it off.
+- New skill `speckit-xref:try`; extension command `/speckit.xref.try` for every agent Spec Kit supports. The phase strip has a try column.
+- **Scripted acceptance is off by default.** The user test is the check; the scripted drivers (Playwright and Maestro, scenario by scenario, accepted only by a fresh JUnit report) run with option `acceptance: auto`. This changes the default: a project that relied on acceptance before done sets `acceptance: auto`.
+
+### Lean tests
+
+- **Tests prove requirements, not tasks.** One test per requirement or acceptance scenario, at the boundary where its behaviour shows; no render-only tests, no tests of what the framework or the types guarantee, no test per task. A test whose result depends on the clock or on chance fixes them (a set date and time, a seeded random). The phase brief, the implementer and the preset (`speckit.implement`, `speckit.tasks`, preset 0.3.0) say so.
+
+### Proof
+
+- **Shell writes and commits within one turn are booked.** The mod remembers HEAD when a turn starts and books the turn's changes against it, so files written by Bash and committed in the same turn reach the ledger (touched tasks, unplanned files, intents); `@spec` anchors and the real tests are scanned again whenever the shell or a commit changed the repo, not only when the feature changes (found live: a feature written almost entirely by Bash and committed in the same turns ended with one booked task and no passing requirement).
+- **A coordinate tap in a sub-flow counts too.** The check for flows that tap by screen coordinates follows Maestro's `runFlow` into the flows it includes, relative to the including flow (both implementations).
+
+### Measured
+
+The same feature built twice from the same spec and tasks: an Expo app for iOS, Android and the web, 59 tasks in 8 phases, Opus as the session's model, the user test and scripted acceptance off in both runs.
+
+- **Orchestrated: 30 minutes and at most $7.17** (Opus relaying, $2.17; Sonnet doing the work, $5.00). **Opus alone: 68 minutes and about $26** (estimated from its token share for the same eight phases). Both type-check clean.
+- Under the same lean-tests rule Sonnet wrote 160 tests (1,805 lines), Opus 388 (2,629 lines): Sonnet keeps closer to it. One of Sonnet's tests depended on the time of day (green in the afternoon, red from 18:00), hence the clock rule above.
+- The ninth phase, checks by hand, is left out of the numbers: Opus ran the app for 49 minutes on the iOS Simulator and an Android emulator and fixed eight real faults (a back button labelled "index", a doubled safe area, a keyboard over the place search, location on Android, an emoji drawn red); Sonnet checked the same tasks off in a minute with results an earlier version had written down. The converge step, with the session's Opus, found all three and wrote them as new tasks; the implementer's new rule above closes the gap. The earlier results came from the test setup, but the trap is a real one.
+
 ## 0.7.1 — 2026-10-11
 
 Friction from the first real runs of 0.7.0, and the parts so far proven by unit tests only, played live: the pane in a real terminal, and acceptance on an Android emulator. Mod 0.7.1, extension 0.7.1; preset 0.2.0 unchanged.

@@ -84,7 +84,7 @@ export function phaseBrief(snap: Snapshot, phase: string, lastTest: Autopilot['l
 
 /** Tests prove requirements, not tasks (0.8.0): what makes a test worth its lines. */
 export const LEAN_TESTS =
-  'Tests prove requirements: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function\'s result, a screen\'s text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee, no test per task; extend an existing test file before adding one.'
+  'Tests prove requirements: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function\'s result, a screen\'s text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee, no test per task; extend an existing test file before adding one. A test whose result depends on the clock or on chance fixes them (a set date and time, a seeded random).'
 
 /** The runbook as a note: what earlier steps learned about this project's environment. */
 export function runbookNote(runbook: string | null | undefined): string | null {
