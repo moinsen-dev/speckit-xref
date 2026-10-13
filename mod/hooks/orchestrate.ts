@@ -95,6 +95,13 @@ export function tryTools(snap: Snapshot): string {
   return lines.join('\n')
 }
 
+/**
+ * A new user first, then a returning one (0.8.1): the first-run screens and the permission dialogs only show on an
+ * empty app, and an older build's data only breaks the app of a returning user (both found in the first live test).
+ */
+export const FRESH_START =
+  "Start as a new user: the app's stored data empty and its permissions not yet asked, so the first-run screens and the permission dialogs appear. Reset the permissions before the app starts, never while it runs (the system ends it): iOS `xcrun simctl privacy <device> reset all <bundle id>` (Expo Go: `host.exp.Exponent`), Android `adb shell pm revoke <package> <permission>`. Data an older build left (Expo Go keeps a project's data between builds) is cleared after you keep a copy. Then try once more as a returning user, with the data the first pass left; data of an older version that breaks the app is a finding."
+
 /** The tester's brief: one story right after it is built, or the whole app at the end. */
 export function tryBrief(snap: Snapshot, scope: { story: string | null }): string {
   const dir = snap.featureDir ?? 'specs/<feature>'
@@ -106,6 +113,7 @@ export function tryBrief(snap: Snapshot, scope: { story: string | null }): strin
     'Stories:',
     ...stories.map(s => `- ${s.id} ${s.title}${s.scenarios.length ? `: ${s.scenarios.map(x => x.text).join(' / ')}` : ''}`),
     tryTools(snap),
+    FRESH_START,
     `Write ${dir}/try.md: the date, the platform and tool, per story what you did and saw, each finding with its rating and screenshot (save them under ${dir}/try/). Each HIGH or MEDIUM finding becomes a task under '## Phase N: User test fixes' in ${dir}/tasks.md (the next free T### id, the steps to reproduce, the files it likely touches in backticks, the story id); LOW ones stay in try.md.`,
     'Start servers, simulators and browsers in the background and stop the ones you started at the end.',
   ].join('\n')

@@ -21,6 +21,7 @@ Unit tests prove the parts and scripted flows replay what someone wrote down. Th
 
 ## 2. What to try
 
+- **A new user first, then a returning one**: start with the app's stored data empty and its permissions not yet asked, so the first-run screens and the permission dialogs appear. Reset the permissions before the app starts, never while it runs (the system ends it): iOS `xcrun simctl privacy <device> reset all <bundle id>` (Expo Go: `host.exp.Exponent`), Android `adb shell pm revoke <package> <permission>`. Data an older build left (Expo Go keeps a project's data between builds) is cleared after you keep a copy. Then try once more as a returning user, with the data the first pass left; data of an older version that breaks the app is a finding.
 - Each user story's goal, start to end, as the spec's stories and quickstart describe it.
 - Then the paths people take by accident: deny a permission, go offline (where the tool allows), go back and forth, leave a field empty or type a very long text, try twice, rotate or resize.
 - Look for: crashes and red screens, dead ends, endless spinners, wrong numbers, dates or currencies, text cut off or unreadable, a control that does nothing, a screen that contradicts the spec or its design.

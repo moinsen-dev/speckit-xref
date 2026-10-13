@@ -37,13 +37,13 @@ claude plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.8.0/speckit-xref-extension-v0.8.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.8.1/speckit-xref-extension-v0.8.1.zip
 ```
 
 **Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.
 
 ```bash
-specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.8.0/speckit-xref-preset-v0.3.0.zip
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.8.1/speckit-xref-preset-v0.3.0.zip
 ```
 
 **GitHub Action**, in a workflow on `pull_request` (see [`action/`](action/)):
@@ -51,7 +51,7 @@ specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/d
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.8.0
+- uses: moinsen-dev/speckit-xref/action@v0.8.1
 ```
 
 With the acceptance tests the autopilot wrote under `e2e/acceptance/` (Playwright with `channel: 'chrome'`; GitHub's Ubuntu runners have Chrome), the pull request shows each scenario's state and fails when one fails:
@@ -62,7 +62,7 @@ With the acceptance tests the autopilot wrote under `e2e/acceptance/` (Playwrigh
 - run: npm ci
 - run: npx expo start --web --port 8081 &   # or your app's dev server
 - run: PLAYWRIGHT_JUNIT_OUTPUT_NAME=reports/acceptance-web.xml npx playwright test e2e/acceptance --reporter=junit
-- uses: moinsen-dev/speckit-xref/action@v0.8.0
+- uses: moinsen-dev/speckit-xref/action@v0.8.1
   if: always()
   with:
     acceptance-junit: reports/acceptance-*.xml

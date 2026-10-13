@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.1 — 2026-10-13
+
+The user test, played live for the first time, starts as a new user and then tries again as a returning one. Mod 0.8.1, extension 0.8.1; preset 0.3.0 unchanged.
+
+### The user test
+
+- **A new user first, then a returning one.** The tester starts with the app's stored data empty and its permissions not yet asked, so the first-run screens and the permission dialogs appear: it resets the permissions before the app starts, never while it runs, since the system ends the app then (iOS `xcrun simctl privacy <device> reset all <bundle id>`, Expo Go is `host.exp.Exponent`; Android `adb shell pm revoke`), and clears what an older build left, after keeping a copy (Expo Go keeps a project's data between builds). Then it tries once more with the data the first pass left; an older version's data that breaks the app is a finding. In the brief, the `speckit-xref:try` skill and `/speckit.xref.try`.
+
+### Live
+
+- The tester in the iOS Simulator of the Claude desktop app (Sonnet, 24 minutes, Expo Go, the app the orchestrated A/B run had built, started directly rather than by the autopilot): 16 screenshots, a `try.md` per story and five fix tasks that 160 green unit tests had missed. One was HIGH: onboarding's last button led back to its first card, because the layout redirected on the profile it had loaded before onboarding finished. Four were MEDIUM: an endless spinner and no error state with an older build's data, ten-minute ideas for a weekend, a reset without asking, and a home-place notice without a home place. It never saw the location dialog, because Expo Go had the permission already, and it met the older build's data by chance; hence this release. Not yet live: the try steps handed over by the autopilot, and the handoff.
+
 ## 0.8.0 — 2026-10-12
 
 The mod orchestrates: the heavy steps run in subagents with a fresh context and a model per step, the app is used as a person would before it counts as done, and the tests shrink to what proves a requirement. Mod 0.8.0, extension 0.8.0, preset 0.3.0.
