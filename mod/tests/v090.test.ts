@@ -133,9 +133,10 @@ test('in a console without the simulator tool, iOS runs through simctl, and taps
   const tools = tryTools(snapOf(DONE))
   expect(tools).toContain('xcrun simctl io <device> screenshot <file>')
   expect(tools).toContain('Without Maestro you can only look')
+  expect(tools).toContain('xcrun simctl ui <device> appearance light')
 })
 
-test('live: Polish in the pane hands the direction to the design lead; the approval opens the design pass; other work clears the wish', { options: { userTest: 'off' } }, async ($, on) => {
+test('live: Polish in the pane hands the direction to the design lead; at the samples your yes or your words are the way on, and the yes opens the design pass', { options: { userTest: 'off' } }, async ($, on) => {
   const spawned: any[] = []
   on('agent.spawn', ($: any, e: any) => {
     spawned.push(e)
@@ -167,28 +168,11 @@ test('live: Polish in the pane hands the direction to the design lead; the appro
   await runTurn($, 'Direction set; Moment built as a sample.')
   await seen.clock.advance(0)
   expect(toText(await pane.drawn())).toContain('The design direction is set')
-  expect(await pane.find({ key: 'polish-later' })).toBeDefined()
+  // The samples are in the app already: the way on is your yes, or your words on what to change; nothing pretends to undo them.
+  expect(await pane.find({ key: 'polish-later' })).toBeUndefined()
+  expect((await xref($, 'next feature Add a history screen')).text).toContain('not done yet')
+  expect(ledgerOf(seen.files).checkpoints?.polishWanted).toBe('yes')
   expect((await xref($, 'approve')).text).toContain('polish')
   await seen.clock.advance(0)
   expect(autopilotPrompts(seen).at(-1)).toContain('] implement:')
-})
-
-test('live: other work at the design direction puts the design pass aside', { options: { userTest: 'off' } }, async ($, on) => {
-  on('agent.spawn', ($: any, e: any) => ({ model: e.model, agentId: 'agent-9' }))
-  const seen = project(on, { ...DEMO, [`${FEATURE}/plan.md`]: PLAN, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] } })
-  await startSession($)
-  await xref($, 'auto on')
-  await seen.clock.advance(0)
-  for (let i = 0; i < 4 && !seen.toasts.some(t => t.startsWith('Autopilot done:')); i++) {
-    await runTurn($)
-    await seen.clock.advance(0)
-  }
-  await xref($, 'polish')
-  await seen.clock.advance(0)
-  expect(ledgerOf(seen.files).checkpoints?.polishWanted).toBe('yes')
-  seen.write(`${FEATURE}/polish.md`, POLISH)
-  await runTurn($, 'Direction set.')
-  await seen.clock.advance(0)
-  expect((await xref($, 'next feature Add a history screen')).text).toContain('a new feature')
-  expect(ledgerOf(seen.files).checkpoints?.polishWanted).toBeUndefined()
 })

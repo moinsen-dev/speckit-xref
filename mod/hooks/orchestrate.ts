@@ -95,6 +95,8 @@ export function tryTools(snap: Snapshot): string {
   if (p.ios) {
     lines.push('iOS: if the mcp__Claude_Code_iOS_Simulator__control tool is available, start the app (Expo: `npx expo start`, then open its exp:// URL in Expo Go with open_url, or a development build if one is installed) and use it with screenshot, tap, swipe and text.')
     // A console session has no simulator tool: simctl shows the app, and only Maestro can tap (0.9.0).
+    // The samples are already in the app at the direction: light and dark are switched, not assumed (0.9.0).
+    lines.push('Light and dark: `xcrun simctl ui <device> appearance light` or `dark` switches the simulator.')
     lines.push('Without that tool, on a Mac with Xcode: boot a simulator (`xcrun simctl boot <device>`), open the app\'s URL with `xcrun simctl openurl <device> <url>`, take shots with `xcrun simctl io <device> screenshot <file>` and read them with the Read tool; taps and typing need Maestro (a short flow with `maestro test`) where it is installed. Without Maestro you can only look: say which screens you saw but did not use.')
   }
   if (p.web || !lines.length) lines.push('Web: if browser tools are available (mcp__Claude_Browser__* or mcp__claude-in-chrome__*), use them on the app\'s dev server; else write a short Playwright script with `channel: \'chrome\'` (the installed Chrome; never download a browser) that clicks through like a person and saves screenshots.')

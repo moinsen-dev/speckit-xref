@@ -1598,15 +1598,6 @@ async function startPolish($: $, text = 'Polish the look'): Promise<string> {
   return `Polish: a design lead sets the direction with two or three sample screens (${polishDoc(snap.featureDir!)}); the rest waits for your yes at the samples.`
 }
 
-/** Not now at the design direction: the design pass is put aside; the feature is done, and Polish starts it again later. */
-async function dropPolish($: $): Promise<string> {
-  await update($, ledgerA, resetPolish)
-  await persist($)
-  await update($, autopilotA, a => ({ ...a, next: a.next?.kind === 'polish' ? null : a.next, paused: null }))
-  if ((await read($, autopilotA)).on) $.clock.after(0, () => void advance($).catch(() => undefined))
-  return 'The design pass is put aside; Polish starts it again when you want it.'
-}
-
 /**
  * Ship (the pane's Ship and Check again, /xref ship): a fresh release check of the done app; its commands go out
  * only after the person's yes. Words the person adds go along as their note on the release.
@@ -1681,11 +1672,8 @@ async function nextByCommand($: $, words: string[]): Promise<string> {
   const at = nextStep(snap, ledger, ap.idea, flowOf(ap))
   // At a release that waits, other work puts the release aside first.
   const atRelease = (at.phase === 'ship' && !!at.needsUser) || at.approve?.key === 'release'
-  // At the design direction, other work puts the design pass aside the same way (0.9.0).
-  const atPolish = at.approve?.key === 'polish'
-  if (at.phase !== 'done' && !atRelease && !atPolish) return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
+  if (at.phase !== 'done' && !atRelease) return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
   if (atRelease) await dropShip($)
-  if (atPolish) await dropPolish($)
   if (kind) await update($, autopilotA, a => ({ ...a, nextKind: kind }))
   const next = await takeNext($, text)
   if (!next) return 'That reads as a question, not new work: /xref next feature|change|bug <words> names the kind.'
@@ -2960,7 +2948,6 @@ export const register: Register = (on, options) => {
             {step.approve.key === 'design' ? <Button key="mocks" label="Open the mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} /> : null}
             {step.approve.key === 'release' ? <Button key="ship-again" label="Check again" onPress={() => void startShip($).then(text => $.ui.toast(text))} /> : null}
             {step.approve.key === 'release' ? <Button key="ship-later" label="Not now" onPress={() => void dropShip($).then(text => $.ui.toast(text))} /> : null}
-            {step.approve.key === 'polish' ? <Button key="polish-later" label="Not now" onPress={() => void dropPolish($).then(text => $.ui.toast(text))} /> : null}
           </Box>
           {step.approve.key === 'release' && snap.release ? releaseDetails(snap.release, row) : null}
           {step.approve.key === 'polish' && snap.featureDir ? row('', `${snap.polish?.direction ?? 'Direction'} · ${polishDoc(snap.featureDir)} · shots in ${snap.featureDir}/polish/`) : null}

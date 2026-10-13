@@ -27,7 +27,7 @@ The same screens, flows and the texts that carry meaning, and every test green: 
 
 ## 3. The direction (first step)
 
-1. Use the app (the iOS Simulator tool of the Claude desktop app; without it `xcrun simctl` for shots and deep links and Maestro for taps; a browser for the web) and take a "before" shot of every screen, light and dark, under `specs/<feature>/polish/before/`.
+1. Use the app (the iOS Simulator tool of the Claude desktop app; without it `xcrun simctl` for shots and deep links and Maestro for taps; a browser for the web) and take a "before" shot of every screen, light and dark (`xcrun simctl ui <device> appearance light|dark` switches the simulator), under `specs/<feature>/polish/before/`.
 2. Write `specs/<feature>/polish.md`: `## Direction` (its first line says the feel in one sentence; then materials, type, colour, symbols, motion and haptics, and what stays), `## Screens` (per screen: what changes and with which native components), `## Samples`, `## Rounds` (empty). Bring `DESIGN.md` to the new direction, in its own format.
 3. Before any code, append `## Phase N: Design pass` to `tasks.md`: one task for the shared parts (theme, type, components, navigation), then one task per screen, each with its files in backticks and the story it serves.
 4. Build the shared task and two or three screens that show the direction best, each under its task, and check those tasks off once the tests pass. Take "after" shots under `specs/<feature>/polish/after/` and list before → after per sample under `## Samples`.
