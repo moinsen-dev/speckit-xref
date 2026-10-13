@@ -9,9 +9,10 @@ export { LEAN_TESTS }
 
 export const IMPLEMENTER = 'implementer'
 export const TESTER = 'tester'
+export const DESIGNER = 'designer'
 export type Models = 'auto' | 'opus' | 'sonnet' | 'haiku'
 export const MODELS: Models[] = ['auto', 'sonnet', 'opus', 'haiku']
-export type Delegate = { agent: typeof IMPLEMENTER | typeof TESTER; model: string; description: string; brief: string }
+export type Delegate = { agent: typeof IMPLEMENTER | typeof TESTER | typeof DESIGNER; model: string; description: string; brief: string }
 
 
 /** A task's files are all documentation or configuration: work a small model does as well. */
@@ -19,14 +20,16 @@ const MECHANICAL = /(\.(md|json|ya?ml|toml|ini|txt|env\.example)$|(^|\/)\.[\w.-]
 
 /**
  * The model for a delegated step. A fixed `models` option wins; `auto`: Sonnet builds and repairs, Opus takes over a
- * repair that failed once already, Haiku does a phase whose files are all docs or configuration.
+ * repair that failed once already, Haiku does a phase whose files are all docs or configuration; the design lead's
+ * direction and reviews are Opus's (0.9.0), and a design pass is never Haiku's.
  */
-export function routeModel(kind: 'implement' | 'repair' | 'try', models: Models, opts: { repairs?: number; tasks?: Task[] } = {}): string {
+export function routeModel(kind: 'implement' | 'repair' | 'try' | 'design', models: Models, opts: { repairs?: number; tasks?: Task[]; designPass?: boolean } = {}): string {
   if (models !== 'auto') return models
+  if (kind === 'design') return 'opus'
   if (kind === 'repair') return (opts.repairs ?? 0) >= 2 ? 'opus' : 'sonnet'
   if (kind === 'implement') {
     const paths = (opts.tasks ?? []).flatMap(t => t.paths)
-    if (paths.length && paths.every(p => MECHANICAL.test(p))) return 'haiku'
+    if (!opts.designPass && paths.length && paths.every(p => MECHANICAL.test(p))) return 'haiku'
   }
   return 'sonnet'
 }
@@ -89,7 +92,11 @@ export function repairBrief(snap: Snapshot, output: string): string {
 export function tryTools(snap: Snapshot): string {
   const p = snap.platforms ?? { web: false, ios: false, android: false }
   const lines: string[] = []
-  if (p.ios) lines.push('iOS: if the mcp__Claude_Code_iOS_Simulator__control tool is available, start the app (Expo: `npx expo start`, then open its exp:// URL in Expo Go with open_url, or a development build if one is installed) and use it with screenshot, tap, swipe and text.')
+  if (p.ios) {
+    lines.push('iOS: if the mcp__Claude_Code_iOS_Simulator__control tool is available, start the app (Expo: `npx expo start`, then open its exp:// URL in Expo Go with open_url, or a development build if one is installed) and use it with screenshot, tap, swipe and text.')
+    // A console session has no simulator tool: simctl shows the app, and only Maestro can tap (0.9.0).
+    lines.push('Without that tool, on a Mac with Xcode: boot a simulator (`xcrun simctl boot <device>`), open the app\'s URL with `xcrun simctl openurl <device> <url>`, take shots with `xcrun simctl io <device> screenshot <file>` and read them with the Read tool; taps and typing need Maestro (a short flow with `maestro test`) where it is installed. Without Maestro you can only look: say which screens you saw but did not use.')
+  }
   if (p.web || !lines.length) lines.push('Web: if browser tools are available (mcp__Claude_Browser__* or mcp__claude-in-chrome__*), use them on the app\'s dev server; else write a short Playwright script with `channel: \'chrome\'` (the installed Chrome; never download a browser) that clicks through like a person and saves screenshots.')
   lines.push('No tool here for a platform: that platform is the person\'s part, with the steps to try.')
   return lines.join('\n')

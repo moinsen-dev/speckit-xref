@@ -6,7 +6,8 @@ import { bugPrompt, changePrompt, doneAsk, phaseBrief, runbookNote, verifyKey } 
 import { PRD, PRD_NOTE, PRD_PROMPT, PRD_SHAPE_PROMPT, prdCoverage, roadmapItemOf, roadmapSpecify } from './prd'
 import { designChangeLine, designDue, designNote, designPrompt, designToReview } from './design'
 import { RELEASE, releaseBlockers, releaseLine, releasePrompt, releaseRuns, shipPrompt } from './ship'
-import { IMPLEMENTER, TESTER, TESTER_PROMPT, implementBrief, relayPrompt, repairBrief, routeModel, tryBrief } from './orchestrate'
+import { DESIGNER, IMPLEMENTER, TESTER, TESTER_PROMPT, implementBrief, relayPrompt, repairBrief, routeModel, tryBrief } from './orchestrate'
+import { DESIGNER_PROMPT, DESIGN_PASS_RULES, MAX_DESIGN_REVIEWS, critiqueBrief, designRounds, directionBrief, isDesignPhase } from './polish'
 import type { Delegate, Models } from './orchestrate'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
@@ -35,6 +36,7 @@ export type Phase =
   | 'verify'
   | 'accept'
   | 'try'
+  | 'polish'
   | 'bug'
   | 'ship'
   | 'release'
@@ -344,6 +346,11 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
 
   const report = evaluate(snap, ledger)
   if (report.level === 'red' || report.level === 'yellow') notes.push(`Drift ${report.level}: ${report.findings[0]?.text ?? ''}`)
+  // The person asked to polish this feature's look (0.9.0): it holds across sessions until other work comes first.
+  const polishing = !!snap.ui && (flow.next ? flow.next.kind === 'polish' : ledger.checkpoints.polishWanted === 'yes')
+  const polishApproval = () =>
+    step('review', null, `The design direction of ${snap.featureDir} is set${snap.polish?.direction ? `: ${snap.polish.direction.slice(0, 120)}` : ''}; the samples are built.`,
+      "Look at polish.md and the samples' before and after shots (the feature's polish/ folder), then press Approve direction in the pane (or /xref approve); tell me what to change otherwise.", { approve: { key: 'polish', value: snap.polish!.fingerprint } })
   const mapped = Object.values(ledger.requirements).some(r => r.tasks.length > 0)
   const uncovered = report.uncovered.filter(id => !unclear.includes(id))
   if (uncovered.length && !mapped) {
@@ -387,6 +394,8 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     if (checklists.length && !started && ledger.approvals.checklists !== listFp) {
       return step('checklists', null, `${checklists.reduce((n, c) => n + c.open, 0)} checklist items are open (${checklists.map(c => c.file).join(', ')}).`, 'Checklist items are open: complete them, or press Proceed anyway in the pane (/xref approve).', { approve: { key: 'checklists', value: listFp } })
     }
+    // A design pass is built only once the person approved its direction at the samples (0.9.0).
+    if (isDesignPhase(snap.phase) && snap.polish && ledger.approvals.polish !== snap.polish.fingerprint) return polishApproval()
     // The story just built is tried as a person would, before the next phase builds on it (0.8.0).
     if (flow.userTest && snap.ui && started) {
       const { phases, current } = taskPhases(snap.tasks)
@@ -404,9 +413,11 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     const command = speckitCommand(snap, 'implement')
     if (drawn) notes.push(drawn)
     const ids = (phase ? open.filter(t => t.phase === phase) : open).map(t => t.id)
+    const designPass = isDesignPhase(phase)
     if (flow.orchestrate && phase) {
       const phaseTasks = open.filter(t => t.phase === phase)
-      const delegate: Delegate = { agent: IMPLEMENTER, model: routeModel('implement', flow.models ?? 'auto', { tasks: phaseTasks }), description: `Implement ${phaseLabel(phase).slice(0, 40)}`, brief: implementBrief(snap, phase, flow.lastTest ?? null) }
+      const brief = [implementBrief(snap, phase, flow.lastTest ?? null), ...(designPass ? [DESIGN_PASS_RULES] : [])].join('\n')
+      const delegate: Delegate = { agent: IMPLEMENTER, model: routeModel('implement', flow.models ?? 'auto', { tasks: phaseTasks, designPass }), description: `Implement ${phaseLabel(phase).slice(0, 40)}`, brief }
       return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, { delegate, prompt: relayPrompt(delegate) })
     }
     return step('implement', command, `${open.length} of ${snap.tasks.length} tasks open; next ${open[0]!.id}.`, null, {
@@ -414,16 +425,19 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
         ? [
             `Run ${command} now through the Skill tool, scoped by its argument to one phase: "Only the phase '${phase}' (${ids.join(', ')}); stop when it is done." Carry that phase through.`,
             ...phaseBrief(snap, phase, flow.lastTest ?? null),
+            ...(designPass ? [DESIGN_PASS_RULES] : []),
           ].join('\n')
         : undefined,
     })
   }
   const tasksFp = snap.tasksFingerprint || tasksFingerprint(snap.tasks)
-  if (has('converge') && ledger.checkpoints.converge !== tasksFp) {
+  // A design pass changes the look, not the work: its tasks start no new converge (0.9.0).
+  const workFp = snap.tasks.some(t => isDesignPhase(t.phase)) ? tasksFingerprint(snap.tasks.filter(t => !isDesignPhase(t.phase))) : tasksFp
+  if (has('converge') && ledger.checkpoints.converge !== workFp) {
     // Converge rates its gaps too: only what matters becomes another round of work.
     const command = speckitCommand(snap, 'converge')
     return step('converge', command, 'Every task is checked: find the work the tasks missed.', null, {
-      approve: { key: 'converge', value: tasksFp },
+      approve: { key: 'converge', value: workFp },
       prompt: `Run ${command} now through the Skill tool and carry it through. Append tasks only for its HIGH and MEDIUM gaps; list the LOW ones in your answer under 'Low, no task'.`,
     })
   }
@@ -434,6 +448,22 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     if (snap.prd && snap.roadmap?.length && !snap.prdApproved && snap.prdFingerprint) {
       return step('review', null, `${snap.featureDir} is done, but the roadmap changed since you approved it.`,
         'Read the roadmap again (.specify/memory/roadmap.md), then press Approve roadmap in the pane (or /xref approve); tell me what to change otherwise.', { approve: { key: 'prd', value: snap.prdFingerprint } })
+    }
+    // Polish (0.9.0): on the person's word a design lead lifts the done feature's look to its platform's best. The
+    // direction and two or three samples first, the person's yes at the samples, the rest as a design pass, then
+    // reviews of fresh shots of every screen until one finds nothing (three at most).
+    if (polishing) {
+      if (!snap.polish) {
+        return step('polish', null, `${snap.featureDir} is done: set a design direction that lifts its look to its platform's best, with two or three sample screens.`, null, { consumes: true, ...designerStep(flow, directionBrief(snap), 'Set the design direction') })
+      }
+      if (ledger.approvals.polish !== snap.polish.fingerprint) return polishApproval()
+      const round = designRounds(snap.tasks) + 1
+      if (round <= MAX_DESIGN_REVIEWS && ledger.checkpoints.polishCheck !== verified) {
+        return step('polish', null, `The design pass is built: review round ${round} of ${MAX_DESIGN_REVIEWS}, fresh shots of every screen against the direction.`, null, {
+          approve: { key: 'polishCheck', value: verified },
+          ...designerStep(flow, critiqueBrief(snap, round), `Review the design pass (round ${round})`),
+        })
+      }
     }
     // A feature people use is tried as a person would before it is done: once per tree (0.8.0).
     if (flow.userTest && snap.ui && ledger.checkpoints.try !== verified) {
@@ -488,7 +518,8 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   // Verify can always find one more thing: after two rounds in a run (three with acceptance and its fixes), closing the
   // feature is the person's call. One counter for both, so the acceptance rounds are not cut short.
   const accepting = (flow.acceptance !== false && !!snap.ui && scenariosOf(snap.spec).length > 0) || (!!flow.userTest && !!snap.ui)
-  const rounds = accepting ? MAX_ACCEPTS : MAX_VERIFIES
+  // A design pass brings its own verify rounds: one after the pass, one after each review that found something.
+  const rounds = (accepting ? MAX_ACCEPTS : MAX_VERIFIES) + (polishing ? MAX_DESIGN_REVIEWS + 1 : 0)
   if ((flow.verifies ?? 0) >= rounds) {
     return step('review', null, accepting ? `Verify and acceptance found new work in each of their last ${rounds} rounds, and it is built.` : `Verify found new work in each of its last ${rounds} rounds, and it is built.`,
       `Look at what the last ${accepting ? 'verifications and acceptance runs' : 'verifications'} added: press Call it done in the pane (or /xref approve) to close the feature as it is, or Resume for one more round.`, { approve: { key: 'done', value: verified } })
@@ -517,6 +548,13 @@ function tryStep(snap: Snapshot, flow: Flow, story: string | null): Pick<Step, '
   const brief = tryBrief(snap, { story })
   if (!flow.orchestrate) return { prompt: [TESTER_PROMPT, brief].join('\n') }
   const delegate: Delegate = { agent: TESTER, model: routeModel('try', flow.models ?? 'auto'), description: story ? `Try ${story.slice(0, 40)}` : 'Try the whole app', brief }
+  return { delegate, prompt: relayPrompt(delegate) }
+}
+
+/** A design lead's step (0.9.0): relayed to the designer subagent when orchestrated, else carried out in the main session. */
+function designerStep(flow: Flow, brief: string, description: string): Pick<Step, 'delegate' | 'prompt'> {
+  if (!flow.orchestrate) return { prompt: [DESIGNER_PROMPT, brief].join('\n\n') }
+  const delegate: Delegate = { agent: DESIGNER, model: routeModel('design', flow.models ?? 'auto'), description, brief }
   return { delegate, prompt: relayPrompt(delegate) }
 }
 
@@ -682,6 +720,8 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
   const drawn = !!snap.design?.screens?.length || step.phase === 'design' || step.approve?.key === 'design'
   // The ship column shows once a release was checked, and while it is.
   const shipping = !!snap.release || step.phase === 'ship' || step.phase === 'release' || step.approve?.key === 'release'
+  // The polish column shows once a design direction is set, and while it is.
+  const polished = !!snap.polish || step.phase === 'polish' || step.approve?.key === 'polish'
   const order: [string, Phase[]][] = [
     ['setup', ['setup', 'integration']],
     ...(ideas ? [['idea', ['prd', 'validate', 'shape']] as [string, Phase[]]] : []),
@@ -692,10 +732,11 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
     ['impl', ['implement', 'repair', 'converge', 'bug']],
     ['verify', ['verify', 'accept', 'try']],
+    ...(polished ? [['polish', ['polish']] as [string, Phase[]]] : []),
     ...(shipping ? [['ship', ['ship', 'release']] as [string, Phase[]]] : []),
   ]
   // A review sits in the column of what it reviews.
-  const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify', release: 'ship' }
+  const reviewed: Record<string, Phase> = { idea: 'validate', prd: 'prd', plan: 'plan', design: 'design', done: 'verify', release: 'ship', polish: 'polish' }
   const phase = step.phase === 'review' && step.approve ? (reviewed[step.approve.key] ?? 'review') : step.phase
   // Done: every column is behind it.
   const at = phase === 'done' ? order.length : order.findIndex(([, phases]) => phases.includes(phase))

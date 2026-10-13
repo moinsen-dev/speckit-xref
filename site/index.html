@@ -287,7 +287,7 @@ footer p { margin: 0 0 4px; }
   <div><span class="k">Project</span><span class="v">speckit-xref</span></div>
   <div class="subject"><span class="k">Subject</span><span class="v">Spec-to-code traceability and an autopilot for GitHub Spec Kit in Claude Code</span></div>
   <div class="cells">
-    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.8.1</span></span></div>
+    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.9.0</span></span></div>
     <div><span class="k">License</span><span class="v">MIT</span></div>
     <div><span class="k">Source</span><span class="v"><a href="https://github.com/moinsen-dev/speckit-xref">GitHub</a></span></div>
   </div>
@@ -521,7 +521,7 @@ footer p { margin: 0 0 4px; }
       <p>In a workflow on <code>pull_request</code>.</p>
       <div class="codebox"><pre><code>- uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.8.1</code></pre><button class="copy" type="button">Copy</button></div>
+- uses: moinsen-dev/speckit-xref/action@v0.9.0</code></pre><button class="copy" type="button">Copy</button></div>
     </div>
   </div>
 </section>
@@ -545,6 +545,7 @@ footer p { margin: 0 0 4px; }
     { key: 'build', title: 'Build', what: 'One phase of tasks per step, each in a subagent with a fresh context and the model it needs: Sonnet builds, Opus takes over a repair that failed, Haiku does docs and configuration. The session keeps the spec, your decisions and short reports. Every edit is booked against its task, an edit no task planned is flagged at once, and the tests gate every step.', commands: '/speckit-implement, speckit-xref:implementer', yours: 'A question the spec leaves open, or a request that contradicts it.' },
     { key: 'verify', title: 'Verify', what: 'Converge finds the work the tasks missed. Verify checks the code against the spec and against your own words. Only high and medium findings become new tasks; low ones are listed, not built.', commands: '/speckit-converge, /speckit.xref.check', yours: 'After rounds that keep finding new work: Call it done, or one more round.' },
     { key: 'try', title: 'Try', what: 'Each story is used as a person would right after it is built, and the whole app before it counts as done: in the iOS Simulator of the Claude desktop app or in a browser, off the happy path too (a permission denied, offline, back and forth). Findings come with screenshots and become fix tasks. Scripted acceptance with Playwright or Maestro is there on request.', commands: '/speckit.xref.try, /speckit.xref.accept', yours: 'What no tool here can check: a real device, real users, a paid service.' },
+    { key: 'polish', title: 'Polish', what: 'The first version is plain on purpose: it has to prove that it works. On your word a design lead lifts it to the best apps of its platform without changing what it does: a direction with two or three sample screens, then a design pass over the rest, then reviews of fresh screenshots of every screen. On iOS that is content under translucent material, large titles, sheets, SF Symbols, Dynamic Type, haptics and native controls.', commands: '/xref polish, /speckit.xref.polish', yours: 'Approve the direction at the samples, or say what to change.' },
     { key: 'ship', title: 'Ship', what: 'A release check: version and store fields, a usage text for every permission, privacy, tracked secrets, the production build. Its gaps become tasks. Then it writes the exact release commands for each platform.', commands: '/xref ship, /speckit.xref.ship', yours: 'Your part before the release, then Ship it. Nothing goes out before.' },
   ]
   const NOW = PHASES.findIndex(p => p.key === 'build')

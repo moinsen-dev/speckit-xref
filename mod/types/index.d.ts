@@ -110,6 +110,18 @@ export type Snapshot = {
   acceptanceDoc?: AcceptanceNote | null
   /** `.specify/memory/release.md`: the release check, its commands, the person's part and the releases so far (0.7.0). */
   release?: ReleaseNote | null
+  /** `<feature>/polish.md`: the design pass's direction, what the person approves, and its review rounds (0.9.0). */
+  polish?: PolishNote | null
+}
+
+/** `<feature>/polish.md` as the mod reads it. */
+export type PolishNote = {
+  /** The direction's first line: the feel in one sentence. */
+  direction: string | null
+  /** Of the file before its Rounds: what the person approves. */
+  fingerprint: string
+  /** The review rounds written so far. */
+  rounds: number
 }
 
 /** `.specify/memory/release.md` as the mod reads it. */
@@ -144,7 +156,7 @@ export type PhaseNote = { goal: string | null; test: string | null; checkpoint: 
 export type QuickRow = { ids: string[]; text: string }
 
 /** What comes after a done feature, in the person's words. */
-export type NextWork = { kind: 'feature' | 'change' | 'bug' | 'ship'; text: string }
+export type NextWork = { kind: 'feature' | 'change' | 'bug' | 'ship' | 'polish'; text: string }
 
 /** A screen of a feature, as `<feature>/design/screens.md` lists it. */
 export type Screen = {

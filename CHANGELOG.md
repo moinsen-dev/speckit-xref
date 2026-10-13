@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 — 2026-10-13
+
+Polish: the first version is built plain on purpose, to prove that it works and makes sense; on your word a design lead then lifts its look and feel to the best apps of its platform, without changing what it does. Mod 0.9.0, extension 0.9.0; preset 0.3.0 unchanged.
+
+### Polish
+
+- **Polish** after a done feature with a user interface (the pane's Polish button, `/xref polish`, `/xref next polish`, or "make it beautiful" in your words). A design lead, the new `speckit-xref:designer` agent on Opus, uses the app and takes a "before" shot of every screen, writes `specs/<feature>/polish.md` (the direction, whose first line says the feel in one sentence, and a plan per screen) and brings `DESIGN.md` along. Before any code it appends `## Phase N: Design pass` to tasks.md, one task for the shared parts and one per screen, then builds the shared parts and two or three sample screens under their tasks, with before and after shots in `specs/<feature>/polish/`.
+- **Your yes at the samples.** The design pass waits for **Approve direction** (or `/xref approve`); **Not now** or other work puts it aside. A review round written into polish.md does not ask again; a changed direction does.
+- **The design pass.** The implementer (Sonnet, never Haiku for a design pass) builds the other screens with the design-pass rules: the look changes, the behaviour and every test stay; the platform's own components first. With the Expo plugin installed, its `expo-ui`, `expo-native-ui`, `expo-router` and `expo-animation` skills do the native parts. A package of the app's framework may be added; a change that needs a new native build becomes a task of its own.
+- **Reviews of fresh shots.** The design lead takes a fresh shot of every screen, light and dark, under `polish/round-N/`, and compares each with the direction, DESIGN.md and the platform's conventions. HIGH and MEDIUM findings become a `## Phase N: Design review N`; three rounds at most, then the user test tries the whole app again before it is done.
+- **What "best" means**, by convention rather than version. On iOS: content edge to edge under translucent material, large titles, sheets with detents, SF Symbols, Dynamic Type, semantic colours, haptics, springy motion and native controls. On Android: Material 3 in its expressive form. On the web: the same direction in CSS. Always: one primary action per screen, 44 pt targets, contrast AA, VoiceOver and TalkBack labels, Reduce Motion and Reduce Transparency honoured.
+- **Kept apart from the rest:** the phases are called Design pass and Design review, because Spec Kit's own tasks already end with "Polish & Cross-Cutting Concerns", which stays an ordinary phase. A design pass starts no new converge. polish.md and the shots change nothing verified. A design pass brings its own verify rounds, so the round cap does not close it early. The phase strip shows a polish column.
+- New skill `speckit-xref:polish`; extension command `/speckit.xref.polish` for every agent Spec Kit supports.
+
+### The user test in a terminal
+
+- **Without the desktop app's simulator tool** (in a terminal), the tester and the design lead use the iOS Simulator through `xcrun simctl`: booting, deep links and screenshots read with the Read tool. Taps and typing go through Maestro where it is installed. Without Maestro they say which screens they only looked at.
+
 ## 0.8.1 — 2026-10-13
 
 The user test, played live for the first time, starts as a new user and then tries again as a returning one. Mod 0.8.1, extension 0.8.1; preset 0.3.0 unchanged.

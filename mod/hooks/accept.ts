@@ -17,6 +17,8 @@ export const ACCEPTANCE_ARTIFACT = /(^|\/)(e2e\/acceptance\/|reports\/acceptance
 
 /** What the user test (0.8.0) writes about the app, not into it: its log and its screenshots. */
 export const TRY_ARTIFACT = /(^|\/)specs\/[^/]+\/(try\.md$|try\/)/
+/** The design pass's record and screenshots (0.9.0): a review that finds nothing changes nothing verified. */
+export const POLISH_ARTIFACT = /(^|\/)specs\/[^/]+\/(polish\.md$|polish\/)/
 
 const SCENARIO = /\bUS\d+-AS\d+\b/g
 const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max - 1) + '…' : text)

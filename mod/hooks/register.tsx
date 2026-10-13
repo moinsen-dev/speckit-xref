@@ -5,7 +5,8 @@ import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
 import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, flowIncludes, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
-import { IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, writesCode } from './orchestrate'
+import { DESIGNER, IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, writesCode } from './orchestrate'
+import { DESIGNER_PROMPT, parsePolish, polishDoc } from './polish'
 import type { Models } from './orchestrate'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
@@ -298,7 +299,7 @@ async function resolveFeature($: $, features?: { dir: string; time: number }[], 
 
 async function currentSignature($: $, featureDir: string | null): Promise<string> {
   const files = ['.specify/feature.json', '.specify/memory/constitution.md', '.specify/integration.json', '.specify/extensions.yml']
-  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json', DESIGN_FILE, screensPath(featureDir), `${featureDir}/quickstart.md`, RUNBOOK, acceptanceDoc(featureDir), RELEASE)
+  if (featureDir) files.push(`${featureDir}/spec.md`, `${featureDir}/tasks.md`, `${featureDir}/plan.md`, '.xrefignore', 'package.json', DESIGN_FILE, screensPath(featureDir), `${featureDir}/quickstart.md`, RUNBOOK, acceptanceDoc(featureDir), RELEASE, polishDoc(featureDir))
   const times = await Promise.all(files.map(f => mtime($, f)))
   return [featureDir ?? '-', ...times].join('|')
 }
@@ -319,12 +320,13 @@ async function scan($: $): Promise<void> {
     readText($, DESIGN_FILE),
     featureDir ? readText($, screensPath(featureDir)) : null,
   ])
-  const [quickstartMd, runbookMd, acceptanceMd, releaseMd, packageJson] = await Promise.all([
+  const [quickstartMd, runbookMd, acceptanceMd, releaseMd, packageJson, polishMd] = await Promise.all([
     featureDir ? readText($, `${featureDir}/quickstart.md`) : null,
     readText($, RUNBOOK),
     featureDir ? readText($, acceptanceDoc(featureDir)) : null,
     readText($, RELEASE),
     readText($, 'package.json'),
+    featureDir ? readText($, polishDoc(featureDir)) : null,
   ])
   let extensions: string[] = []
   try {
@@ -370,6 +372,7 @@ async function scan($: $): Promise<void> {
     playwright: /"@playwright\/test"\s*:/.test(packageJson ?? ''),
     acceptanceDoc: acceptanceMd ? parseAcceptanceDoc(acceptanceMd) : null,
     release: releaseMd ? parseRelease(releaseMd) : null,
+    polish: polishMd ? parsePolish(polishMd) : null,
     design: featureDir ? designState(designMd, screensMd) : null,
     phaseNotes: tasksMd ? parsePhaseNotes(tasksMd) : {},
     quickstart: quickstartMd ? parseQuickstart(quickstartMd) : [],
@@ -1084,10 +1087,10 @@ async function askClaude($: $, kind: keyof typeof SETUP_ASKS): Promise<void> {
 }
 
 /** Approvals only the person gives: the idea, the spec, the plan, the design, open checklists. The autopilot records checkpoints, never these. */
-const APPROVALS = new Set(['idea', 'prd', 'spec', 'plan', 'design', 'checklists', 'done', 'release'])
+const APPROVALS = new Set(['idea', 'prd', 'spec', 'plan', 'design', 'checklists', 'done', 'release', 'polish'])
 /** The button an approval wears. */
-const approveLabel = (key: string) => ({ checklists: 'Proceed anyway', idea: 'Build', prd: 'Approve roadmap', done: 'Call it done', release: 'Ship it' })[key] ?? `Approve ${key}`
-const CHECKPOINTS = new Set(['analyze', 'converge', 'verify', 'accept', 'ship', 'released'])
+const approveLabel = (key: string) => ({ checklists: 'Proceed anyway', idea: 'Build', prd: 'Approve roadmap', done: 'Call it done', release: 'Ship it', polish: 'Approve direction' })[key] ?? `Approve ${key}`
+const CHECKPOINTS = new Set(['analyze', 'converge', 'verify', 'accept', 'ship', 'released', 'polishCheck'])
 
 /** The person approves what the autopilot waits on (spec, plan, design, open checklists); the run goes on. */
 async function approve($: $): Promise<string> {
@@ -1541,8 +1544,11 @@ async function takeNext($: $, said: string): Promise<NextWork | null> {
   const kind = ap.nextKind ?? nextKindOf(await $.model.classify(said.slice(0, 1500), [...NEXT_LABELS]).catch(() => NO_WORK))
   if (!kind) return null
   const next: NextWork = { kind, text: said.slice(0, 1200) }
-  // Every release asks anew: a fresh check, then the person's yes. Other work puts a release aside.
-  await update($, ledgerA, l => (kind === 'ship' ? wantShip(resetShip(l)) : resetShip(l)))
+  // Every release asks anew: a fresh check, then the person's yes. Other work puts a release and a design pass aside.
+  await update($, ledgerA, l => {
+    const clean = resetPolish(resetShip(l))
+    return kind === 'ship' ? wantShip(clean) : kind === 'polish' ? wantPolish(clean) : clean
+  })
   await persist($)
   await update($, autopilotA, a => ({ ...a, next, nextKind: null, paused: null, stalls: 0 }))
   return next
@@ -1562,6 +1568,45 @@ function resetShip(l: Ledger): Ledger {
 /** The person asked to ship: it holds through the readiness rounds and across sessions until the release is handed over. */
 const wantShip = (l: Ledger): Ledger => ({ ...l, checkpoints: { ...l.checkpoints, shipWanted: 'yes' } })
 
+/** What a design pass left in the ledger besides its record: the person's wish and the last review (0.9.0). */
+function resetPolish(l: Ledger): Ledger {
+  const checkpoints = { ...l.checkpoints }
+  delete checkpoints.polishWanted
+  delete checkpoints.polishCheck
+  return { ...l, checkpoints }
+}
+
+/** The person asked to polish the look: it holds through the design pass and its reviews, across sessions, until other work. */
+const wantPolish = (l: Ledger): Ledger => ({ ...l, checkpoints: { ...l.checkpoints, polishWanted: 'yes' } })
+
+/**
+ * Polish (the pane's Polish, /xref polish, "make it beautiful"): a design lead lifts the done feature's look to its
+ * platform's best. The direction and two or three samples first; the rest waits for the person's yes at the samples.
+ */
+async function startPolish($: $, text = 'Polish the look'): Promise<string> {
+  const snap = await read($, snapshotA)
+  if (!snap) return 'No Spec Kit project here.'
+  if (!snap.ui) return 'This feature has no user interface to polish.'
+  const ap = await read($, autopilotA)
+  const at = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
+  if (at.phase !== 'done' && at.phase !== 'polish' && at.approve?.key !== 'polish') return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
+  await update($, ledgerA, l => wantPolish(resetPolish(resetShip(l))))
+  await persist($)
+  await update($, autopilotA, a => ({ ...a, next: { kind: 'polish' as const, text }, nextKind: null, paused: null, stalls: 0, verifies: 0 }))
+  if (!(await read($, autopilotA)).on) await startAutopilot($)
+  else $.clock.after(0, () => void advance($).catch(() => undefined))
+  return `Polish: a design lead sets the direction with two or three sample screens (${polishDoc(snap.featureDir!)}); the rest waits for your yes at the samples.`
+}
+
+/** Not now at the design direction: the design pass is put aside; the feature is done, and Polish starts it again later. */
+async function dropPolish($: $): Promise<string> {
+  await update($, ledgerA, resetPolish)
+  await persist($)
+  await update($, autopilotA, a => ({ ...a, next: a.next?.kind === 'polish' ? null : a.next, paused: null }))
+  if ((await read($, autopilotA)).on) $.clock.after(0, () => void advance($).catch(() => undefined))
+  return 'The design pass is put aside; Polish starts it again when you want it.'
+}
+
 /**
  * Ship (the pane's Ship and Check again, /xref ship): a fresh release check of the done app; its commands go out
  * only after the person's yes. Words the person adds go along as their note on the release.
@@ -1572,7 +1617,7 @@ async function startShip($: $, text = 'Ship it'): Promise<string> {
   const ap = await read($, autopilotA)
   const at = nextStep(snap, await read($, ledgerA), ap.idea, flowOf(ap))
   if (at.phase !== 'done' && at.phase !== 'ship' && at.approve?.key !== 'release') return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
-  await update($, ledgerA, l => wantShip(resetShip(l)))
+  await update($, ledgerA, l => wantShip(resetShip(resetPolish(l))))
   await persist($)
   await update($, autopilotA, a => ({ ...a, next: { kind: 'ship', text }, nextKind: null, paused: null, stalls: 0 }))
   if (!(await read($, autopilotA)).on) await startAutopilot($)
@@ -1596,7 +1641,11 @@ async function chooseNext($: $, kind: NextWork['kind']): Promise<void> {
     $.ui.toast(await startShip($))
     return
   }
-  await update($, ledgerA, resetShip)
+  if (kind === 'polish') {
+    $.ui.toast(await startPolish($))
+    return
+  }
+  await update($, ledgerA, l => resetPolish(resetShip(l)))
   await persist($)
   await update($, autopilotA, a => ({ ...a, nextKind: kind, next: null }))
   // Starting asks by itself: its first step is the done feature's question, now for this kind.
@@ -1609,7 +1658,7 @@ async function chooseRoadmap($: $): Promise<void> {
   const snap = await read($, snapshotA)
   const item = snap?.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
   if (!item) return
-  await update($, ledgerA, resetShip)
+  await update($, ledgerA, l => resetPolish(resetShip(l)))
   await persist($)
   await update($, autopilotA, a => ({ ...a, next: { kind: 'feature', text: roadmapSpecify(item) }, nextKind: null, paused: null, stalls: 0 }))
   if (!(await read($, autopilotA)).on) return startAutopilot($)
@@ -1619,11 +1668,12 @@ async function chooseRoadmap($: $): Promise<void> {
 /** `/xref next <feature|change|bug> <words>`: what comes after a done feature, in one line. */
 async function nextByCommand($: $, words: string[]): Promise<string> {
   const [first = '', ...rest] = words
-  const kind = (['feature', 'change', 'bug', 'ship'] as const).find(k => k === first.toLowerCase())
+  const kind = (['feature', 'change', 'bug', 'ship', 'polish'] as const).find(k => k === first.toLowerCase())
   const text = (kind ? rest : words).join(' ').trim()
-  // Ship needs no words: the release check finds what to do.
+  // Ship and Polish need no words: the release check and the design lead find what to do.
   if (kind === 'ship') return startShip($, text || undefined)
-  if (!text) return 'Say what comes next: /xref next feature|change|bug <in your own words>, or /xref ship.'
+  if (kind === 'polish') return startPolish($, text || undefined)
+  if (!text) return 'Say what comes next: /xref next feature|change|bug <in your own words>, /xref polish or /xref ship.'
   const snap = await read($, snapshotA)
   if (!snap) return 'No Spec Kit project here.'
   const ledger = await read($, ledgerA)
@@ -1631,14 +1681,17 @@ async function nextByCommand($: $, words: string[]): Promise<string> {
   const at = nextStep(snap, ledger, ap.idea, flowOf(ap))
   // At a release that waits, other work puts the release aside first.
   const atRelease = (at.phase === 'ship' && !!at.needsUser) || at.approve?.key === 'release'
-  if (at.phase !== 'done' && !atRelease) return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
+  // At the design direction, other work puts the design pass aside the same way (0.9.0).
+  const atPolish = at.approve?.key === 'polish'
+  if (at.phase !== 'done' && !atRelease && !atPolish) return 'The feature is not done yet: the autopilot finishes it first (/xref auto on).'
   if (atRelease) await dropShip($)
+  if (atPolish) await dropPolish($)
   if (kind) await update($, autopilotA, a => ({ ...a, nextKind: kind }))
   const next = await takeNext($, text)
   if (!next) return 'That reads as a question, not new work: /xref next feature|change|bug <words> names the kind.'
   if (!(await read($, autopilotA)).on) await startAutopilot($)
   else $.clock.after(0, () => void advance($).catch(() => undefined))
-  return `Next: ${next.kind === 'feature' ? 'a new feature' : next.kind === 'change' ? 'a change' : next.kind === 'ship' ? 'a release' : 'a bug'}: "${next.text}". The autopilot takes it from here.`
+  return `Next: ${next.kind === 'feature' ? 'a new feature' : next.kind === 'change' ? 'a change' : next.kind === 'ship' ? 'a release' : next.kind === 'polish' ? 'a design pass' : 'a bug'}: "${next.text}". The autopilot takes it from here.`
 }
 
 const RUNNER = 'task-runner'
@@ -2294,6 +2347,7 @@ export const register: Register = (on, options) => {
       try {
         await $.agent.register({ name: IMPLEMENTER, description: 'Implements one phase of a Spec Kit feature from the brief the speckit-xref autopilot gives it, or repairs failing tests.', prompt: IMPLEMENTER_PROMPT, model: 'sonnet', maxTurns: 300 })
         await $.agent.register({ name: TESTER, description: 'Uses the running app as a person would (iOS Simulator, a browser) and reports what breaks, with screenshots.', prompt: TESTER_PROMPT, model: 'sonnet', maxTurns: 200 })
+        await $.agent.register({ name: DESIGNER, description: "Lifts a working app's look and feel to its platform's best: sets the design direction with sample screens, or reviews a built design pass from fresh screenshots.", prompt: DESIGNER_PROMPT, model: 'opus', maxTurns: 300 })
       } catch {
         // Without the agent types a delegated step falls back to the session's own work.
       }
@@ -2364,7 +2418,9 @@ export const register: Register = (on, options) => {
             ? 'a change to the finished feature (the spec first)'
             : work.kind === 'ship'
               ? "a release (a release check first; nothing goes out without the person's yes)"
-              : 'a bug to reproduce and fix'
+              : work.kind === 'polish'
+                ? "a design pass (a design lead sets the direction with sample screens; the rest waits for the person's yes)"
+                : 'a bug to reproduce and fix'
       const note = `speckit-xref · the autopilot takes these words as ${what} and hands that step over when this turn ends. Do not start on it in this turn: answer in one sentence.`
       return next({ ...e, context: [...(e.context ?? []), note] })
     }
@@ -2601,6 +2657,8 @@ export const register: Register = (on, options) => {
         return { text: await nextByCommand($, rest) }
       case 'ship':
         return { text: await startShip($, rest.join(' ').trim() || undefined) }
+      case 'polish':
+        return { text: await startPolish($, rest.join(' ').trim() || undefined) }
       case 'prd':
         return { text: await prdByCommand($, rest.join(' ')) }
       case 'auto': {
@@ -2891,6 +2949,8 @@ export const register: Register = (on, options) => {
                     ? 'The roadmap changed since you approved it: read it, then approve it again.'
                   : step.approve.key === 'release'
                     ? `Read ${RELEASE}: its commands go out only with your yes.`
+                  : step.approve.key === 'polish'
+                    ? "The design direction is set: look at the samples' before and after shots, then approve it for the other screens."
                   : 'Is this what you meant? Approve it as the contract.',
             'warning',
           )}
@@ -2900,8 +2960,10 @@ export const register: Register = (on, options) => {
             {step.approve.key === 'design' ? <Button key="mocks" label="Open the mocks" onPress={() => void openDashboard($).then(text => $.ui.toast(text))} /> : null}
             {step.approve.key === 'release' ? <Button key="ship-again" label="Check again" onPress={() => void startShip($).then(text => $.ui.toast(text))} /> : null}
             {step.approve.key === 'release' ? <Button key="ship-later" label="Not now" onPress={() => void dropShip($).then(text => $.ui.toast(text))} /> : null}
+            {step.approve.key === 'polish' ? <Button key="polish-later" label="Not now" onPress={() => void dropPolish($).then(text => $.ui.toast(text))} /> : null}
           </Box>
           {step.approve.key === 'release' && snap.release ? releaseDetails(snap.release, row) : null}
+          {step.approve.key === 'polish' && snap.featureDir ? row('', `${snap.polish?.direction ?? 'Direction'} · ${polishDoc(snap.featureDir)} · shots in ${snap.featureDir}/polish/`) : null}
           {step.approve.key === 'design'
             ? (snap.design?.screens ?? []).slice(0, 8).map(sc => row('', `${sc.name}${sc.serves.length ? ` · ${sc.serves.join(' ')}` : ''}${sc.mock ? '' : ' · no mock'}`))
             : null}
@@ -2944,6 +3006,7 @@ export const register: Register = (on, options) => {
             <Button key="next-feature" label="New feature" variant={upcoming ? undefined : 'primary'} onPress={() => void chooseNext($, 'feature')} />
             <Button key="next-change" label="Change" onPress={() => void chooseNext($, 'change')} />
             <Button key="next-bug" label="Bug" onPress={() => void chooseNext($, 'bug')} />
+            {snap.ui ? <Button key="next-polish" label="Polish" onPress={() => void chooseNext($, 'polish')} /> : null}
             <Button key="next-ship" label="Ship" onPress={() => void chooseNext($, 'ship')} />
           </Box>
         </Box>

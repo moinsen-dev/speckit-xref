@@ -4,7 +4,7 @@
 // and this working tree. Pure: register.tsx reads the files.
 
 import type { Autopilot, NextWork, PhaseNote, QuickRow, Snapshot } from '../types'
-import { ACCEPTANCE_ARTIFACT, TRY_ARTIFACT } from './accept'
+import { ACCEPTANCE_ARTIFACT, POLISH_ARTIFACT, TRY_ARTIFACT } from './accept'
 import { SHIP_ARTIFACT } from './ship'
 import { designDir } from './design'
 import { fingerprint, specFingerprint } from './rules'
@@ -115,7 +115,7 @@ export const treeOf = (lines: string) =>
         // `<mode> <type> <hash>\t<path>` from ls-tree, `<hash> <path>` for an untracked file.
         const path = l.includes('\t') ? l.slice(l.indexOf('\t') + 1) : l.trim().slice(l.trim().indexOf(' ') + 1)
         // The ledger's own file, and what acceptance and the release check write about the app, change nothing that was verified.
-        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path) && !SHIP_ARTIFACT.test(path) && !TRY_ARTIFACT.test(path)
+        return !/(^|\/)xref\.json$/.test(path) && !ACCEPTANCE_ARTIFACT.test(path) && !SHIP_ARTIFACT.test(path) && !TRY_ARTIFACT.test(path) && !POLISH_ARTIFACT.test(path)
       })
       .sort()
       .join('\n'),
@@ -127,6 +127,7 @@ const NEXT_KINDS: Record<string, NextWork['kind'] | null> = {
   'a change to what the finished feature does': 'change',
   'a bug: something the finished feature does wrong': 'bug',
   'ship it: release what is done to its users (deploy, app stores)': 'ship',
+  "polish it: make the finished app look and feel like the best apps of its platform (design, not function)": 'polish',
   'no new work: a question or a remark': null,
 }
 export const NEXT_LABELS = Object.keys(NEXT_KINDS)
@@ -145,7 +146,7 @@ export function doneAsk(kind: NextWork['kind'] | null | undefined): string {
   if (kind === 'feature') return 'Describe the new feature in your own words; the autopilot specifies it as the next feature.'
   if (kind === 'change') return 'Describe the change in your own words; the autopilot folds it into the spec and builds it.'
   if (kind === 'bug') return 'Describe the bug: what you did, what happened, what you expected; the autopilot reproduces and fixes it.'
-  return 'The feature is done. Say what comes next (a new feature, a change to this one, a bug, or ship it), or press New feature, Change, Bug or Ship in the pane.'
+  return 'The feature is done. Say what comes next (a new feature, a change to this one, a bug, polish its look, or ship it), or press New feature, Change, Bug, Polish or Ship in the pane.'
 }
 
 /** The bug step: Spec Kit's bug extension where it is installed, else the same three steps by hand. */

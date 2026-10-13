@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: xref
   name: "Spec X-Ref"
-  version: "0.8.1"
+  version: "0.9.0"
   description: "Requirement-to-task-to-code traceability and drift checks: unplanned changes, @spec anchors, a coverage ladder proven by tests, intent"
   author: moinsen-dev
   repository: https://github.com/moinsen-dev/speckit-xref
@@ -58,6 +58,9 @@ provides:
     - name: speckit.xref.try
       file: commands/speckit.xref.try.md
       description: "Use the app as a person would, story by story and off the happy path; findings with screenshots, HIGH and MEDIUM ones as fix tasks"
+    - name: speckit.xref.polish
+      file: commands/speckit.xref.polish.md
+      description: "Lift a working app's look and feel to its platform's best without changing what it does: a design direction with sample screens to approve, a design pass, reviews of fresh screenshots"
     - name: speckit.xref.ship
       file: commands/speckit.xref.ship.md
       description: "Check that a finished app is ready to release and plan it: release.md with the checks, the release commands per platform and the person's part; nothing goes out without their yes"
