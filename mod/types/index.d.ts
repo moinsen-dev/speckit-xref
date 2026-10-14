@@ -222,6 +222,9 @@ export type Decision = {
   answer: string | null
   /** A yes or no to an action the rails stopped (a push, a wipe): no product decision, never a request. */
   kind?: 'permission'
+  /** Decided for the person by their deputy (0.10.0), with its reason: shown as such, never as the person's own. */
+  by?: 'deputy'
+  why?: string
 }
 
 /**
@@ -295,8 +298,16 @@ export type Autopilot = {
   acceptBaseline?: Record<string, number> | null
   /** The rows of release.md's log when the release step was handed over: only rows it adds report on it. */
   releaseRows?: number | null
-  /** The step handed to a subagent (0.8.0): its agent type, model and brief, and whether the agent was started. */
-  delegation?: { agent: string; model: string; description: string; brief: string; spawned?: boolean } | null
+  /** The step handed to a subagent (0.8.0): its agent type, model and brief, whether the agent was started, and its report. */
+  delegation?: { agent: string; model: string; description: string; brief: string; spawned?: boolean; report?: string } | null
+  /** The commit the step started from (0.10.0): the deputy reads the step's diff against it. */
+  stepHead?: string | null
+  /** The deputy's word for the next step, and a step it sent back with what to fix (0.10.0). */
+  deputyNote?: string | null
+  rework?: { phase: string; items: string[]; report: string } | null
+  /** Send-backs of the current step in a row, and the kind of step a rework redoes. */
+  reworks?: number
+  reworkPhase?: string | null
 }
 
 /** One autopilot step in the run log (`.specify/xref/local/<feature>.run.jsonl`). */

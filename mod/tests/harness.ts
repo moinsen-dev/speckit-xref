@@ -27,6 +27,8 @@ type Options = {
   fork?: string
   forkReason?: string
   complete?: string
+  /** What `$.model.complete` answers, one reply per call in turn (the deputy's verdicts); none left is no answer. */
+  replies?: string[]
   anchors?: string
   noRipgrep?: boolean
   untracked?: string[]
@@ -70,7 +72,7 @@ export function project(on: any, files: Record<string, string>, options: Options
     touch(path)
   }
   const isDir = (path: string) => path === '' || Object.keys(files).some(k => k.startsWith(path + '/'))
-  const seen = { agents: [] as string[], deferred: [] as string[], compacted: [] as string[], testRuns: [] as string[], asked: [] as string[], notified: [] as string[], aborted: [] as string[], opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[] }
+  const seen = { agents: [] as string[], deferred: [] as string[], compacted: [] as string[], testRuns: [] as string[], asked: [] as string[], notified: [] as string[], aborted: [] as string[], opened: [] as string[], toasts: [] as string[], commands: [] as string[], tools: [] as string[], forks: [] as string[], completes: [] as string[], submitted: [] as any[], ran: [] as string[][], commandsRun: [] as string[], classified: [] as string[], openArgs: [] as any[], statuses: [] as (string | null)[] }
 
   on('fs.read', ($: any, e: any) => (rel(e.path) in files ? { value: files[rel(e.path)] } : { deny: 'ENOENT' }))
   on('fs.write', ($: any, e: any) => {
@@ -147,6 +149,11 @@ export function project(on: any, files: Record<string, string>, options: Options
     return { value: { isPlaced: true } }
   })
   on('ui.panes', () => ({ value: seen.opened.map(id => ({ id, title: 'Spec X-Ref', isShown: true, isFocused: false, isPlaced: true })) }))
+  // The status line: what the deputy shows while it thinks (0.10.0).
+  on('ui.status', ($: any, e: any) => {
+    seen.statuses.push(e.text ?? null)
+    return { value: undefined }
+  })
   on('ui.toast', ($: any, e: any) => {
     seen.toasts.push(e.text)
     return { value: undefined }
@@ -166,7 +173,8 @@ export function project(on: any, files: Record<string, string>, options: Options
   })
   on('model.complete', ($: any, e: any) => {
     seen.completes.push(e.prompt)
-    return { value: options.complete ? { isAnswered: true, text: options.complete, usage: USAGE } : { isAnswered: false, reason: 'empty-reply', usage: USAGE } }
+    const text = options.replies ? options.replies.shift() : options.complete
+    return { value: text ? { isAnswered: true, text, usage: USAGE } : { isAnswered: false, reason: 'empty-reply', usage: USAGE } }
   })
   on('model.classify', ($: any, e: any) => {
     seen.classified.push(e.text)

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.0 — 2026-10-14
+
+The deputy: between its steps the autopilot now thinks the way the person would, instead of switching on file states. Mod 0.10.0, extension 0.10.0 (unchanged but for the version); preset 0.3.0 unchanged.
+
+### The deputy
+
+- **Every step that builds, repairs, tries or restyles the app is reviewed.** That is implement, repair, the user test, polish, a bug, and a rework. A deputy on Opus at high effort reads the step as its lead would: the agent's whole report (taken from the Agent tool's result, not the session's five-line relay), the step's diff against the commit it started from (without lockfiles, generated files and test or polish shots), the test run, the tasks it checked off and the requirements they serve. It looks for:
+  - claims the diff and the tests do not show;
+  - results written down earlier, or weakened or skipped tests;
+  - work no task asked for, or a deviation from the plan or a contract;
+  - TODOs, and what the report says was left open.
+  At the end of a phase it also asks whether this is still the right thing to build.
+- **Its verdict:**
+  - **go**, with a note the next step carries (into the agent's brief where an agent does it);
+  - **rework**, which hands the same step back to the same agent with a concrete list, before anything else, at most twice in a row, then it is your call;
+  - **ask**, which pauses the run with one clear question and the deputy's recommendation.
+  A failing suite still goes to its repair step first.
+- **Claude's questions are answered for you.** A question through `mcp__speckit-xref__ask` is answered in the same turn, and a question at the end of an answer is answered before the next step. The deputy decides from the spec, the product brief, the constitution, your own words and your earlier decisions, and gives one reason. The decision is kept as **decided for you by the deputy**: in the pane under **For you** with **Change** (your answer replaces it and becomes yours, or "Ask me when it comes up"), in the Away card, the dashboard and the handoff. It is never shown as yours.
+- **What stays yours, enforced in code and not only in the prompt.** The deputy never approves the spec, the plan, a design direction or a release. A permission the rails stopped never reaches it. What a question names as money, keys, credentials, deleting, publishing or releasing, a measurement, a check by hand, a simulator, emulator or real device, or real users or data goes to you with its recommendation, whatever the model says, in English and German.
+- **Your profile.** From your own words only, not from its own decisions, the deputy notes how you work (at most three lines a step) in `.specify/xref/local/person.md`. That file is git-ignored like your prompts, and you may edit or delete it.
+- **Bounded and visible.** Each call runs on a clock (two minutes for a review, a minute and a half for an answer) and shows "the deputy reviews step N…" in the status line. No reply means the autopilot goes on as before. Every verdict is a `deputy` row in the run log.
+- Option `deputy`: `full` (default), `review` (reviews only, questions as before) or `off`.
+
 ## 0.9.1 — 2026-10-14
 
 Found live in the desktop app: a press in the pane between two turns now goes on by itself. Mod 0.9.1, extension 0.9.1; preset 0.3.0 unchanged.

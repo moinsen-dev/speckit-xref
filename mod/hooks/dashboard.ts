@@ -499,7 +499,7 @@ function drift(input: DashboardInput): string {
       '<h3>Decisions</h3>',
       ul(
         ledger.decisions.map(dec => {
-          const answer = dec.answer ? `<span class="ok">✓</span> ${esc(dec.answer)}` : `<span class="warn">▲ open</span>${dec.options.length ? ` <span class="muted">(${esc(dec.options.join(' / '))})</span>` : ''}`
+          const answer = dec.answer ? `<span class="ok">✓</span> ${esc(dec.answer)}${dec.by === 'deputy' ? ` <span class="muted">(decided for you by the deputy${dec.why ? `: ${esc(dec.why)}` : ''})</span>` : ''}` : `<span class="warn">▲ open</span>${dec.options.length ? ` <span class="muted">(${esc(dec.options.join(' / '))})</span>` : ''}`
           return `${text(dec.question)} → ${answer}${dec.blocks.length ? ` <span class="muted">blocks ${esc(dec.blocks.join(', '))}</span>` : ''}`
         }),
       ),

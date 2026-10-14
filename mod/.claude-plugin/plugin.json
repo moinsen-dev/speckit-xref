@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: a new idea researched and shaped with you (or your PRD reviewed and cut into a roadmap), the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, a local dashboard, and an autopilot gated by your decisions and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
@@ -198,6 +198,17 @@
       "default": "on",
       "options": [
         "on",
+        "off"
+      ]
+    },
+    "deputy": {
+      "type": "string",
+      "title": "Deputy",
+      "description": "full (default): while the autopilot runs, a deputy on Opus reads each step that builds, repairs, tries or restyles the app the way the person would (report, diff, tests) and sends it on, back with a list, or to the person; it answers Claude's questions from the spec, the briefs and the person's own words, and shows what it decided. It never approves a gate, and what only the person decides still goes to them. review: only the reviews. off: neither.",
+      "default": "full",
+      "options": [
+        "full",
+        "review",
         "off"
       ]
     }

@@ -4,10 +4,12 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type { Autopilot, Ledger, NextWork, RunEntry, Snapshot } from '../types'
 import { renderDashboard } from './dashboard'
 import type { DashboardDoc } from './dashboard'
-import { ACCEPT_REPORT, ACCEPT_REPORTS, acceptanceCounts, acceptanceDoc, acceptanceFrom, flowIncludes, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
-import { DESIGNER, IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, writesCode } from './orchestrate'
+import { ACCEPTANCE_ARTIFACT, ACCEPT_REPORT, ACCEPT_REPORTS, POLISH_ARTIFACT, TRY_ARTIFACT, acceptanceCounts, acceptanceDoc, acceptanceFrom, flowIncludes, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
+import { DESIGNER, IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, relayPrompt, routeModel, writesCode } from './orchestrate'
 import { DESIGNER_PROMPT, parsePolish, polishDoc } from './polish'
-import type { Models } from './orchestrate'
+import { DEPUTY_PROMPT, MAX_REWORKS, PROFILE, REVIEWED, answerLine, answerRequest, noteLine, parseAnswer, parseVerdict, profileAdditions, requirementsOf, reviewRequest, reworkBrief } from './deputy'
+import type { Verdict } from './deputy'
+import type { Delegate, Models } from './orchestrate'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
 import { DEPLOY_TOOLS, RELEASE, approvedRelease, deployToolsOf, lastRelease, parseRelease, releaseBlockers, releaseLine, releaseRuns, releasesApp, releasesByTool } from './ship'
@@ -98,6 +100,7 @@ type Options = {
   orchestrate: string
   models: string
   userTest: string
+  deputy: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -173,6 +176,8 @@ let orchestrateOn = true
 let modelsOption: Models = 'auto'
 // on: each story is tried as a person would after it is built, and the whole app before done (0.8.0).
 let userTestOn = true
+// full: the deputy reviews each heavy step and answers Claude's questions for the person; review: only the reviews (0.10.0).
+let deputyMode: 'full' | 'review' | 'off' = 'full'
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -1255,6 +1260,115 @@ async function head($: $): Promise<string> {
   }
 }
 
+/** A step's diff as the deputy reads it: against the commit it started from, exempt files left out, new files whole, capped. */
+async function stepDiff($: $, since: string | null, max = 24_000): Promise<string> {
+  const snap = await read($, snapshotA)
+  const files = (await changedFiles($, since || 'HEAD', 200)).filter(f => !matchesAny(f, snap?.rules.exempt ?? []) && !TRY_ARTIFACT.test(f) && !POLISH_ARTIFACT.test(f) && !ACCEPTANCE_ARTIFACT.test(f))
+  if (!files.length) return ''
+  let text = ''
+  try {
+    const ran = await $.process.run(['git', 'diff', '--relative', since || 'HEAD', '--', ...files], { cwd: root, timeoutMs: 8000 })
+    if (ran.exitCode === 0) text = ran.stdout
+  } catch {
+    text = ''
+  }
+  for (const f of files.filter(f => !text.includes(` b/${f}`)).slice(0, 20)) {
+    if (text.length > max) break
+    const body = await readText($, f)
+    if (body !== null) text += `\n--- new file ${f}\n${body.slice(0, 3000)}`
+  }
+  return text.length > max ? `${text.slice(0, max)}\n… (diff cut at ${max} characters)` : text
+}
+
+/** One call of the deputy: Opus, thinking hard, bounded by the clock; no reply is no verdict. */
+async function callDeputy($: $, prompt: string, timeoutMs: number, status: string): Promise<string | null> {
+  $.ui.status(status)
+  try {
+    const r = await $.model.complete({ model: 'opus', system: DEPUTY_PROMPT, prompt, effort: 'high', maxTokens: 4000, timeoutMs })
+    return r.isAnswered ? r.text : null
+  } catch {
+    return null
+  } finally {
+    $.ui.status(undefined)
+  }
+}
+
+/** What the deputy knows of the person besides the spec: their profile, their own words, the decisions so far. */
+async function personContext($: $, snap: Snapshot, ledger: Ledger) {
+  return {
+    profile: await readText($, PROFILE),
+    words: ledger.intents.slice(-8).map(i => i.text),
+    decisions: ledger.decisions.filter(d => d.answer && d.kind !== 'permission').slice(-8).map(d => `${d.question} → ${d.answer}${d.by === 'deputy' ? ' (decided by the deputy)' : ''}`),
+    principles: snap.constitution?.principles ?? [],
+  }
+}
+
+/** The deputy's review of the step just done (0.10.0): null where it gave none. */
+async function reviewStep($: $, ap: Autopilot, answer: string): Promise<Verdict | null> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir || !snap.spec) return null
+  const ledger = await read($, ledgerA)
+  const checked = snap.tasks.filter(t => t.done && !(ap.doneAtStep ?? []).includes(t.id))
+  const open = snap.tasks.filter(t => !t.done)
+  const phases = new Set(checked.map(t => t.phase))
+  const boundary = ap.lastPhase === 'try' || !open.length || [...phases].some(ph => snap.tasks.filter(t => t.phase === ph).every(t => t.done))
+  const lastTest = (await read($, autopilotA)).lastTest
+  const prompt = reviewRequest({
+    feature: snap.featureDir,
+    phase: ap.lastPhase ?? 'step',
+    why: ap.delegation?.description ?? ap.scope ?? '',
+    report: ap.delegation?.report || answer,
+    diff: await stepDiff($, ap.stepHead ?? null),
+    tests: lastTest ? { ok: lastTest.ok, output: lastTest.output } : null,
+    checked: checked.map(t => t.id),
+    open: open.map(t => `${t.id} ${t.text.slice(0, 120)}`),
+    requirements: requirementsOf(snap, checked.length ? checked : open.slice(0, 6)),
+    ...(await personContext($, snap, ledger)),
+    boundary,
+    reworks: ap.reworks ?? 0,
+  })
+  const text = await callDeputy($, prompt, 120_000, `speckit-xref · the deputy reviews step ${ap.steps} (${ap.lastPhase})…`)
+  return text ? parseVerdict(text) : null
+}
+
+/** The deputy answers Claude's question for the person (0.10.0): null where it gave no answer. */
+async function answerFor($: $, question: string, context: string, options: string[]): Promise<ReturnType<typeof parseAnswer>> {
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir) return null
+  const ledger = await read($, ledgerA)
+  const prompt = answerRequest({
+    feature: snap.featureDir,
+    question,
+    context,
+    options,
+    spec: [...(snap.spec?.reqs ?? []).map(r => `${r.id}: ${r.text}`), ...(snap.spec?.assumptions ?? []).map(a => `Assumption: ${a}`)],
+    brief: (await readText($, '.specify/memory/product-brief.md'))?.slice(0, 4000) ?? null,
+    ...(await personContext($, snap, ledger)),
+  })
+  const text = await callDeputy($, prompt, 90_000, 'speckit-xref · the deputy answers for you…')
+  return text ? parseAnswer(text, question) : null
+}
+
+/** What the person said about how they work, kept where their prompts are kept: local, never committed. */
+async function learnProfile($: $, lines: string[]): Promise<void> {
+  const current = await readText($, PROFILE)
+  const add = profileAdditions(current, lines)
+  if (!add.length) return
+  const top = current ?? "# How the person works\n\nLearned by the speckit-xref deputy from the person's own words; edit or delete freely.\n"
+  await $.fs.write(at(PROFILE), `${top.trimEnd()}\n${add.map(l => `- ${l}`).join('\n')}\n`).catch(() => undefined)
+}
+
+/** A step the deputy sent back: the same agent again, with its list (0.10.0). */
+function reworkStep(snap: Snapshot, r: { phase: string; items: string[]; report: string }): Step {
+  const brief = reworkBrief(snap.featureDir ?? '', r.phase, r.items, r.report)
+  const why = `The deputy sent the ${r.phase} step back: ${r.items.length} point${r.items.length === 1 ? '' : 's'} to fix.`
+  if (!orchestrateOn) return { phase: 'rework', command: null, why, notes: [], needsUser: null, prompt: brief }
+  const agent = r.phase === 'try' ? TESTER : r.phase === 'polish' ? DESIGNER : IMPLEMENTER
+  const model = routeModel(r.phase === 'try' ? 'try' : r.phase === 'polish' ? 'design' : 'implement', modelsOption)
+  const delegate: Delegate = { agent, model, description: `Rework the ${r.phase} step`, brief }
+  return { phase: 'rework', command: null, why, notes: [], needsUser: null, delegate, prompt: relayPrompt(delegate) }
+}
+
 /**
  * Runs the project's tests and records what they prove: per requirement from JUnit when a report path is set,
  * else every requirement with a real test passes when the whole suite does. `ran` is false when no runner started.
@@ -1297,6 +1411,18 @@ async function runTests($: $): Promise<{ ran: boolean; ok: boolean; output: stri
 }
 
 /** Why the run waits or ended, in the run log beside its steps: the dashboard shows it where the steps stop. */
+/** The deputy's word on a step, in the run log beside the step (0.10.0). */
+async function logDeputy($: $, step: number, outcome: string): Promise<void> {
+  await logRun($, { at: await stamp($), step, phase: 'deputy', task: null, files: [], durationMs: 0, tokens: 0, outcome, model: 'opus' })
+}
+
+/** The question an answer ends with: its last paragraph that asks something. */
+function lastQuestion(answer: string): string {
+  const parts = answer.trim().split(/\n\s*\n/)
+  const asking = [...parts].reverse().find(p => p.includes('?')) ?? parts.at(-1) ?? ''
+  return asking.trim().slice(-600)
+}
+
 async function logStop($: $, kind: 'pause' | 'stop', reason: string): Promise<void> {
   const ap = await read($, autopilotA)
   await logRun($, { at: await stamp($), step: ap.steps, phase: kind, task: null, files: [], durationMs: 0, tokens: 0, outcome: reason })
@@ -1332,8 +1458,8 @@ async function runLog($: $): Promise<RunEntry[]> {
 async function sinceYouLeft($: $): Promise<string[]> {
   const seen = await read($, seenAtA)
   const all = (await runLog($)).filter(e => Date.parse(e.at) >= seen)
-  // A pause or a stop is no step: the card counts the work, the last of them says why it ended.
-  const entries = all.filter(e => e.phase !== 'pause' && e.phase !== 'stop')
+  // A pause or a stop is no step, nor is the deputy's word on one: the card counts the work.
+  const entries = all.filter(e => e.phase !== 'pause' && e.phase !== 'stop' && e.phase !== 'deputy')
   if (!entries.length) return []
   const snap = await read($, snapshotA)
   const ap = await read($, autopilotA)
@@ -1344,6 +1470,10 @@ async function sinceYouLeft($: $): Promise<string[]> {
   const ledger = await read($, ledgerA)
   const open = ledger.decisions.filter(d => d.answer === null)
   if (open.length) lines.push(`Waiting for you: ${open.map(d => d.question).join(' | ')}`)
+  // What the deputy did for the person while they were away (0.10.0).
+  const sentBack = all.filter(e => e.phase === 'deputy' && e.outcome.startsWith('sent back')).length
+  if (sentBack) lines.push(`The deputy sent ${sentBack} step${sentBack === 1 ? '' : 's'} back for rework.`)
+  for (const d of ledger.decisions.filter(d => d.by === 'deputy' && Date.parse(d.at) >= seen).slice(-3)) lines.push(`Decided for you: ${d.question.slice(0, 100)} → ${d.answer}`)
   if (ap.paused) lines.push(`Paused: ${ap.paused}`)
   return lines
 }
@@ -1372,7 +1502,8 @@ async function advance($: $): Promise<void> {
   const snap = await read($, snapshotA)
   if (!snap) return
   const ledger = await read($, ledgerA)
-  const step = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  // A step the deputy sent back goes again first, with its list (0.10.0).
+  const step = ap.rework ? reworkStep(snap, ap.rework) : nextStep(snap, ledger, ap.idea, flowOf(ap))
   // An approved release holds for its step only.
   if (ap.lastPhase === 'release') await update($, permitsA, ps => ps.filter(p => !(p.label === 'releasing' && p.many)))
   // After a release: the run ends with what went out.
@@ -1455,7 +1586,8 @@ async function writeHandoff($: $): Promise<void> {
   if (!snap?.featureDir || !snap.spec) return
   const ledger = await read($, ledgerA)
   const report = evaluate(snap, ledger)
-  const decided = ledger.decisions.filter(d => d.answer && d.kind !== 'permission').slice(-8)
+  const decided = ledger.decisions.filter(d => d.answer && d.kind !== 'permission' && d.by !== 'deputy').slice(-8)
+  const deputed = ledger.decisions.filter(d => d.answer && d.by === 'deputy').slice(-8)
   const upcoming = snap.prdApproved ? snap.roadmap?.[snap.features.length] : undefined
   const text = [
     `# Handoff: ${snap.featureDir}`,
@@ -1465,6 +1597,7 @@ async function writeHandoff($: $): Promise<void> {
     '## Decisions the person made',
     ...(decided.length ? decided.map(d => `- ${d.question} → ${d.answer}`) : ['- none beyond the spec']),
     '',
+    ...(deputed.length ? ['## Decided for the person by the deputy (they may change these)', ...deputed.map(d => `- ${d.question} → ${d.answer}${d.why ? ` (${d.why})` : ''}`), ''] : []),
     '## Where the rest is',
     `- The spec and its assumptions: ${snap.featureDir}/spec.md; the plan: ${snap.featureDir}/plan.md.`,
     `- The environment: ${RUNBOOK}.`,
@@ -1480,10 +1613,19 @@ async function writeHandoff($: $): Promise<void> {
  * Hands a step over: counts it, records its checkpoint, focuses its first task and returns the prompt that carries
  * it. Null for a step the mod carries out itself (map without the extension).
  */
-async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: string, stalls: number): Promise<string | null> {
+async function handOver($: $, snap: Snapshot, ledger: Ledger, handed: Step, key: string, stalls: number): Promise<string | null> {
   const ap = await read($, autopilotA)
+  // The deputy's word on the last step travels with this one, into the agent's brief where an agent does it (0.10.0).
+  const note = ap.deputyNote ?? null
+  const step: Step = note && handed.delegate ? { ...handed, delegate: { ...handed.delegate, brief: `${handed.delegate.brief}\n${note}` } } : handed
+  const startHead = await head($)
   await update($, autopilotA, a => ({
     ...a,
+    deputyNote: null,
+    rework: step.phase === 'rework' ? null : a.rework,
+    reworkPhase: step.phase === 'rework' ? (a.rework?.phase ?? a.reworkPhase ?? null) : null,
+    reworks: step.phase === 'rework' ? (a.reworks ?? 0) : 0,
+    stepHead: startHead || null,
     steps: a.steps + 1,
     last: key,
     stalls,
@@ -1533,7 +1675,7 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, step: Step, key: s
     return null
   }
   const active = await read($, activeA)
-  const text = autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) + parallelNote(snap, step)
+  const text = autopilotPrompt(step, ap.steps + 1, ap.max, turnContext(snap, ledger, active)) + parallelNote(snap, step) + (note && !step.delegate ? `\n${note}` : '')
   await update($, autopilotA, a => ({ ...a, doneAtStep: snap.tasks.filter(t => t.done).map(t => t.id) }))
   await writeDashboard($).catch(() => null)
   stepStartedAt = await $.clock.now()
@@ -1858,12 +2000,24 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, remediate: 'due' } }))
     await persist($)
   } else if (endsWithQuestion(e.answer)) {
-    // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
-    const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
-    if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
+    // The deputy answers it as the person would, and says so; what only the person decides waits for them (0.10.0).
+    const question = lastQuestion(e.answer)
+    const answered = deputyMode === 'full' ? await answerFor($, question, e.answer, []) : null
+    if (answered?.decided) {
+      await recordDecision($, question, [], [], answered.answer, undefined, { by: 'deputy', why: answered.why })
+      await update($, autopilotA, a => ({ ...a, deputyNote: answerLine(question, answered.answer, answered.why) }))
+      await logDeputy($, ap.steps, `answered: ${question.slice(0, 120)} → ${answered.answer.slice(0, 160)}`)
+    } else if (answered) {
+      await logDeputy($, ap.steps, `asked the person: ${answered.question.slice(0, 160)}`)
+      return pauseAutopilot($, `${answered.question}${answered.recommendation ? ` (the deputy recommends: ${answered.recommendation})` : ''}`)
+    } else {
+      // A question at the end is a stop only when it is a real decision; "shall I go on?" is not one.
+      const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
+      if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
+    }
   }
   // Code changed: the tests say whether the step holds. A failure becomes a repair step, at most three in a row.
-  if (ap.lastPhase === 'implement' || ap.lastPhase === 'repair' || ap.lastPhase === 'converge') {
+  if (ap.lastPhase === 'implement' || ap.lastPhase === 'repair' || ap.lastPhase === 'converge' || ap.lastPhase === 'rework') {
     const tests = await runTests($)
     if (!tests.ran && tests.output) {
       // Said once per run, where the person looks; the run goes on without a test gate.
@@ -1876,6 +2030,30 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
       if (tests.ok) {
         const committed = await commitTasks($)
         if (committed) $.ui.toast(`Autopilot: ${committed}`)
+      }
+    }
+  }
+  // The deputy reads the step as the person would before the next one is handed over (0.10.0). A failing suite
+  // goes to its repair step first; the deputy reads the work once it holds.
+  const tested = (await read($, autopilotA)).lastTest
+  if (deputyMode !== 'off' && ap.lastPhase && REVIEWED.has(ap.lastPhase) && ap.steps > 0 && !(tested && !tested.ok)) {
+    const verdict = await reviewStep($, ap, e.answer)
+    if (verdict) {
+      if (verdict.profile.length) await learnProfile($, verdict.profile)
+      if (verdict.verdict === 'ask') {
+        await logDeputy($, ap.steps, `asked the person: ${verdict.question.slice(0, 160)}`)
+        return pauseAutopilot($, `${verdict.question}${verdict.recommendation ? ` (the deputy recommends: ${verdict.recommendation})` : ''}`)
+      }
+      if (verdict.verdict === 'rework') {
+        if ((ap.reworks ?? 0) >= MAX_REWORKS) {
+          await logDeputy($, ap.steps, `sent back ${MAX_REWORKS} times: ${verdict.rework[0]}`)
+          return pauseAutopilot($, `the deputy sent the ${ap.lastPhase === 'rework' ? (ap.reworkPhase ?? 'implement') : ap.lastPhase} step back ${MAX_REWORKS} times and it still does not hold: ${verdict.rework.slice(0, 3).join('; ')}`)
+        }
+        await logDeputy($, ap.steps, `sent back: ${verdict.rework.length} point${verdict.rework.length === 1 ? '' : 's'}: ${verdict.rework[0]!.slice(0, 160)}`)
+        await update($, autopilotA, a => ({ ...a, rework: { phase: ap.lastPhase === 'rework' ? (ap.reworkPhase ?? 'implement') : ap.lastPhase!, items: verdict.rework, report: (ap.delegation?.report || e.answer).slice(-3000) }, reworks: (a.reworks ?? 0) + 1 }))
+      } else {
+        await logDeputy($, ap.steps, verdict.note ? `go: ${verdict.note.slice(0, 200)}` : 'go')
+        if (verdict.note) await update($, autopilotA, a => ({ ...a, deputyNote: [a.deputyNote, noteLine(verdict.note)].filter(Boolean).join('\n') }))
       }
     }
   }
@@ -2040,11 +2218,22 @@ async function bookShellWrites($: $): Promise<boolean> {
  * autopilot waits once the turn ends.
  */
 async function ask($: $, input: Record<string, unknown>): Promise<string> {
-  const question = str(input.question) || 'a decision only you can make'
+  let question = str(input.question) || 'a decision only you can make'
   const options = Array.isArray(input.options) ? input.options.filter((o): o is string => typeof o === 'string').slice(0, 4) : []
   const blocks = Array.isArray(input.blocks) ? input.blocks.filter((b): b is string => typeof b === 'string') : []
   const allow = str(input.allow).trim()
   const ap = await read($, autopilotA)
+  // While the autopilot runs, the person's deputy answers in the same turn where the person would (0.10.0). A permission
+  // the rails stopped, and what only the person decides, still go to the person, with the deputy's recommendation.
+  if (ap.on && deputyMode === 'full' && !allow) {
+    const answered = await answerFor($, question, '', options)
+    if (answered?.decided) {
+      await recordDecision($, question, options, blocks, answered.answer, undefined, { by: 'deputy', why: answered.why })
+      await logDeputy($, ap.steps, `answered: ${question.slice(0, 120)} → ${answered.answer.slice(0, 160)}`)
+      return `The person's deputy answered: ${answered.answer}${answered.why ? ` (${answered.why})` : ''}. Go on with it; the person sees this decision in the pane and can change it.`
+    }
+    if (answered?.recommendation) question = `${question} (the deputy recommends: ${answered.recommendation})`
+  }
   // A question for an action the rails stopped: the person's yes allows exactly that action, once, for ten minutes.
   if (allow && interactive) {
     const yes = `Yes, allow ${allow} once`
@@ -2080,11 +2269,35 @@ async function ask($: $, input: Record<string, unknown>): Promise<string> {
   return ap.on ? 'The autopilot will wait for the person. Put the question in your answer and end your turn.' : 'Noted. Put the question in your answer.'
 }
 
-async function recordDecision($: $, question: string, options: string[], blocks: string[], answer: string | null, kind?: 'permission'): Promise<void> {
+async function recordDecision($: $, question: string, options: string[], blocks: string[], answer: string | null, kind?: 'permission', deputy?: { by: 'deputy'; why: string }): Promise<void> {
   const when = await stamp($)
-  const decision = { id: '', question, options, blocks, at: when, answer, ...(kind ? { kind } : {}) }
+  const decision = { id: '', question, options, blocks, at: when, answer, ...(kind ? { kind } : {}), ...(deputy ?? {}) }
   await update($, ledgerA, l => ({ ...l, decisions: [...l.decisions, { ...decision, id: `D${l.decisions.length + 1}` }].slice(-50) }))
   await persist($)
+}
+
+/**
+ * Change on a decision the deputy took (0.10.0): the person's answer replaces it and becomes their own decision, and
+ * Claude hears it in their words; "Ask me" leaves it open for them the next time it comes up.
+ */
+async function changeDecision($: $, id: string): Promise<void> {
+  const d = (await read($, ledgerA)).decisions.find(x => x.id === id)
+  if (!d) return
+  const mine = 'Ask me when it comes up'
+  let answer = ''
+  try {
+    answer = await $.ui.ask(`The deputy decided "${d.answer}" for "${d.question}". What should hold instead?`, [...d.options.filter(o => o !== d.answer).slice(0, 3), mine])
+  } catch {
+    return
+  }
+  if (!answer.trim()) return
+  const own = answer === mine ? null : answer
+  await update($, ledgerA, l => ({ ...l, decisions: l.decisions.map(x => (x.id === id ? { ...x, answer: own, by: undefined, why: undefined } : x)) }))
+  await persist($)
+  void $.prompt.submit({
+    text: own ? `About "${d.question}": not "${d.answer}" as the deputy decided, but ${own}. Change what depends on it.` : `About "${d.question}": the deputy decided "${d.answer}", but I want to decide this myself. Undo what depends on it where that is simple, and ask me (mcp__speckit-xref__ask) when it comes up.`,
+    asUser: true,
+  })
 }
 
 /** The person answers a queued decision in the pane: Claude reads it on the next step. */
@@ -2222,6 +2435,7 @@ export const register: Register = (on, options) => {
   orchestrateOn = opts.orchestrate !== 'off'
   modelsOption = MODELS.find(m => m === opts.models) ?? 'auto'
   userTestOn = opts.userTest !== 'off'
+  deputyMode = opts.deputy === 'off' ? 'off' : opts.deputy === 'review' ? 'review' : 'full'
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -2475,6 +2689,17 @@ export const register: Register = (on, options) => {
     return note ? { ...ran, context: [...(ran.context ?? []), note] } : ran
   }).catch(guardFailed)
 
+  // A delegated step's whole report, as the subagent gave it: the deputy reads it, not the session's short relay (0.10.0).
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    const ran = await next(e)
+    const d = (await read($, autopilotA)).delegation
+    if (!d?.spawned || (e as unknown as { agentId?: string }).agentId || ran.deny !== undefined) return ran
+    const out = ran.result as { status?: string; handbackReport?: { text?: string }; content?: { text?: string }[] } | undefined
+    const report = out?.status === 'completed' ? out.handbackReport?.text || (out.content ?? []).map(c => c.text ?? '').join('\n') : ''
+    if (report) await update($, autopilotA, a => (a.delegation ? { ...a, delegation: { ...a.delegation, report: report.slice(-12_000) } } : a))
+    return ran
+  }).catch(failed)
+
   on('tool.call', { tool: 'mcp__speckit-xref__ask' }, async ($, e) => ({ result: await ask($, e as unknown as Record<string, unknown>) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__status' }, async $ => ({ result: await workflowStatus($) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__focus' }, async ($, e) => ({ result: await focus($, str((e as unknown as { task?: unknown }).task)) })).catch(failed)
@@ -2622,7 +2847,7 @@ export const register: Register = (on, options) => {
     const keep = [
       `Keep for speckit-xref: the active feature ${snap.featureDir}${task ? ` and the current task ${task.id} (${task.text})` : ''}.`,
       ...ledger.intents.filter(i => i.status === 'extends' || i.status === 'contradicts').slice(-5).map(i => `Keep the person's request verbatim: "${i.text}" (${i.status} the spec).`),
-      ...ledger.decisions.slice(-5).map(d => `Keep the decision: ${d.question} → ${d.answer ?? 'open'}.`),
+      ...ledger.decisions.slice(-5).map(d => `Keep the decision${d.by === 'deputy' ? " (the deputy's, for the person)" : ''}: ${d.question} → ${d.answer ?? 'open'}.`),
       ...(ap.on ? [`The autopilot is on (step ${ap.steps}/${ap.max}${ap.paused ? `, waiting: ${ap.paused}` : ''}).`] : []),
     ].join('\n')
     return next({ ...e, instructions: [e.instructions, keep].filter(Boolean).join('\n\n') })
@@ -2920,7 +3145,9 @@ export const register: Register = (on, options) => {
     const away = ap.steps > 0 ? await sinceYouLeft($) : []
     const decisions = ledger.decisions.filter(d => d.answer === null).slice(-3)
     // What the person decided (the product brief, their answers) beside what Claude assumed.
-    const decided = [...(snap.briefDecisions ?? []), ...ledger.decisions.filter(d => d.answer && d.kind !== 'permission').map(d => `${d.question} → ${d.answer}`)]
+    const decided = [...(snap.briefDecisions ?? []), ...ledger.decisions.filter(d => d.answer && d.kind !== 'permission' && d.by !== 'deputy').map(d => `${d.question} → ${d.answer}`)]
+    // What the deputy decided for the person in this run (0.10.0): shown as theirs to change, never as the person's own.
+    const deputed = ledger.decisions.filter(d => d.by === 'deputy' && d.answer && Date.parse(d.at) >= (ap.startedAt ?? 0)).slice(-3)
     // While a step the autopilot handed over still runs, what it writes is not ready to approve (found live in 0.7.1).
     const running = (await read($, turnA))?.auto === true
     const reviewCard =
@@ -3101,6 +3328,15 @@ export const register: Register = (on, options) => {
             {away.slice(1).map(l => row('', l, 'subtle'))}
           </Box>
         ) : null}
+        {deputed.map((d, i) => (
+          <Box flexDirection="column">
+            {row(i ? '' : 'For you', `${short(d.question, width)} → ${short(d.answer ?? '', width)}`, 'claude')}
+            {d.why ? row('', short(d.why, width * 2), 'subtle') : null}
+            <Box flexDirection="row" columnGap={1} marginLeft={8}>
+              <Button key={`redecide-${d.id}`} label="Change" onPress={() => void changeDecision($, d.id)} />
+            </Box>
+          </Box>
+        ))}
         {decisions.map((d, i) =>
           d.options.length >= 2 && Select ? (
             <Box flexDirection="row" columnGap={1}>
