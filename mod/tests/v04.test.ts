@@ -273,7 +273,7 @@ test('a request beyond the spec becomes one revise step, not a loop', async ($, 
 })
 
 test('headless: in a -p run the Stop hook hands the next step over as its re-prompt', { options: { autopilot: 'on' } }, async ($, on) => {
-  const seen = project(on, { ...DEMO })
+  const seen = project(on, { ...DEMO }, { surfaces: [] })
   await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
   const first = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Ready.' } as never)
   expect(first.block).toContain('[speckit-xref autopilot · step 1/25] implement')

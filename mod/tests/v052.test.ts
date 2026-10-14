@@ -200,7 +200,7 @@ test('allowPush: on lets the autopilot push a feature branch by itself', { optio
 })
 
 test('a -p run: the person\'s first prompt is the first step, handed over with its prompt and logged', { options: { autopilot: 'on' } }, async ($, on) => {
-  const seen = project(on, { ...DEMO })
+  const seen = project(on, { ...DEMO }, { surfaces: [] })
   await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
   await type($, 'Go on with the next step.')
   const context = seen.submitted.at(-1).context.join('\n')

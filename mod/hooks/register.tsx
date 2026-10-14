@@ -1366,6 +1366,8 @@ async function advance($: $): Promise<void> {
   // One step at a time: while a turn runs, or a prompt waits for the session, the next step waits for its end.
   const queue = await read($, queueA)
   if (interactive && ((await read($, turnA)) || queue.auto || queue.person)) return
+  // A step a hosted session was handed outside a turn waits for its turn to start: no second one meanwhile.
+  if (!interactive && queue.auto && !(await read($, turnA))) return
   await scan($)
   const snap = await read($, snapshotA)
   if (!snap) return
@@ -1419,8 +1421,11 @@ async function advance($: $): Promise<void> {
   if (ap.steps >= ap.max) return pauseAutopilot($, `the step budget (${ap.max}) is used up; /xref auto on starts a new one`)
   const text = await handOver($, snap, ledger, step, key, stalls)
   if (text === null) return advance($)
-  // Nobody is at the prompt in a -p run: the Stop hook hands the step over as its re-prompt.
-  if (!interactive) {
+  // Nobody is at the prompt in a -p run: the Stop hook hands the step over as its re-prompt. A hosted session that
+  // draws somewhere (the desktop app) is not interactive either, but a press in its pane or band (Approve, Resume,
+  // Polish, Ship) comes outside a turn, where no Stop follows: the press starts the step (0.9.1, found live: after
+  // Approve spec the run waited for the person's "weiter").
+  if (!interactive && (!(await $.session.surfaces()).length || (await read($, turnA)))) {
     pendingPrompt = text
     return
   }

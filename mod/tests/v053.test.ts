@@ -239,7 +239,7 @@ test('the intent check reads the PRD sections the feature implements', () => {
 })
 
 test('a -p run in a new project: the first prompt is the first step, with the PRD imported and its review handed over', { options: { autopilot: 'on' } }, async ($, on) => {
-  const seen = project(on, withPrd())
+  const seen = project(on, withPrd(), { surfaces: [] })
   await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
   await type($, 'Go on with the next step.')
   expect(seen.files['.specify/memory/prd.md']).toBe(PRD_MD)

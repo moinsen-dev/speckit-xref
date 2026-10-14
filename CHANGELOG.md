@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 — 2026-10-14
+
+Found live in the desktop app: a press in the pane between two turns now goes on by itself. Mod 0.9.1, extension 0.9.1; preset 0.3.0 unchanged.
+
+### Autopilot
+
+- **Approve, Resume, Polish and Ship go on at once in the desktop app.** The desktop app hosts a session that the mod sees as not interactive, so each step was handed over through the Stop hook at the end of a turn. A press in the pane or the band between two turns had no turn to end: the next step waited until the person typed something like "weiter" (found live: after **Approve spec** the run stood still overnight, and its analyze step began only with the person's "ok ist approved also weiter"). Now, in a session that draws somewhere, a press outside a turn starts the step itself, once; inside a turn the Stop hook still chains the steps, and a `-p` run, which draws nowhere, works as before.
+
 ## 0.9.0 — 2026-10-13
 
 Polish: the first version is built plain on purpose, to prove that it works and makes sense; on your word a design lead then lifts its look and feel to the best apps of its platform, without changing what it does. Mod 0.9.0, extension 0.9.0; preset 0.3.0 unchanged.
