@@ -23,6 +23,17 @@ The deputy: between its steps the autopilot now thinks the way the person would,
 - **Bounded and visible.** Each call runs on a clock (two minutes for a review, a minute and a half for an answer) and shows "the deputy reviews step N…" in the status line. No reply means the autopilot goes on as before. Every verdict is a `deputy` row in the run log.
 - Option `deputy`: `full` (default), `review` (reviews only, questions as before) or `off`.
 
+### Live
+
+- Two headless runs on the A/B base (the same 59 tasks, orchestrated, user test off).
+- **Run 1 found a flaw.** The deputy's diff left out the spec's own files: it did not see a `DESIGN.md` change the step had made, and it sent the step back twice for it. It now sees every file the step changed, from git, besides the capped diff. A file that is only cut from the diff is no reason to send a step back. A test holds this.
+- **Run 2: 8× go, each with a note for the next step, and one send-back.**
+  - It noticed that one phase had already done half of a later task.
+  - It confirmed that the quickstart validation was run now. Under 0.8.0 the same task had been checked off with an earlier version's results.
+  - The one send-back was for focus and link calls the agent had skipped; the rework fixed them in 1.5 minutes.
+  - Each review took 10 to 60 seconds, 4.6 minutes for the nine steps, at an estimated $0.10 each.
+  - The native smoke test was really run on iOS and Android and stayed honestly open when the run's time limit ended it.
+
 ## 0.9.1 — 2026-10-14
 
 Found live in the desktop app: a press in the pane between two turns now goes on by itself. Mod 0.9.1, extension 0.9.1; preset 0.3.0 unchanged.
