@@ -57,13 +57,16 @@ test('the deputy sends a step back with its list; the rework goes first, and twi
 test("the deputy's word on a step travels with the next one; a question only the person can answer pauses the run with the deputy's recommendation", { options: { orchestrate: 'off' } }, async ($, on) => {
   const go = JSON.stringify({ verdict: 'go', note: 'Keep the link single-use when you add the handler.', rework: [], question: '', recommendation: '', profile: ['Prefers German UI texts'] })
   const ask = JSON.stringify({ verdict: 'ask', question: 'The spec says nothing about rate limits per IP: limit them?', recommendation: 'Yes, 5 per hour, as for email', rework: [], note: '', profile: [] })
-  const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, replies: [go, ask] })
+  // Found live: a DESIGN.md the step changed was missing from what the deputy saw, and it sent the step back twice.
+  const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, replies: [go, ask], changed: () => ['DESIGN.md', 'src/auth/token.ts'] })
   await startSession($)
   await xref($, 'auto on')
   await seen.clock.advance(0)
   tick(seen, 'T004')
   await runTurn($, 'T004 done.')
   await seen.clock.advance(0)
+  expect(seen.completes[0]).toContain('## Files changed since the step started')
+  expect(seen.completes[0]).toMatch(/## Files changed since the step started[^#]*DESIGN\.md/)
   expect(autopilotPrompts(seen).at(-1)).toContain("The person's deputy on the last step: Keep the link single-use")
   // The profile is learned where the person's prompts are kept: local.
   expect(seen.files['.specify/xref/local/person.md']).toContain('- Prefers German UI texts')

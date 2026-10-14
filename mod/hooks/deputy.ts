@@ -48,6 +48,8 @@ export type ReviewInput = {
   why: string
   /** The step's report: the subagent's whole report where it ran in one, else the session's answer. */
   report: string
+  /** Every file changed since the step started, from git: the diff may be cut, this list is whole. */
+  files: string[]
   diff: string
   tests: { ok: boolean; output: string } | null
   checked: string[]
@@ -73,6 +75,7 @@ export function reviewRequest(i: ReviewInput): string {
   return [
     `Feature ${i.feature}. The step just done: ${i.phase} (${i.why}).${i.reworks ? ` It was sent back ${i.reworks} time${i.reworks === 1 ? '' : 's'} already.` : ''}`,
     section('Report of the step', i.report.slice(-8000)),
+    section('Files changed since the step started (from git; the diff below may be cut, this list is whole)', i.files.slice(0, 80)),
     section('Diff of the step', i.diff),
     section('Test run', i.tests ? `${i.tests.ok ? 'passed' : 'FAILED'}\n${i.tests.output.slice(-1500)}` : 'not run'),
     section('Tasks checked in this step', i.checked.join(', ') || 'none'),
@@ -88,6 +91,7 @@ export function reviewRequest(i: ReviewInput): string {
       '- Evidence: is anything checked off on results written earlier, on a test that was weakened or skipped, or on "should work"? A check by hand or a measurement counts only when done now; one no tool here can do is the person\'s part and stays open, which is no reason to send the step back.',
       '- Scope: work no task asked for, a decision taken that the spec or the person left open, a deviation from the plan or a contract, a TODO or a stub left behind.',
       '- Anything the report says is left open or unsure: is that fine to carry on with, or does it block?',
+      '- A file the report names that is in the file list but not in the diff was cut from the diff for length: that is no reason to send the step back. Send a step back only for what the evidence shows is missing or wrong.',
       ...(i.boundary ? ['- This step ended a phase or the feature: are we still building the right thing? Does anything the step or a user test found change what should come next, or need the person?'] : []),
       '',
       'verdict "go": the step holds; "note" is what the next step should keep in mind (empty if nothing). verdict "rework": it does not hold; "rework" lists what to fix, concretely, each with the file or task. verdict "ask": only the person can settle what blocks; "question" asks it in one or two sentences, "recommendation" says what you would choose and why.',

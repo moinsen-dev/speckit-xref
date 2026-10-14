@@ -1260,10 +1260,27 @@ async function head($: $): Promise<string> {
   }
 }
 
-/** A step's diff as the deputy reads it: against the commit it started from, exempt files left out, new files whole, capped. */
-async function stepDiff($: $, since: string | null, max = 24_000): Promise<string> {
+/**
+ * A step's changes as the deputy reads them: every file changed since the commit it started from (the spec's own files
+ * too: found live, a DESIGN.md the step changed was missing and the deputy sent the step back twice for it), exempt
+ * files and shots left out; the diff, new files whole, capped.
+ */
+async function stepDiff($: $, since: string | null, max = 24_000): Promise<{ files: string[]; diff: string }> {
   const snap = await read($, snapshotA)
-  const files = (await changedFiles($, since || 'HEAD', 200)).filter(f => !matchesAny(f, snap?.rules.exempt ?? []) && !TRY_ARTIFACT.test(f) && !POLISH_ARTIFACT.test(f) && !ACCEPTANCE_ARTIFACT.test(f))
+  const listed = new Set<string>()
+  for (const argv of [['git', 'diff', '--name-only', '--relative', since || 'HEAD'], ['git', 'ls-files', '--others', '--exclude-standard']]) {
+    try {
+      const ran = await $.process.run(argv, { cwd: root, timeoutMs: 5000 })
+      if (ran.exitCode === 0) for (const line of ran.stdout.split('\n')) if (line.trim()) listed.add(line.trim())
+    } catch {
+      // No git: the report alone.
+    }
+  }
+  const files = [...listed].filter(f => !matchesAny(f, snap?.rules.exempt ?? []) && !TRY_ARTIFACT.test(f) && !POLISH_ARTIFACT.test(f) && !ACCEPTANCE_ARTIFACT.test(f)).slice(0, 200)
+  return { files, diff: await diffText($, since, files, max) }
+}
+
+async function diffText($: $, since: string | null, files: string[], max: number): Promise<string> {
   if (!files.length) return ''
   let text = ''
   try {
@@ -1318,7 +1335,7 @@ async function reviewStep($: $, ap: Autopilot, answer: string): Promise<Verdict 
     phase: ap.lastPhase ?? 'step',
     why: ap.delegation?.description ?? ap.scope ?? '',
     report: ap.delegation?.report || answer,
-    diff: await stepDiff($, ap.stepHead ?? null),
+    ...(await stepDiff($, ap.stepHead ?? null)),
     tests: lastTest ? { ok: lastTest.ok, output: lastTest.output } : null,
     checked: checked.map(t => t.id),
     open: open.map(t => `${t.id} ${t.text.slice(0, 120)}`),
