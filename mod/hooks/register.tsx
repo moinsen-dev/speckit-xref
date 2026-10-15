@@ -1151,8 +1151,10 @@ async function approve($: $): Promise<string> {
     // Closing the feature as it is: the verification and the acceptance count for this tree, and what comes next is asked.
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, verify: value, accept: value } }))
     await persist($)
+    // Closed by the person under option git pr: it goes up as a pull request too (0.11.0).
+    const pr = gitMode === 'pr' ? ` ${await openPullRequest($)}` : ''
     if (ap.on && ap.paused) await resumeAutopilot($)
-    return `Closed ${snap.featureDir} as done.`
+    return `Closed ${snap.featureDir} as done.${pr}`
   }
   await update($, ledgerA, l => ({ ...l, approvals: { ...l.approvals, [key]: value } }))
   await persist($)
@@ -1932,6 +1934,18 @@ async function ensureBranch($: $): Promise<void> {
   const ledger = await read($, ledgerA)
   if (ledger.checkpoints.branch === name || snap.branch === name) return
   const git = (argv: string[]) => $.process.run(['git', ...argv], { cwd: root, timeoutMs: 15_000 })
+  // The branch the run started from, kept for the project: a feature started on an earlier feature's branch keeps its
+  // code but opens its pull request against that branch, not against the earlier feature's.
+  let project: Record<string, unknown> = {}
+  try {
+    project = JSON.parse((await readText($, PROJECT_STATE)) ?? '{}') as Record<string, unknown>
+  } catch {
+    project = {}
+  }
+  const from = snap.branch
+  const onFeature = snap.features.some(f => branchName(f) === from)
+  const trunk = typeof project.trunk === 'string' ? project.trunk : null
+  const base = onFeature ? (trunk ?? from) : from
   try {
     const known = (await git(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])).exitCode === 0
     const ran = await git(known ? ['switch', name] : ['switch', '-c', name])
@@ -1939,9 +1953,10 @@ async function ensureBranch($: $): Promise<void> {
       $.ui.toast(`speckit-xref: could not switch to the branch ${name}: ${ran.stderr.trim().slice(0, 160)}`)
       return
     }
-    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, branch: name, baseBranch: snap.branch! } }))
+    if (!trunk && !onFeature) await $.fs.write(at(PROJECT_STATE), JSON.stringify({ ...project, trunk: from }, null, 2) + '\n').catch(() => undefined)
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, branch: name, baseBranch: base } }))
     await persist($)
-    $.ui.toast(`speckit-xref: ${snap.featureDir} is built on its own branch ${name}, from ${snap.branch}.`)
+    $.ui.toast(`speckit-xref: ${snap.featureDir} is built on its own branch ${name}, from ${from}${base !== from ? `; its pull request goes to ${base}` : ''}.`)
     await scan($)
   } catch {
     // No git here: the work stays where it is.
@@ -1961,25 +1976,33 @@ async function openPullRequest($: $): Promise<string> {
   if (snap.branch === base || (!base && /^(main|master|trunk|develop)$/.test(snap.branch))) return `No pull request: the work is on ${snap.branch}, not on a feature branch.`
   const run = (argv: string[], timeoutMs = 30_000) => $.process.run(argv, { cwd: root, timeoutMs })
   try {
-    const dirty = (await run(['git', 'status', '--porcelain'])).stdout.split('\n').map(l => l.slice(3).trim()).filter(Boolean)
-    const secret = dirty.find(f => /(^|\/)\.env(?!\.example$)|\.(p8|p12|jks|keystore)$/.test(f))
-    if (secret) return `No pull request: ${secret} looks like a secret and is not committed; commit or ignore it yourself.`
-    if (dirty.length) {
-      await run(['git', 'add', '-A'])
+    // Only the feature's own work goes up, as commit per task does: never what the person staged or changed besides.
+    if ((await run(['git', 'diff', '--cached', '--name-only'])).stdout.trim()) return 'No pull request: the index holds changes you staged yourself; commit or unstage them, then press Resume.'
+    const dirty = (await run(['git', 'status', '--porcelain', '--untracked-files=all'])).stdout.split('\n').map(l => l.slice(3).split(' -> ').at(-1)!.trim()).filter(Boolean)
+    // The feature's own: its folder, what its tasks plan (a path, or a folder ending in /), touched or linked.
+    const touched = new Set(Object.values(ledger.tasks).flatMap(t => [...(t?.touched ?? []), ...(t?.linked ?? [])]))
+    const planned = snap.tasks.flatMap(t => t.paths)
+    const own = dirty.filter(f => f.startsWith(`${snap.featureDir}/`) || touched.has(f) || planned.some(p => f === p || (p.endsWith('/') && f.startsWith(p))) || f === DESIGN_FILE || f === RUNBOOK)
+    const left = dirty.filter(f => !own.includes(f))
+    const secret = own.find(f => /(^|\/)\.env(?!\.example$)|\.(p8|p12|jks|keystore)$/.test(f))
+    if (secret) return `No pull request: ${secret} looks like a secret; commit or ignore it yourself.`
+    if (own.length) {
+      await run(['git', 'add', '--', ...own])
       const done = await run(['git', 'commit', '-m', `feat(${branchName(snap.featureDir)}): ${snap.spec?.title ?? 'feature'}`, '-m', 'Built with Spec Kit and the speckit-xref autopilot.'])
       if (done.exitCode !== 0) return `No pull request: the commit failed (${done.stderr.trim().slice(0, 160)}).`
     }
+    const leftOut = left.length ? ` Left out, not this feature's: ${left.slice(0, 5).join(', ')}${left.length > 5 ? ` and ${left.length - 5} more` : ''}.` : ''
     const pushed = await run(['git', 'push', '-u', 'origin', snap.branch], 120_000)
     if (pushed.exitCode !== 0) return `No pull request: the push failed (${pushed.stderr.trim().split('\n').at(-1)?.slice(0, 160)}).`
-    if (ledger.checkpoints.pr) return `Pushed to the pull request ${ledger.checkpoints.pr}.`
-    if (!(await onPath($, 'gh'))) return `Pushed ${snap.branch}; no gh CLI here to open the pull request.`
+    if (ledger.checkpoints.pr) return `Pushed to the pull request ${ledger.checkpoints.pr}.${leftOut}`
+    if (!(await onPath($, 'gh'))) return `Pushed ${snap.branch}; no gh CLI here to open the pull request.${leftOut}`
     const title = `${branchName(snap.featureDir)}: ${snap.spec?.title ?? 'feature'}`.slice(0, 120)
     const opened = await run(['gh', 'pr', 'create', '--head', snap.branch, ...(base ? ['--base', base] : []), '--title', title, '--body', prBody(snap, ledger)], 60_000)
     if (opened.exitCode !== 0) return `Pushed ${snap.branch}; the pull request did not open (${opened.stderr.trim().slice(0, 160)}).`
     const url = opened.stdout.trim().split('\n').at(-1) ?? ''
     await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, pr: url } }))
     await persist($)
-    return `Pull request: ${url}.`
+    return `Pull request: ${url}.${leftOut}`
   } catch (error) {
     return `No pull request: ${String(error).slice(0, 160)}.`
   }

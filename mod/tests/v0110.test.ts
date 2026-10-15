@@ -119,7 +119,7 @@ test('git pr: a done feature is committed, pushed and opened as a pull request a
     branch: '001-magic-link-login',
     onPath: ['uvx', 'gh'],
     commands: argv => {
-      if (argv[0] === 'git' && argv[1] === 'status') return { stdout: ' M src/auth/token.ts\n' }
+      if (argv[0] === 'git' && argv[1] === 'status') return { stdout: ' M src/auth/token.ts\n M specs/001-magic-link-login/tasks.md\n?? notes/private.txt\n' }
       if (argv[0] === 'git' && argv[1] === 'push') return { stdout: '' }
       if (argv[0] === 'gh') {
         prArgs.push(argv)
@@ -138,6 +138,12 @@ test('git pr: a done feature is committed, pushed and opened as a pull request a
   const done = seen.toasts.find(t => t.startsWith('Autopilot done:'))!
   expect(done).toContain('the type check passes')
   expect(done).toContain('Pull request: https://github.com/acme/app/pull/7.')
+  // Only the feature's own work goes up: the person's unrelated file stays out, and the toast says so.
+  expect(done).toContain('Left out, not this feature\'s: notes/private.txt')
+  const added = seen.ran.find(a => a[0] === 'git' && a[1] === 'add')!
+  expect(added).toContain('specs/001-magic-link-login/tasks.md')
+  expect(added).not.toContain('notes/private.txt')
+  expect(added).not.toContain('-A')
   expect(seen.ran.some(a => a[0] === 'git' && a[1] === 'commit')).toBe(true)
   expect(seen.ran.some(a => a.join(' ') === 'git push -u origin 001-magic-link-login')).toBe(true)
   expect(prArgs[0]).toContain('--title')
@@ -149,4 +155,35 @@ test('the pull request says what the feature is and how it was checked', () => {
   expect(body).toContain(`Spec: \`${FEATURE}/spec.md\``)
   expect(body).toContain('verified against the spec · tried as a person would (user test) · type check green')
   expect(body).toContain('Merging is yours.')
+})
+
+test("git pr: changes the person staged themselves stop the pull request before anything is pushed", { options: { git: 'pr' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO, ...TSCONFIG, [`${FEATURE}/tasks.md`]: DEMO[`${FEATURE}/tasks.md`]!.replace(/- \[ \]/g, '- [x]') }, {
+    tests: { exits: [0] },
+    commits: true,
+    branch: '001-magic-link-login',
+    commands: argv => (argv[0] === 'git' && argv[1] === 'diff' && argv.includes('--cached') ? { stdout: 'src/mine.ts\n' } : argv[0] === 'git' && argv[1] === 'push' ? { stdout: '' } : undefined),
+  })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  for (let i = 0; i < 4 && !seen.toasts.some(t => t.startsWith('Autopilot done:')); i++) {
+    await runTurn($)
+    await seen.clock.advance(0)
+  }
+  expect(seen.toasts.find(t => t.startsWith('Autopilot done:'))).toContain('No pull request: the index holds changes you staged yourself')
+  expect(seen.ran.some(a => a[0] === 'git' && a[1] === 'push')).toBe(false)
+})
+
+test("git branch: a feature started on an earlier feature's branch keeps its code but goes back to the branch the run started from", { options: { git: 'branch' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO, 'specs/000-earlier/spec.md': DEMO[`${FEATURE}/spec.md`]!, '.specify/xref/local/project.json': '{"trunk":"develop"}' }, {
+    commits: true,
+    branch: '000-earlier',
+    commands: argv => (argv[0] === 'git' && argv[1] === 'switch' ? { stdout: '' } : undefined),
+  })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  expect(ledgerOf(seen.files).checkpoints).toMatchObject({ branch: '001-magic-link-login', baseBranch: 'develop' })
+  expect(seen.toasts.some(t => t.includes('from 000-earlier; its pull request goes to develop'))).toBe(true)
 })

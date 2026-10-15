@@ -13,6 +13,7 @@ Tests, CI/CD and git become the person's to switch on. By default a project runs
   - a failing check becomes a repair step ("The type check fails"), at most three, as tests did; the pane's row reads Check.
 - **`run`** keeps an existing suite as the gate and adds no tests: for a project that has one.
 - **`lean`** is the behaviour before 0.11: one test per requirement or acceptance scenario, the suite as the gate.
+- **This changes the default.** A project that relied on its suite as the gate sets `tests: run` (keep it, add nothing) or `tests: lean` (as before). Without a suite, the pane's ladder stops at implemented: nothing is tested, by choice.
 - Preset 0.4.0: tests only where the project has them or the spec, the plan or the person asks for them. A task without a suite is complete when the type check passes.
 
 ### CI/CD
@@ -23,7 +24,8 @@ Tests, CI/CD and git become the person's to switch on. By default a project runs
 
 - **Option `git`, `current` by default.** Every feature is built on the branch you are on. In its own steps the autopilot may create or switch no branch (`git switch`, `checkout -b`, `branch <name>`, `worktree add`); in your turns you may.
 - **`branch`**: once a feature's spec is written, before any code, the mod switches to a branch named after the feature's folder (`003-history`), created from the branch you were on, and remembers that branch.
-- **`pr`**: like `branch`, and when the feature is done (verified, tried, the gate green) the mod commits what is not committed, never a file that looks like a secret, then pushes the branch and opens a pull request with `gh` against the branch it started from. The pull request carries the spec's title and words, the requirements, and how it was checked. It is opened once and pushed to afterwards; the done card links it. Merging stays yours.
+- A feature started on an earlier feature's branch keeps that code, but its pull request goes to the branch the run started from (kept for the project in `.specify/xref/local/project.json`), not to the earlier feature's branch.
+- **`pr`**: like `branch`, and when the feature is done (verified, tried, the gate green), or when you press Call it done, the mod commits the feature's own uncommitted work. That is its folder, the files its tasks plan, touch or link, DESIGN.md and the runbook; never a file that looks like a secret, never what you staged yourself (then it stops before any push), and it names what it left out. Then it pushes the branch and opens a pull request with `gh` against the branch it started from. The pull request carries the spec's title and words, the requirements, and how it was checked. It is opened once and pushed to afterwards; the done card links it. Merging stays yours.
 
 ## 0.10.0 — 2026-10-14
 
