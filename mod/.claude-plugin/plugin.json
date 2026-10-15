@@ -1,7 +1,7 @@
 {
   "name": "speckit-xref",
   "displayName": "Spec Kit X-Ref",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Keeps a GitHub Spec Kit feature and its code tied together inside Claude Code: a new idea researched and shaped with you (or your PRD reviewed and cut into a roadmap), the spec in the system prompt, every edit booked against a task, a proof ladder per requirement, a local dashboard, and an autopilot gated by your decisions and the tests.",
   "author": {
     "name": "Ulrich Diedrichsen",
@@ -210,6 +210,44 @@
         "full",
         "review",
         "off"
+      ]
+    },
+    "tests": {
+      "type": "string",
+      "title": "Tests",
+      "description": "off (default): no test suite. No test tasks, no tests written, no test gate; the type check of the project's language is the gate (its own typecheck script, tsc, flutter or dart analyze, cargo check, go vet, swift build, mypy, or option checkCommand), and the user test and the deputy check the work. Right for a proof of concept, an MVP or an idea to try. run: no new tests, the existing suite is the gate. lean: one test per requirement or acceptance scenario, the suite is the gate.",
+      "default": "off",
+      "options": [
+        "off",
+        "run",
+        "lean"
+      ]
+    },
+    "checkCommand": {
+      "type": "string",
+      "title": "Check command",
+      "description": "The type check that gates each step when tests is off (e.g. `npm run typecheck`). Empty: the mod names the language's usual one.",
+      "default": ""
+    },
+    "ci": {
+      "type": "string",
+      "title": "CI/CD",
+      "description": "off (default): the autopilot plans and writes no CI/CD pipeline (GitHub Actions workflows, .gitlab-ci.yml, CircleCI, EAS workflows, fastlane …); writing one in its steps is refused. Asked for in your own words, it is yours. on: allowed.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
+    },
+    "git": {
+      "type": "string",
+      "title": "Git",
+      "description": "current (default): every feature is built on the branch you are on; the autopilot creates or switches no branch. branch: a feature gets its own branch (its folder's name) once its spec is written, from the branch you were on. pr: like branch, and a done feature is committed, pushed and opened as a pull request against that branch; merging stays yours.",
+      "default": "current",
+      "options": [
+        "current",
+        "branch",
+        "pr"
       ]
     }
   }

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.11.0 — 2026-10-15
+
+Tests, CI/CD and git become the person's to switch on. By default a project runs without a test suite (the type check of its language is the gate), the autopilot writes no CI/CD pipeline, and every feature lands on the branch you are on. Mod 0.11.0, extension 0.11.0 (unchanged but for the version), preset 0.4.0.
+
+### Tests
+
+- **Option `tests`, `off` by default.** Building, running and fixing test suites takes much of a coding agent's time, money and attention, and in a proof of concept, an MVP or an idea to try it rarely finds what a person using the app finds. With `off`:
+  - no step plans test tasks or writes tests; the implementer, the phase briefs and every step's notes say so;
+  - verify no longer rates "no test proves it" as a finding, and the deputy sends no step back for a missing test;
+  - the gate after each step that changes code, before done and before a release is the **type check of the project's language**. That is its own `typecheck` script, `tsc --noEmit` where TypeScript is installed (never downloaded), `flutter analyze`, `dart analyze`, `cargo check`, `go vet`, `swift build` or `mypy`, or option `checkCommand`;
+  - a failing check becomes a repair step ("The type check fails"), at most three, as tests did; the pane's row reads Check.
+- **`run`** keeps an existing suite as the gate and adds no tests: for a project that has one.
+- **`lean`** is the behaviour before 0.11: one test per requirement or acceptance scenario, the suite as the gate.
+- Preset 0.4.0: tests only where the project has them or the spec, the plan or the person asks for them. A task without a suite is complete when the type check passes.
+
+### CI/CD
+
+- **Option `ci`, `off` by default.** The autopilot plans and writes no CI/CD pipeline: GitHub Actions workflows, `.gitlab-ci.yml`, CircleCI, Bitbucket, Azure, EAS workflows, Jenkins, Buildkite, Travis, Codemagic, fastlane. Steps are told so, and a write in the autopilot's own steps, with a file tool or the shell, is refused with the reason. Asked for in your own words, a pipeline is yours. `on` allows it.
+
+### Git
+
+- **Option `git`, `current` by default.** Every feature is built on the branch you are on. In its own steps the autopilot may create or switch no branch (`git switch`, `checkout -b`, `branch <name>`, `worktree add`); in your turns you may.
+- **`branch`**: once a feature's spec is written, before any code, the mod switches to a branch named after the feature's folder (`003-history`), created from the branch you were on, and remembers that branch.
+- **`pr`**: like `branch`, and when the feature is done (verified, tried, the gate green) the mod commits what is not committed, never a file that looks like a secret, then pushes the branch and opens a pull request with `gh` against the branch it started from. The pull request carries the spec's title and words, the requirements, and how it was checked. It is opened once and pushed to afterwards; the done card links it. Merging stays yours.
+
 ## 0.10.0 — 2026-10-14
 
 The deputy: between its steps the autopilot now thinks the way the person would, instead of switching on file states. Mod 0.10.0, extension 0.10.0 (unchanged but for the version); preset 0.3.0 unchanged.

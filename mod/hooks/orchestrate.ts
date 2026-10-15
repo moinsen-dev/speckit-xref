@@ -5,6 +5,7 @@
 
 import type { Autopilot, Snapshot, Task } from '../types'
 import { LEAN_TESTS, phaseBrief, runbookNote } from './brief'
+import { gateWords } from './gitci'
 export { LEAN_TESTS }
 
 export const IMPLEMENTER = 'implementer'
@@ -38,10 +39,10 @@ export function routeModel(kind: 'implement' | 'repair' | 'try' | 'design', mode
 export const IMPLEMENTER_PROMPT = [
   'You implement one phase of a GitHub Spec Kit feature, delegated by the speckit-xref autopilot. Your prompt is the phase brief: its tasks, what they must prove, the test command, the runbook.',
   'Read the spec.md and plan.md of the feature and the files the tasks name. Work through the tasks in order. Before each task call mcp__speckit-xref__focus with its id; a file no task names gets mcp__speckit-xref__link to the task it serves.',
-  'Mark code that implements a requirement with a comment `@spec <feature>/FR-###`; a test carries the anchor of what it proves and the id in its name.',
-  LEAN_TESTS,
+  'Mark code that implements a requirement with a comment `@spec <feature>/FR-###`; a test, where the project writes them, carries the anchor of what it proves and the id in its name.',
+  'Follow the phase brief on tests: it says whether this project writes tests at all (0.11.0).',
   'A task that asks for a check by hand (the app on a simulator, an emulator or in a browser, screenshots against the design, a measured time) is done only when you did it now, on this code: results written down earlier (quickstart.md, notes, an older run) are no evidence. Look for the tools before you give up (the simulator and browser tools, maestro, adb, also outside PATH); when none here can do it, leave the task open, say so in your report and ask the person with mcp__speckit-xref__ask.',
-  'Check a task off ([X] in tasks.md) only when its code is in place and the test command passes. Do not edit spec.md or plan.md. Decide what the brief leaves open and note it in your report; a product decision only the person can make goes to mcp__speckit-xref__ask.',
+  'Check a task off ([X] in tasks.md) only when its code is in place and the check the brief names passes (the test command, or the type check where the project runs without tests). Do not edit spec.md or plan.md. Decide what the brief leaves open and note it in your report; a product decision only the person can make goes to mcp__speckit-xref__ask.',
   'When you get past a problem of the environment (a port, a flag, a permission name), add one line to .specify/memory/runbook.md.',
   'End with a report of at most eight lines: tasks done, tasks left and why, the test run (passed/failed, counts), files changed, decisions you took.',
 ].join('\n')
@@ -74,7 +75,7 @@ export function implementBrief(snap: Snapshot, phase: string, lastTest: Autopilo
     'Tasks (tasks.md):',
     ...tasks.map(t => `- ${t.id} ${t.text}`),
     ...phaseBrief(snap, phase, lastTest),
-    snap.testCommand ? `Test command: \`${snap.testCommand}\`.` : 'No test command is known: say how you checked the phase.',
+    snap.testCommand ? (snap.gate === 'check' ? `Type check: \`${snap.testCommand}\` (this project runs without a test suite).` : `Test command: \`${snap.testCommand}\`.`) : 'No test or check command is known: say how you checked the phase.',
     ...(runbook ? [runbook] : []),
   ].join('\n')
 }
@@ -82,7 +83,7 @@ export function implementBrief(snap: Snapshot, phase: string, lastTest: Autopilo
 /** The implementer's brief for a failing suite. */
 export function repairBrief(snap: Snapshot, output: string): string {
   return [
-    `Feature: ${snap.featureDir}. The tests fail. Run \`${snap.testCommand}\`, find the cause and fix the code (not the tests, unless a test contradicts the spec). Check off no new tasks.`,
+    `Feature: ${snap.featureDir}. ${gateWords(snap).fails}. Run \`${snap.testCommand}\`, find the cause and fix the code${snap.gate === 'check' ? '' : ' (not the tests, unless a test contradicts the spec)'}. Check off no new tasks.`,
     `Last output:\n${output.slice(-1500)}`,
     ...(runbookNote(snap.runbook) ? [runbookNote(snap.runbook)!] : []),
   ].join('\n')

@@ -63,6 +63,8 @@ export type ReviewInput = {
   /** The step finished a phase or the feature: look ahead too. */
   boundary: boolean
   reworks: number
+  /** Option tests (0.11.0): without a suite a missing test is no reason to send a step back. */
+  testMode?: 'off' | 'run' | 'lean'
 }
 
 const section = (title: string, lines: string[] | string | null) => {
@@ -92,6 +94,7 @@ export function reviewRequest(i: ReviewInput): string {
       '- Scope: work no task asked for, a decision taken that the spec or the person left open, a deviation from the plan or a contract, a TODO or a stub left behind.',
       '- Anything the report says is left open or unsure: is that fine to carry on with, or does it block?',
       '- A file the report names that is in the file list but not in the diff was cut from the diff for length: that is no reason to send the step back. Send a step back only for what the evidence shows is missing or wrong.',
+      ...(i.testMode === 'off' ? ['- This project runs without a test suite on purpose (option tests: off): the type check is its gate. A missing test is no reason to send a step back; a test written anyway is work nobody asked for.'] : i.testMode === 'run' ? ['- This project adds no new tests (option tests: run): the existing suite is the gate. A missing new test is no reason to send a step back.'] : []),
       ...(i.boundary ? ['- This step ended a phase or the feature: are we still building the right thing? Does anything the step or a user test found change what should come next, or need the person?'] : []),
       '',
       'verdict "go": the step holds; "note" is what the next step should keep in mind (empty if nothing). verdict "rework": it does not hold; "rework" lists what to fix, concretely, each with the file or task. verdict "ask": only the person can settle what blocks; "question" asks it in one or two sentences, "recommendation" says what you would choose and why.',

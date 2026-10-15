@@ -102,13 +102,13 @@ test('the test command: the project\'s script first; a package name in plan.md i
   expect(testCommandFrom('**Testing**: `pnpm vitest run` (Vitest)')).toBe('pnpm vitest run')
 })
 
-test('package.json\'s test script is the test command, ahead of plan.md', async ($, on) => {
+test('package.json\'s test script is the test command, ahead of plan.md', { options: { tests: 'lean' } }, async ($, on) => {
   project(on, { ...DEMO, 'package.json': '{"scripts":{"test":"jest"}}' })
   await startSession($)
   expect((await $.tool.call({ tool: 'mcp__speckit-xref__status' } as never)).result).toContain('Test command: npm test')
 })
 
-test('a test command that is not there is no failing test: no repair step, a note instead', async ($, on) => {
+test('a test command that is not there is no failing test: no repair step, a note instead', { options: { tests: 'lean' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [127], output: 'sh: jest-expo: command not found' } })
   await startSession($)
   await xref($, 'auto on')

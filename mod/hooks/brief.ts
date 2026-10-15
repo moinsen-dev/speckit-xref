@@ -76,11 +76,19 @@ export function phaseBrief(snap: Snapshot, phase: string, lastTest: Autopilot['l
   if (screens.length && snap.featureDir) {
     lines.push(`Screens: ${screens.map(s => `${s.name}${s.mock ? ` (${designDir(snap.featureDir!)}/${s.mock})` : ''}`).join(', ')}; build them to DESIGN.md.`)
   }
-  lines.push(LEAN_TESTS)
+  lines.push(testRule(snap.testMode))
   if (lastTest) lines.push(`Last test run: ${lastTest.ok ? 'green' : `red: ${clip(lastTest.output.trim().split('\n').at(-1) ?? '', 140)}`}.`)
   if (note?.checkpoint) lines.push(`Done when: ${note.checkpoint}. Check that before you end the step, and say how you checked it.`)
   return lines.length ? ['Phase brief (tasks.md, spec.md, quickstart.md):', ...lines.map(l => `- ${l}`)] : []
 }
+
+/** No suite (0.11.0, the default): a proof of concept or an MVP is checked by its type check and by a person using it. */
+export const NO_TESTS =
+  'Write no tests and no test tasks: this project runs without a test suite (option tests: off), because building and fixing suites costs more than it finds here. Check your work with the type check the brief names and, where you can, by running the app; leave existing tests as they are.'
+/** The existing suite as the gate, and nothing added (0.11.0). */
+export const RUN_TESTS = 'Write no new tests (option tests: run): the existing suite is the gate. Keep it green; change a test only where the spec changed what it checks.'
+/** The rule on tests a phase brief carries, by option tests; a snapshot that names none keeps the lean rule. */
+export const testRule = (mode: Snapshot['testMode']) => (mode === 'off' ? NO_TESTS : mode === 'run' ? RUN_TESTS : LEAN_TESTS)
 
 /** Tests prove requirements, not tasks (0.8.0): what makes a test worth its lines. */
 export const LEAN_TESTS =

@@ -129,7 +129,7 @@ test('without a feature it waits for the idea, then specifies it in the person\'
   )
 })
 
-test('once every task is checked and verified, the autopilot ends the run', async ($, on) => {
+test('once every task is checked and verified, the autopilot ends the run', { options: { tests: 'lean' } }, async ($, on) => {
   const done = DEMO[`${FEATURE}/tasks.md`]!.replace(/- \[ \]/g, '- [x]')
   const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: done }, { tests: { exits: [0] } })
   await startSession($)

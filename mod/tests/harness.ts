@@ -48,6 +48,8 @@ type Options = {
   rateLimits?: { kind: string; percentUsed: number }[]
   /** A git repository with (true) or without (false) a commit; absent, no git answers. */
   commits?: boolean
+  /** Answers to commands the harness does not know (0.11.0: git switch, push, gh): undefined falls through. */
+  commands?: (argv: string[]) => { stdout?: string; exit?: number } | undefined
 }
 
 /** The project of the test running now: its turns start with the prompt submitted last, as the engine's do. */
@@ -99,6 +101,8 @@ export function project(on: any, files: Record<string, string>, options: Options
   on('process.run', ($: any, e: any) => {
     seen.ran.push([...e.argv])
     const ok = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    const own = options.commands?.(e.argv)
+    if (own) return ok(own.stdout ?? '', own.exit ?? 0)
     if (e.argv[0] === 'which') return ok('', (options.onPath ?? ['uvx']).includes(e.argv[1]) ? 0 : 1)
     const grep = e.argv[0] === 'rg' || (e.argv[0] === 'git' && e.argv[1] === 'grep')
     if (e.argv[0] === 'rg' && options.noRipgrep) return { deny: 'ENOENT' }

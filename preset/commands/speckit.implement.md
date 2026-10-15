@@ -150,7 +150,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **One phase when asked**: If the user input names one phase (e.g. `Phase 3: User Story 1`), execute only that phase's open tasks, then stop: run the post-execution hooks and report. Do not start the next phase
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
-   - **Lean tests**: Tests prove requirements, not tasks: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function's result, a screen's text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee; extend an existing test file before adding one. A test whose result depends on the clock or on chance fixes them (a set date and time, a seeded random)
+   - **Lean tests**: Only where the project has tests or the spec, the plan or the user asks for them; then tests prove requirements, not tasks: one test per requirement or acceptance scenario, at the boundary where its behaviour shows (a function's result, a screen's text after an action, a request that goes out). No render-only test, no test of what the framework or the types already guarantee; extend an existing test file before adding one. A test whose result depends on the clock or on chance fixes them (a set date and time, a seeded random)
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
@@ -172,7 +172,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file. A task is complete only when its tests pass: run the command on plan.md's **Testing** line (or the project's usual test command). A test-writing task in TDD, before the code exists, is complete when its tests exist and fail for the missing behaviour, not for a syntax or import error. A task without tests of its own is complete when its code is in place and the existing tests still pass. If tests keep failing, leave the task open and report why.
+   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file. A task is complete only when its check passes: its tests where the project has a suite (the command on plan.md's **Testing** line, or the project's usual test command), else the type check of the project's language (its own typecheck script, `tsc --noEmit`, `flutter analyze`, `cargo check`, `go vet`). A test-writing task in TDD, before the code exists, is complete when its tests exist and fail for the missing behaviour, not for a syntax or import error. A task without tests of its own is complete when its code is in place and the existing tests still pass. If tests keep failing, leave the task open and report why.
 
 9. Completion validation:
    - Verify all required tasks in scope (the phase the user input names, else all of tasks.md) are completed
@@ -222,7 +222,7 @@ Report final status with summary of completed work.
 
 ## Done When
 
-- [ ] All tasks in scope (the phase the user input names, else all of tasks.md) completed, their tests passing, and marked `[X]`
+- [ ] All tasks in scope (the phase the user input names, else all of tasks.md) completed, their check passing (tests, or the type check without a suite), and marked `[X]`
 - [ ] Implementation validated against specification, plan, and test coverage
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work

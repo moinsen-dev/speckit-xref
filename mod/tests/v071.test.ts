@@ -125,7 +125,7 @@ test('found live: mobile acceptance plays on Expo Go when no development build i
   expect(prompt).toContain("downloads native dependencies: that is no part of this step, but a task under '## Phase N: Acceptance setup'")
 })
 
-test('found live: a failing run reaches the repair step without the runner\'s colour codes', { options: { orchestrate: 'off' } }, async ($, on) => {
+test('found live: a failing run reaches the repair step without the runner\'s colour codes', { options: { tests: 'lean', orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [1], output: '\u001b[31mFAIL\u001b[39m tests/flows/moment.test.tsx\n  \u001b[1m● FR-019 shows new ideas\u001b[22m' } })
   await startSession($)
   await xref($, 'auto on')

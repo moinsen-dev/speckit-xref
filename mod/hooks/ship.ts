@@ -130,7 +130,7 @@ export function lastRelease(release: ReleaseNote | null | undefined, since?: num
  */
 export function releaseBlockers(snap: Snapshot, ledger: Ledger, lastTest: { ok: boolean } | null, specGate: boolean): string[] {
   const out: string[] = []
-  if (lastTest && !lastTest.ok) out.push('the tests fail')
+  if (lastTest && !lastTest.ok) out.push(snap.gate === 'check' ? 'the type check fails' : 'the tests fail')
   if (evaluate(snap, ledger).level === 'red') out.push('the drift is red')
   const failing = acceptanceCounts(snap, ledger).failing
   if (failing) out.push(`${failing} acceptance scenario${failing === 1 ? '' : 's'} fail${failing === 1 ? 's' : ''}`)
@@ -156,7 +156,7 @@ export function shipPrompt(snap: Snapshot): string {
   const tools = snap.tools.deploy ?? []
   return [
     `Check that the app is ready to release, with the speckit-xref:ship skill, and write ${RELEASE} in the format it gives. Nothing goes out in this step: no deploy, no store build, no submit, no publish, no push.`,
-    ...(snap.testCommand ? [`The mod ran the test suite (\`${snap.testCommand}\`) right before this step and stops on a failure: do not run it again.`] : []),
+    ...(snap.testCommand ? [`The mod ran ${snap.gate === 'check' ? 'the type check' : 'the test suite'} (\`${snap.testCommand}\`) right before this step and stops on a failure: do not run it again.`] : []),
     `Targets: ${targets}. Deploy tools on this machine: ${tools.length ? tools.join(', ') : 'none'}. Never run npx with a package the project does not have (eas-cli, wrangler, lighthouse, serve …): a missing tool is the person's part.`,
     'Check: the version and build numbers; the store fields (app name, bundle identifier, Android package, icon, splash); a usage text for every OS permission the code asks for; privacy (what leaves the device, a privacy-policy URL; the stores\' privacy answers drafted under Your part); accessibility (labels on controls, the contrast of DESIGN.md\'s colours); secrets (no .env, *.p8, *.p12, keystore or service-account file tracked by git; .env.example names every variable the code reads; name paths, never values); the production build, run locally where it needs no account (e.g. `npx expo export -p web`), with its size.',
     `Rate each finding as verify does: HIGH (blocks the release or breaks a store rule), MEDIUM (a user or a reviewer would hit it), LOW (polish). HIGH and MEDIUM findings that are code or configuration work become tasks under '## Phase N: Release readiness' in ${dir}/tasks.md (the next free T### ids, the files in backticks); list the LOW ones in your answer under 'Low, no task'. Do not change the app in this step.`,

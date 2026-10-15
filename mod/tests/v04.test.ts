@@ -79,7 +79,7 @@ test('review: none plans without the gate', { options: { review: 'none' } }, asy
   expect(autopilotPrompts(seen)[0]).toContain('Run /speckit-plan now')
 })
 
-test('failing tests become repair steps; after three repairs the person decides', { options: { orchestrate: 'off' } }, async ($, on) => {
+test('failing tests become repair steps; after three repairs the person decides', { options: { tests: 'lean', orchestrate: 'off' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [1] } })
   await startSession($)
   await xref($, 'auto on')
@@ -108,7 +108,7 @@ test('a repair that makes the tests pass goes back to the tasks', async ($, on) 
   expect(autopilotPrompts(seen)[2]).toContain('implement: 4 of 8 tasks open; next T005.')
 })
 
-test('a passing suite proves the requirements that have a real test', async ($, on) => {
+test('a passing suite proves the requirements that have a real test', { options: { tests: 'lean' } }, async ($, on) => {
   const files = {
     ...DEMO,
     'tests/auth/token.test.ts': "// @spec 001-magic-link-login/FR-002\ntest('issues a single-use token', () => {})\n",
@@ -296,7 +296,7 @@ test('parallel: a phase\'s [P] tasks go to task-runner subagents', { options: { 
   expect(autopilotPrompts(seen)[0]).toContain('Parallel: T004, T005 are marked [P] and touch different files. Spawn one speckit-xref:task-runner agent per task')
 })
 
-test('commit per task: a step whose tests pass commits the tasks it checked, on a feature branch', { options: { commitPerTask: 'on' } }, async ($, on) => {
+test('commit per task: a step whose tests pass commits the tasks it checked, on a feature branch', { options: { tests: 'lean', commitPerTask: 'on' } }, async ($, on) => {
   const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, branch: '001-magic-link-login' })
   await startSession($)
   await xref($, 'auto on')

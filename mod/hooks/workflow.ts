@@ -8,6 +8,7 @@ import { designChangeLine, designDue, designNote, designPrompt, designToReview }
 import { RELEASE, releaseBlockers, releaseLine, releasePrompt, releaseRuns, shipPrompt } from './ship'
 import { DESIGNER, IMPLEMENTER, TESTER, TESTER_PROMPT, implementBrief, relayPrompt, repairBrief, routeModel, tryBrief } from './orchestrate'
 import { DESIGNER_PROMPT, DESIGN_PASS_RULES, MAX_DESIGN_REVIEWS, critiqueBrief, designRounds, directionBrief, isDesignPhase } from './polish'
+import { ciNote, gateWords, testsNote } from './gitci'
 import type { Delegate, Models } from './orchestrate'
 import { fingerprint, specFingerprint } from './rules'
 import { evaluate, speckitCommand } from './xref'
@@ -107,6 +108,8 @@ export const VERIFY_RULE = [
   "Rate each finding: HIGH (a requirement, a scenario or a point of the person's words is not met), MEDIUM (it is met only in part, or no test proves it), LOW (polish, wording, an anchor or a comment, a nice-to-have).",
   "Only HIGH and MEDIUM findings become tasks; name the LOW ones in your answer under 'Low, no task'. What an earlier verification raised and what was built or decided since is no new finding.",
 ].join(' ')
+/** The verify rule for this project: without a test suite (0.11.0), a missing test is no finding. */
+export const verifyRule = (snap: Pick<Snapshot, 'testMode'>) => (snap.testMode === 'off' ? VERIFY_RULE.replace(', or no test proves it', '') : VERIFY_RULE)
 
 /** How Spec Kit's CLI runs here: installed, or through uvx without installing. */
 export const specifyCli = (snap: Snapshot) => (snap.tools.specify ? 'specify' : `uvx --from 'specify-cli>=1.1,<2' specify`)
@@ -289,6 +292,8 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   }
 
   const spec = snap.spec
+  // What the project builds besides the app (0.11.0): every step that plans or builds hears it.
+  for (const note of [testsNote(snap.testMode), ciNote(snap.ciOn)]) if (note) notes.push(note)
   // The PRD ids this feature implements and its spec does not carry yet: the review, the plan and the analysis close them.
   const prdItem = snap.prdApproved ? roadmapItemOf(snap) : null
   const prdMissing = prdItem ? prdCoverage(prdItem.scope, spec).missing : []
@@ -379,14 +384,14 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
   if (runbook && (open.length || (flow.lastTest && !flow.lastTest.ok))) notes.push(runbook)
   if (flow.lastTest && !flow.lastTest.ok) {
     if ((flow.repairs ?? 0) > MAX_REPAIRS) {
-      return step('repair', null, `The tests still fail after ${MAX_REPAIRS} repairs.`, `The tests still fail after ${MAX_REPAIRS} attempts: look at the failure in the pane and decide how to go on.`)
+      return step('repair', null, `${gateWords(snap).still} after ${MAX_REPAIRS} repairs.`, `${gateWords(snap).still} after ${MAX_REPAIRS} attempts: look at the failure in the pane and decide how to go on.`)
     }
     if (flow.orchestrate) {
       const delegate: Delegate = { agent: IMPLEMENTER, model: routeModel('repair', flow.models ?? 'auto', { repairs: flow.repairs }), description: 'Repair the failing tests', brief: repairBrief(snap, flow.lastTest.output) }
-      return step('repair', snap.testCommand, `The tests fail (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, { delegate, prompt: relayPrompt(delegate) })
+      return step('repair', snap.testCommand, `${gateWords(snap).fails} (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, { delegate, prompt: relayPrompt(delegate) })
     }
-    return step('repair', snap.testCommand, `The tests fail (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, {
-      prompt: `The tests fail. Run \`${snap.testCommand}\`, find the cause and fix the code (not the tests, unless a test contradicts the spec). Do not check off new tasks in this step.\nLast output:\n${flow.lastTest.output.slice(-1500)}`,
+    return step('repair', snap.testCommand, `${gateWords(snap).fails} (repair ${Math.max(1, flow.repairs ?? 0)} of ${MAX_REPAIRS}).`, null, {
+      prompt: `${gateWords(snap).fails}. Run \`${snap.testCommand}\`, find the cause and fix the code${snap.gate === 'check' ? '' : ' (not the tests, unless a test contradicts the spec)'}. Do not check off new tasks in this step.\nLast output:\n${flow.lastTest.output.slice(-1500)}`,
     })
   }
   if (open.length) {
@@ -529,7 +534,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     const command = speckitCommand(snap, 'xref.check')
     return step('verify', command, 'Every task is checked: check the code against the spec.', null, {
       approve: { key: 'verify', value: verified },
-      prompt: `Run ${command} now through the Skill tool and carry it through. ${VERIFY_RULE}`,
+      prompt: `Run ${command} now through the Skill tool and carry it through. ${verifyRule(snap)}`,
     })
   }
   // Without the extension there is no command the model can run: it checks by itself, and the mod's intent check follows.
@@ -538,7 +543,7 @@ export function nextStep(snap: Snapshot, ledger: Ledger, idea: string | null = n
     prompt: [
       "Check the code against the spec and against the person's own words (the spec's Input), by yourself: /xref check is the person's command, not one you can run.",
       'For each requirement name the code and the test that prove it. For each point the person made, say whether the app does it.',
-      VERIFY_RULE,
+      verifyRule(snap),
       "Each HIGH or MEDIUM finding becomes a new task at the end of tasks.md under '## Phase N: Verification' (the next free T### ids). Then end your turn.",
     ].join('\n'),
   })

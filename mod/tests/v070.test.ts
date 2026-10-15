@@ -239,7 +239,7 @@ test('what holds a release: the proof first, then what release.md says; the pers
   expect(shipPrompt(doneSnap())).not.toContain('right before this step')
 })
 
-test('Ship live: the check, the pane\'s Ship it, the release through the rail, then the run ends with what went out', async ($, on) => {
+test('Ship live: the check, the pane\'s Ship it, the release through the rail, then the run ends with what went out', { options: { tests: 'lean' } }, async ($, on) => {
   const seen = project(on, { ...DEMO, [`${FEATURE}/tasks.md`]: DONE }, { tests: { exits: [0] } })
   await startSession($)
   expect((await xref($, 'ship')).text).toBe('The feature is not done yet: the autopilot finishes it first (/xref auto on).')

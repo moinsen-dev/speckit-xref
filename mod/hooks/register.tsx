@@ -7,6 +7,8 @@ import type { DashboardDoc } from './dashboard'
 import { ACCEPTANCE_ARTIFACT, ACCEPT_REPORT, ACCEPT_REPORTS, POLISH_ARTIFACT, TRY_ARTIFACT, acceptanceCounts, acceptanceDoc, acceptanceFrom, flowIncludes, parseAcceptanceDoc, platformsFromPlan, tapsByCoordinates } from './accept'
 import { DESIGNER, IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMPT, relayPrompt, routeModel, writesCode } from './orchestrate'
 import { DESIGNER_PROMPT, parsePolish, polishDoc } from './polish'
+import { GIT_MODES, TEST_MODES, branchName, branches, checkCommandFor, gateWords, prBody, touchesCi } from './gitci'
+import type { GitMode, TestMode } from './gitci'
 import { DEPUTY_PROMPT, MAX_REWORKS, PROFILE, REVIEWED, answerLine, answerRequest, noteLine, parseAnswer, parseVerdict, profileAdditions, requirementsOf, reviewRequest, reworkBrief } from './deputy'
 import type { Verdict } from './deputy'
 import type { Delegate, Models } from './orchestrate'
@@ -101,6 +103,10 @@ type Options = {
   models: string
   userTest: string
   deputy: string
+  tests: string
+  ci: string
+  git: string
+  checkCommand: string
 }
 
 const PLUGIN = 'speckit-xref'
@@ -178,6 +184,13 @@ let modelsOption: Models = 'auto'
 let userTestOn = true
 // full: the deputy reviews each heavy step and answers Claude's questions for the person; review: only the reviews (0.10.0).
 let deputyMode: 'full' | 'review' | 'off' = 'full'
+// off: no test suite, the type check is the gate; run: the existing suite, nothing added; lean: tests per requirement (0.11.0).
+let testsMode: TestMode = 'off'
+// off: the autopilot writes no CI/CD pipeline (0.11.0).
+let ciOn = false
+// current: the work stays on the person's branch; branch: a branch per feature; pr: and a pull request when done (0.11.0).
+let gitMode: GitMode = 'current'
+let checkCommandOption = ''
 // In a `-p` run the next step rides the Stop hook's re-prompt instead of a prompt of its own.
 let pendingPrompt: string | null = null
 // When the step running now was handed over: its length in the run log, where a -p run reports none.
@@ -361,8 +374,12 @@ async function scan($: $): Promise<void> {
     rules: rulesFrom(ignoreText),
     realTests: previous?.featureDir === featureDir ? previous.realTests : [],
     planFingerprint: planMd ? fingerprint(planMd) : null,
-    // The option, else the project's own test script, else what plan.md's Testing line implies.
-    testCommand: testCommandOption || (await projectTestScript($)) || testCommandFrom(planMd),
+    // The gate (0.11.0): without a test suite the language's type check; else the option, the project's own test
+    // script, or what plan.md's Testing line implies.
+    testCommand: testsMode === 'off' ? checkCommandOption || (await projectCheck($, packageJson)) : testCommandOption || (await projectTestScript($)) || testCommandFrom(planMd),
+    gate: testsMode === 'off' ? 'check' : 'tests',
+    testMode: testsMode,
+    ciOn,
     branch,
     phase: openPhase(tasks),
     tasksFingerprint: tasksFingerprint(tasks),
@@ -396,6 +413,20 @@ async function scan($: $): Promise<void> {
   }
   await update($, snapshotA, () => snapshot)
   signature = await currentSignature($, featureDir)
+}
+
+/** The type check of the project's language (0.11.0): its own script, else tsc, dart, cargo, go, swift or mypy. */
+async function projectCheck($: $, packageJson: string | null): Promise<string | null> {
+  return checkCommandFor({
+    packageJson,
+    typescript: (await exists($, 'tsconfig.json')) && (await exists($, 'node_modules/typescript/package.json')),
+    pubspec: await readText($, 'pubspec.yaml'),
+    cargo: await exists($, 'Cargo.toml'),
+    goMod: await exists($, 'go.mod'),
+    swiftPackage: await exists($, 'Package.swift'),
+    mypy: (await exists($, 'mypy.ini')) || /\[tool\.mypy\]/.test((await readText($, 'pyproject.toml')) ?? ''),
+    run: (await exists($, 'pnpm-lock.yaml')) ? 'pnpm' : (await exists($, 'yarn.lock')) ? 'yarn' : (await exists($, 'bun.lock')) || (await exists($, 'bun.lockb')) ? 'bun run' : 'npm run',
+  })
 }
 
 async function projectTestScript($: $): Promise<string | null> {
@@ -1343,6 +1374,7 @@ async function reviewStep($: $, ap: Autopilot, answer: string): Promise<Verdict 
     ...(await personContext($, snap, ledger)),
     boundary,
     reworks: ap.reworks ?? 0,
+    testMode: snap.testMode ?? 'lean',
   })
   const text = await callDeputy($, prompt, 120_000, `speckit-xref · the deputy reviews step ${ap.steps} (${ap.lastPhase})…`)
   return text ? parseVerdict(text) : null
@@ -1407,6 +1439,8 @@ async function runTests($: $): Promise<{ ran: boolean; ok: boolean; output: stri
   }
   // A command that is not there is no failing test: no repair step, a note for the person instead.
   if (couldNotRun(exitCode, output)) return { ran: false, ok: true, output: `${snap.testCommand}: ${output.split('\n').filter(Boolean).at(-1) ?? `exit ${exitCode}`}` }
+  // A type check proves no requirement: it only gates the step (0.11.0).
+  if (snap.gate === 'check') return { ran: true, ok: exitCode === 0, output }
   const at = await stamp($)
   const commit = await head($)
   const current = Object.fromEntries((snap.spec?.reqs ?? []).map(r => [r.id, fingerprint(r.text)]))
@@ -1516,6 +1550,8 @@ async function advance($: $): Promise<void> {
   // A step a hosted session was handed outside a turn waits for its turn to start: no second one meanwhile.
   if (!interactive && queue.auto && !(await read($, turnA))) return
   await scan($)
+  // A feature of its own branch once its spec is written (option git, 0.11.0).
+  await ensureBranch($)
   const snap = await read($, snapshotA)
   if (!snap) return
   const ledger = await read($, ledgerA)
@@ -1556,10 +1592,12 @@ async function advance($: $): Promise<void> {
         return advance($)
       }
       await markVerified($)
-      return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked, ${tests.ran ? 'the tests pass' : `the tests could not run (${snap.testCommand})`} and the drift is ${report.level}. ${next}`)
+      const pr = gitMode === 'pr' ? ` ${await openPullRequest($)}` : ''
+      return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked, ${tests.ran ? gateWords(snap).passes : `${gateWords(snap).what} could not run (${snap.testCommand})`} and the drift is ${report.level}.${pr} ${next}`)
     }
     await markVerified($)
-    return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked and the drift is ${report.level}. No test command is known, so "done" rests on the checkboxes. ${next}`)
+    const pr = gitMode === 'pr' ? ` ${await openPullRequest($)}` : ''
+    return stopAutopilot($, `Autopilot done: every task of ${snap.featureDir} is checked and the drift is ${report.level}. ${snap.gate === 'check' ? 'No type check is known (option checkCommand), so "done" rests on the checkboxes and the user test.' : 'No test command is known, so "done" rests on the checkboxes.'}${pr} ${next}`)
   }
   if (step.needsUser) return pauseAutopilot($, step.needsUser, step)
   // A repair attempt is progress of its own: the stall check must not end the three repairs early.
@@ -1885,6 +1923,68 @@ const RUNNER_PROMPT = [
  * committed with their files, on a feature branch only. The mod checks the staged diff itself, since git hooks
  * do not run under $.process.run.
  */
+/** Option git branch or pr (0.11.0): a feature gets its own branch once its spec is written, before any code. */
+async function ensureBranch($: $): Promise<void> {
+  if (gitMode === 'current') return
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir || !snap.spec || snap.commits === false || !snap.branch) return
+  const name = branchName(snap.featureDir)
+  const ledger = await read($, ledgerA)
+  if (ledger.checkpoints.branch === name || snap.branch === name) return
+  const git = (argv: string[]) => $.process.run(['git', ...argv], { cwd: root, timeoutMs: 15_000 })
+  try {
+    const known = (await git(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])).exitCode === 0
+    const ran = await git(known ? ['switch', name] : ['switch', '-c', name])
+    if (ran.exitCode !== 0) {
+      $.ui.toast(`speckit-xref: could not switch to the branch ${name}: ${ran.stderr.trim().slice(0, 160)}`)
+      return
+    }
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, branch: name, baseBranch: snap.branch! } }))
+    await persist($)
+    $.ui.toast(`speckit-xref: ${snap.featureDir} is built on its own branch ${name}, from ${snap.branch}.`)
+    await scan($)
+  } catch {
+    // No git here: the work stays where it is.
+  }
+}
+
+/**
+ * Option git pr (0.11.0): a done feature goes up as a pull request against the branch it started from: what is not
+ * committed yet is committed (never a secret), the branch is pushed, the pull request opened once and pushed to after.
+ * Merging stays the person's.
+ */
+async function openPullRequest($: $): Promise<string> {
+  const snap = await read($, snapshotA)
+  const ledger = await read($, ledgerA)
+  if (!snap?.featureDir || !snap.branch) return 'No pull request: no branch.'
+  const base = ledger.checkpoints.baseBranch
+  if (snap.branch === base || (!base && /^(main|master|trunk|develop)$/.test(snap.branch))) return `No pull request: the work is on ${snap.branch}, not on a feature branch.`
+  const run = (argv: string[], timeoutMs = 30_000) => $.process.run(argv, { cwd: root, timeoutMs })
+  try {
+    const dirty = (await run(['git', 'status', '--porcelain'])).stdout.split('\n').map(l => l.slice(3).trim()).filter(Boolean)
+    const secret = dirty.find(f => /(^|\/)\.env(?!\.example$)|\.(p8|p12|jks|keystore)$/.test(f))
+    if (secret) return `No pull request: ${secret} looks like a secret and is not committed; commit or ignore it yourself.`
+    if (dirty.length) {
+      await run(['git', 'add', '-A'])
+      const done = await run(['git', 'commit', '-m', `feat(${branchName(snap.featureDir)}): ${snap.spec?.title ?? 'feature'}`, '-m', 'Built with Spec Kit and the speckit-xref autopilot.'])
+      if (done.exitCode !== 0) return `No pull request: the commit failed (${done.stderr.trim().slice(0, 160)}).`
+    }
+    const pushed = await run(['git', 'push', '-u', 'origin', snap.branch], 120_000)
+    if (pushed.exitCode !== 0) return `No pull request: the push failed (${pushed.stderr.trim().split('\n').at(-1)?.slice(0, 160)}).`
+    if (ledger.checkpoints.pr) return `Pushed to the pull request ${ledger.checkpoints.pr}.`
+    if (!(await onPath($, 'gh'))) return `Pushed ${snap.branch}; no gh CLI here to open the pull request.`
+    const title = `${branchName(snap.featureDir)}: ${snap.spec?.title ?? 'feature'}`.slice(0, 120)
+    const opened = await run(['gh', 'pr', 'create', '--head', snap.branch, ...(base ? ['--base', base] : []), '--title', title, '--body', prBody(snap, ledger)], 60_000)
+    if (opened.exitCode !== 0) return `Pushed ${snap.branch}; the pull request did not open (${opened.stderr.trim().slice(0, 160)}).`
+    const url = opened.stdout.trim().split('\n').at(-1) ?? ''
+    await update($, ledgerA, l => ({ ...l, checkpoints: { ...l.checkpoints, pr: url } }))
+    await persist($)
+    return `Pull request: ${url}.`
+  } catch (error) {
+    return `No pull request: ${String(error).slice(0, 160)}.`
+  }
+}
+
 async function commitTasks($: $): Promise<string | null> {
   if (!commitPerTask) return null
   const snap = await read($, snapshotA)
@@ -2038,7 +2138,7 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
     const tests = await runTests($)
     if (!tests.ran && tests.output) {
       // Said once per run, where the person looks; the run goes on without a test gate.
-      if (!ap.testNote) $.ui.toast(`Autopilot: the test command could not run (${tests.output.slice(0, 200)}). Set testCommand in /config.`)
+      if (!ap.testNote) $.ui.toast(`Autopilot: ${(await read($, snapshotA))?.gate === 'check' ? 'the type check' : 'the test command'} could not run (${tests.output.slice(0, 200)}). Set ${(await read($, snapshotA))?.gate === 'check' ? 'checkCommand' : 'testCommand'} in /config.`)
       await update($, autopilotA, a => ({ ...a, testNote: tests.output.slice(0, 300) }))
     }
     if (tests.ran) {
@@ -2369,7 +2469,7 @@ async function workflowStatus($: $): Promise<string> {
   if (snap.featureDir) {
     lines.push(`Artifacts: spec.md ${snap.spec ? 'yes' : 'no'} · plan.md ${snap.hasPlan ? 'yes' : 'no'} · tasks.md ${snap.tasks.length ? `${report.done}/${report.tasks} done` : 'no'} · FR covered ${report.covered}/${report.total} · drift ${report.level}`)
   }
-  if (snap.featureDir) lines.push(`Test command: ${snap.testCommand ?? 'none known (the testCommand option, a test script in package.json, or plan.md\'s Testing line names one)'}`)
+  if (snap.featureDir) lines.push(snap.gate === 'check' ? `Tests: none by option (tests: off); type check: ${snap.testCommand ?? 'none known (option checkCommand names one)'}` : `Test command: ${snap.testCommand ?? 'none known (the testCommand option, a test script in package.json, or plan.md\'s Testing line names one)'}`)
   lines.push(`Phase: ${next.phase}. ${next.why}`, `Next: ${next.command ?? next.needsUser ?? ''}`)
   if (next.needsUser) lines.push(`Needs the person: ${next.needsUser}`)
   if (next.notes.length) lines.push('Notes:', ...next.notes.map(n => `- ${n}`))
@@ -2453,6 +2553,10 @@ export const register: Register = (on, options) => {
   modelsOption = MODELS.find(m => m === opts.models) ?? 'auto'
   userTestOn = opts.userTest !== 'off'
   deputyMode = opts.deputy === 'off' ? 'off' : opts.deputy === 'review' ? 'review' : 'full'
+  testsMode = TEST_MODES.find(m => m === opts.tests) ?? 'off'
+  ciOn = opts.ci === 'on'
+  gitMode = GIT_MODES.find(m => m === opts.git) ?? 'current'
+  checkCommandOption = typeof opts.checkCommand === 'string' ? opts.checkCommand.trim() : ''
   mapModel = opts.mapModel || 'haiku'
   testCommandOption = typeof opts.testCommand === 'string' ? opts.testCommand.trim() : ''
   const autopilotByDefault = opts.autopilot === 'on'
@@ -2821,6 +2925,12 @@ export const register: Register = (on, options) => {
     const d = ap.delegation
     if (d && !e.agentId && writesCode(e.tool, input, root)) {
       return { decision: 'deny' as const, reason: `speckit-xref autopilot: this step is delegated. Call the Agent tool with subagent_type "${PLUGIN}:${d.agent}" and the prompt "Carry out your brief."; the agent does the work and reports back.` }
+    }
+    // What the person did not ask for, during the autopilot's own steps (0.11.0): a CI/CD pipeline, or a branch of
+    // the run's own while the work stays on theirs. In their own turns they may ask for either.
+    if ((await read($, turnA))?.auto) {
+      if (!ciOn && touchesCi(e.tool, input, root)) return { decision: 'deny' as const, reason: `speckit-xref: option ci is off, so the autopilot writes no CI/CD pipeline (workflow files, .gitlab-ci.yml, fastlane …). Leave it out; the person switches ci on if they want one.` }
+      if (gitMode === 'current' && branches(e.tool, input)) return { decision: 'deny' as const, reason: "speckit-xref: option git is current, so the work stays on the person's branch: create or switch no branch. The person sets git to branch or pr for a branch per feature." }
     }
     const hit = railHit(e.tool, input)
     if (hit) {
@@ -3236,6 +3346,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" marginTop={1}>
           {row('Done', ap.nextKind ? doneAsk(ap.nextKind) : 'Every task is checked, converged and verified. What comes next?', 'success')}
           {upcoming ? row('', `Roadmap: ${upcoming.title}${upcoming.gate ? ` · after ${upcoming.gate} (your part)` : ''}`, 'subtle') : null}
+          {ledger.checkpoints.pr ? row('', `Pull request: ${ledger.checkpoints.pr}`, 'claude') : null}
           {row('', `Before the next feature: /clear keeps the context small; the handoff is in ${HANDOFF}.`, 'subtle')}
           <Box flexDirection="row" columnGap={1} marginLeft={8}>
             {upcoming ? <Button key="next-roadmap" label="Next from roadmap" variant="primary" onPress={() => void chooseRoadmap($)} /> : null}
@@ -3365,8 +3476,8 @@ export const register: Register = (on, options) => {
           ),
         )}
         {autoRow}
-        {ap.lastTest && !ap.lastTest.ok ? row('Tests', `fail · ${short(failureLine(ap.lastTest.output), width)}`, 'error') : null}
-        {ap.testNote ? row('Tests', `could not run · ${short(ap.testNote, width)} · set testCommand in /config`, 'warning') : null}
+        {ap.lastTest && !ap.lastTest.ok ? row(gateWords(snap).label, `fail · ${short(failureLine(ap.lastTest.output), width)}`, 'error') : null}
+        {ap.testNote ? row(gateWords(snap).label, `could not run · ${short(ap.testNote, width)} · set ${snap.gate === 'check' ? 'checkCommand' : 'testCommand'} in /config`, 'warning') : null}
         {row('Drift', `${state.glyph} ${state.word}${ledger.semantic ? ` · intent ${ledger.semantic.score}/100` : ''}${checking ? ' · checking…' : ''}`, LEVEL_COLOR[report.level])}
         {details ? driftCards : report.findings.length ? row('', `${report.findings.length} findings · d shows them`, 'subtle') : null}
         {details ? report.notes.map(n => row('', `· ${n}`, 'subtle')) : null}

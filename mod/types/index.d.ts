@@ -112,6 +112,11 @@ export type Snapshot = {
   release?: ReleaseNote | null
   /** `<feature>/polish.md`: the design pass's direction, what the person approves, and its review rounds (0.9.0). */
   polish?: PolishNote | null
+  /** What the autopilot's gate runs (0.11.0): the project's tests, or its type check where it runs without tests. */
+  gate?: 'tests' | 'check'
+  /** Options tests and ci as the steps read them (0.11.0). */
+  testMode?: 'off' | 'run' | 'lean'
+  ciOn?: boolean
 }
 
 /** `<feature>/polish.md` as the mod reads it. */

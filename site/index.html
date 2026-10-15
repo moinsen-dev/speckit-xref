@@ -287,7 +287,7 @@ footer p { margin: 0 0 4px; }
   <div><span class="k">Project</span><span class="v">speckit-xref</span></div>
   <div class="subject"><span class="k">Subject</span><span class="v">Spec-to-code traceability and an autopilot for GitHub Spec Kit in Claude Code</span></div>
   <div class="cells">
-    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.10.0</span></span></div>
+    <div><span class="k">Revision</span><span class="v">v<span class="rev">0.11.0</span></span></div>
     <div><span class="k">License</span><span class="v">MIT</span></div>
     <div><span class="k">Source</span><span class="v"><a href="https://github.com/moinsen-dev/speckit-xref">GitHub</a></span></div>
   </div>
@@ -521,7 +521,7 @@ footer p { margin: 0 0 4px; }
       <p>In a workflow on <code>pull_request</code>.</p>
       <div class="codebox"><pre><code>- uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.10.0</code></pre><button class="copy" type="button">Copy</button></div>
+- uses: moinsen-dev/speckit-xref/action@v0.11.0</code></pre><button class="copy" type="button">Copy</button></div>
     </div>
   </div>
 </section>
@@ -542,7 +542,7 @@ footer p { margin: 0 0 4px; }
     { key: 'plan', title: 'Plan', what: 'The technical plan and its data model. A request you make later reaches the spec first, as a new requirement with a new id, before it reaches the code.', commands: '/speckit-plan', yours: 'Optional: review the plan too (option review: spec+plan).' },
     { key: 'design', title: 'Design', what: 'A feature with a user interface gets its look before its tasks: a DESIGN.md design system and one HTML mock per screen, each traced to the user stories it serves.', commands: '/speckit.xref.design', yours: 'Look at the mocks in the browser and approve the design.' },
     { key: 'tasks', title: 'Tasks', what: 'tasks.md is written, each requirement is mapped to the tasks that implement it, and an analysis checks spec, plan and tasks against each other. Its fixes go in before the first task does.', commands: '/speckit-tasks, /speckit.xref.map, /speckit-analyze', yours: 'Nothing, unless a checklist item is still open.' },
-    { key: 'build', title: 'Build', what: 'One phase of tasks per step, each in a subagent with a fresh context and the model it needs: Sonnet builds, Opus takes over a repair that failed, Haiku does docs and configuration. The session keeps the spec, your decisions and short reports. Every edit is booked against its task, an edit no task planned is flagged at once, and the tests gate every step. Between the steps a deputy on Opus reads each report and diff the way you would: it sends a step on, back with a list, or to you, and answers Claude\'s questions for you, showing each decision.', commands: '/speckit-implement, speckit-xref:implementer', yours: 'What only you decide: approvals, money, keys, releases, checks by hand. The deputy brings it to you with its recommendation.' },
+    { key: 'build', title: 'Build', what: 'One phase of tasks per step, each in a subagent with a fresh context and the model it needs: Sonnet builds, Opus takes over a repair that failed, Haiku does docs and configuration. The session keeps the spec, your decisions and short reports. Every edit is booked against its task, an edit no task planned is flagged at once, and the type check gates every step (or the tests, where you want a suite). Between the steps a deputy on Opus reads each report and diff the way you would: it sends a step on, back with a list, or to you, and answers Claude\'s questions for you, showing each decision.', commands: '/speckit-implement, speckit-xref:implementer', yours: 'What only you decide: approvals, money, keys, releases, checks by hand. The deputy brings it to you with its recommendation.' },
     { key: 'verify', title: 'Verify', what: 'Converge finds the work the tasks missed. Verify checks the code against the spec and against your own words. Only high and medium findings become new tasks; low ones are listed, not built.', commands: '/speckit-converge, /speckit.xref.check', yours: 'After rounds that keep finding new work: Call it done, or one more round.' },
     { key: 'try', title: 'Try', what: 'Each story is used as a person would right after it is built, and the whole app before it counts as done: in the iOS Simulator of the Claude desktop app or in a browser, off the happy path too (a permission denied, offline, back and forth). Findings come with screenshots and become fix tasks. Scripted acceptance with Playwright or Maestro is there on request.', commands: '/speckit.xref.try, /speckit.xref.accept', yours: 'What no tool here can check: a real device, real users, a paid service.' },
     { key: 'polish', title: 'Polish', what: 'The first version is plain on purpose: it has to prove that it works. On your word a design lead lifts it to the best apps of its platform without changing what it does: a direction with two or three sample screens, then a design pass over the rest, then reviews of fresh screenshots of every screen. On iOS that is content under translucent material, large titles, sheets, SF Symbols, Dynamic Type, haptics and native controls.', commands: '/xref polish, /speckit.xref.polish', yours: 'Approve the direction at the samples, or say what to change.' },

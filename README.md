@@ -8,7 +8,7 @@ It comes in four parts that share one contract ([`docs/contract-0.4.md`](docs/co
 
 | | What | For |
 | --- | --- | --- |
-| [**Claude Code mod**](mod/) | Live, inside the agent loop: a new idea researched and shaped with you, or your PRD reviewed and cut into a roadmap, before it becomes a spec, a feature's look drawn (DESIGN.md and screen mocks) for your approval before its tasks, the finished app played through scenario by scenario before it counts as done, its look lifted to its platform's best on your word (a design direction with sample screens you approve first), a release check and plan that goes out only on your yes, the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task (Bash writes included), unplanned edits flagged to the model at once, an intent check after each turn, a band, a pane and a local dashboard. An autopilot runs the workflow by itself, gated by your decisions on the idea and the spec and by the tests; a deputy on Opus reviews each step the way you would and answers Claude's questions for you, showing what it decided, and the run stops only for decisions that are yours. | Claude Code (terminal and desktop, and `claude -p`) |
+| [**Claude Code mod**](mod/) | Live, inside the agent loop: a new idea researched and shaped with you, or your PRD reviewed and cut into a roadmap, before it becomes a spec, a feature's look drawn (DESIGN.md and screen mocks) for your approval before its tasks, the finished app played through scenario by scenario before it counts as done, its look lifted to its platform's best on your word (a design direction with sample screens you approve first), a release check and plan that goes out only on your yes, the spec in the system prompt, the current task and the next Spec Kit step on every prompt, every edit booked against a task (Bash writes included), unplanned edits flagged to the model at once, an intent check after each turn, a band, a pane and a local dashboard. An autopilot runs the workflow by itself, gated by your decisions on the idea and the spec and by the type check (or the tests, where you want a suite); a deputy on Opus reviews each step the way you would and answers Claude's questions for you, showing what it decided, and the run stops only for decisions that are yours. | Claude Code (terminal and desktop, and `claude -p`) |
 | [**Spec Kit extension**](extension/) | Batch: `/speckit.xref.validate`, `prd`, `shape`, `design`, `accept`, `try`, `polish`, `ship`, `map`, `check`, `verify`, `report`, `revise`, hooks after `plan`, `tasks` and `implement`, and a deterministic CI check. | Every agent Spec Kit supports, and CI |
 | [**Spec Kit preset**](preset/) | Spec Kit's own `tasks` and `implement` commands, told to name every task's files and requirements and to prove each task with tests. | Spec Kit 1.1.2+ |
 | [**GitHub Action**](action/) | The CI check on every pull request, with a job summary: requirement → tasks → files and how far each is proven. | GitHub Actions |
@@ -37,13 +37,13 @@ claude plugin install speckit-xref --marketplace moinsen-dev/speckit-xref
 **Spec Kit extension**, in a Spec Kit project (Spec Kit 0.12.17 or later):
 
 ```bash
-specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.10.0/speckit-xref-extension-v0.10.0.zip
+specify extension add xref --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.11.0/speckit-xref-extension-v0.11.0.zip
 ```
 
 **Spec Kit preset** (Spec Kit 1.1.2 or later), optional but recommended: tasks then name their files and requirements, so nothing has to be guessed.
 
 ```bash
-specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.10.0/speckit-xref-preset-v0.3.0.zip
+specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/download/v0.11.0/speckit-xref-preset-v0.4.0.zip
 ```
 
 **GitHub Action**, in a workflow on `pull_request` (see [`action/`](action/)):
@@ -51,7 +51,7 @@ specify preset add --from https://github.com/moinsen-dev/speckit-xref/releases/d
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: moinsen-dev/speckit-xref/action@v0.10.0
+- uses: moinsen-dev/speckit-xref/action@v0.11.0
 ```
 
 With the acceptance tests the autopilot wrote under `e2e/acceptance/` (Playwright with `channel: 'chrome'`; GitHub's Ubuntu runners have Chrome), the pull request shows each scenario's state and fails when one fails:
@@ -62,7 +62,7 @@ With the acceptance tests the autopilot wrote under `e2e/acceptance/` (Playwrigh
 - run: npm ci
 - run: npx expo start --web --port 8081 &   # or your app's dev server
 - run: PLAYWRIGHT_JUNIT_OUTPUT_NAME=reports/acceptance-web.xml npx playwright test e2e/acceptance --reporter=junit
-- uses: moinsen-dev/speckit-xref/action@v0.10.0
+- uses: moinsen-dev/speckit-xref/action@v0.11.0
   if: always()
   with:
     acceptance-junit: reports/acceptance-*.xml

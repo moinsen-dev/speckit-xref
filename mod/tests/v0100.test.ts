@@ -27,7 +27,7 @@ test('a verdict and an answer are read strictly; what only the person decides st
   expect(personOnly('Should the empty list show a hint or stay blank?')).toBe(false)
 })
 
-test('the deputy sends a step back with its list; the rework goes first, and twice back makes it the person\'s call', { options: { orchestrate: 'off' } }, async ($, on) => {
+test('the deputy sends a step back with its list; the rework goes first, and twice back makes it the person\'s call', { options: { tests: 'lean', orchestrate: 'off' } }, async ($, on) => {
   const rework = JSON.stringify({ verdict: 'rework', rework: ['T004 checks a token but FR-002 asks for expiry: add the expiry and its test'], note: '', question: '', recommendation: '', profile: [] })
   const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, replies: [rework, rework, rework] })
   const asked = seen.completes
