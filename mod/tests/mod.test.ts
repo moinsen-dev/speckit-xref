@@ -14,7 +14,7 @@ test('follows the active feature and registers /xref, its tools and the pane', a
   const seen = project(on, { ...DEMO })
   await startSession($)
   expect(seen.commands).toEqual(['xref', 'xref-stop'])
-  expect(seen.tools).toEqual(['focus', 'where', 'status', 'ask', 'link'])
+  expect(seen.tools).toEqual(['focus', 'where', 'status', 'ask', 'pause', 'link'])
   // Unasked, the pane opens only where it is a sidebar: in fullscreen, never over the main screen.
   expect(seen.opened).toEqual([])
   await $.ui.mount({ ...BAND, surface: 'terminal', viewport: { columns: 180, rows: 40, isFullscreen: false } })

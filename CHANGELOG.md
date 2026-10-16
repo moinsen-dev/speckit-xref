@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.12.0 — 2026-10-16
+
+The autopilot listens: your words in the middle of a run come before its plan, and the deputy turns a change of course into the next step instead of pushing the old plan. Mod 0.12.0, extension 0.12.0, preset 0.4.0 unchanged.
+
+### Your words first
+
+- **Found live.** In a run you said "Ja, abschließen und Feature 2 anlegen". A user test the autopilot had handed to the tester agent was still pending, so the session's every edit was refused, even in your own turn and even for spec.md and tasks.md. At the end of your turn the autopilot pushed the same user test again; Claude could neither do what you asked nor stop the run, and asked you to type `/xref auto off`.
+- **Your message supersedes the pending step.** A message from you once the run has handed over a step sets the delegated step and the step waiting for the Stop hook aside. Nothing of the autopilot's holds your turn, and the end of your turn does not push the old plan.
+- **The deputy steers after your turn.** It reads your words, Claude's answer, the planned next step, the open and deferred tasks and your earlier decisions, and decides one of three things:
+  - **the plan stands**, with a note for the next step;
+  - **a step it writes itself** to carry out what you asked and is not done yet (put tasks off, close the feature, start the next one, do something first), after which the plan goes on from the new state;
+  - **wait for you**.
+
+  A step it writes never approves a gate, never deploys or pushes, and never undoes your work. Every decision is a `deputy` row in the run log. Without the deputy (option `deputy: off`), your turn still comes first, and the plan goes on afterwards as before.
+- **Redirect after a step.** Reviewing a step, the deputy may find that the work shows the plan no longer fits (a task belongs to a later feature, a prerequisite is missing). It then writes the next step itself instead of sending the step back.
+- **Claude may pause the run at your word.** The new tool `mcp__speckit-xref__pause` is for when you say stop, wait or "I take over". Stopping the autopilot altogether stays your command.
+
+### Deferred tasks
+
+- A task line `- [~]` or `- [-]`, or one that says deferred, postponed, verschoben or zurückgestellt, is **decided, not open**. The autopilot does not drive it, the phase moves on, and on the ladder its requirements are never implemented by it. The mod and `xref.py` read it the same (contract §3).
+
+### The write guard
+
+- A heredoc's body is the program or the text, not the shell's redirect. A Python script that writes only spec.md and tasks.md is no code write, while `cat > src/a.ts <<EOF` still is (found live).
+
 ## 0.11.0 — 2026-10-15
 
 Tests, CI/CD and git become the person's to switch on. By default a project runs without a test suite (the type check of its language is the gate), the autopilot writes no CI/CD pipeline, and every feature lands on the branch you are on. Mod 0.11.0, extension 0.11.0 (unchanged but for the version), preset 0.4.0.

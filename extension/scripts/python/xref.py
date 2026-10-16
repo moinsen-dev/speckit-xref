@@ -215,23 +215,26 @@ def parse_tasks(markdown: str) -> list[dict]:
         if heading:
             phase = unbold(heading.group(1) or "")
             continue
-        m = re.match(r"^\s*[-*]\s*\[( |x|X)\]\s*(?:\*\*)?(T\d{3,})(?:\*\*)?\s*(.*)$", line, A)
+        m = re.match(r"^\s*[-*]\s*\[( |x|X|~|-)\]\s*(?:\*\*)?(T\d{3,})(?:\*\*)?\s*(.*)$", line, A)
         if not m:
             continue
         rest = m.group(3) or ""
+        # Deferred by the person's decision (0.12.0): [~], [-], or the word in the line. Decided, not open; no proof.
+        deferred = m.group(1) in ("~", "-") or bool(re.search(r"\b(deferred|postponed|verschoben|zurückgestellt)\b", rest, re.I))
         parallel = "[P]" in rest
         story = re.search(r"\[(US\d+)\]", rest, A)
         rest = re.sub(r"\[(P|US\d+)\]\s*", "", rest, flags=A).strip()
         tasks.append(
             {
                 "id": m.group(2),
-                "done": m.group(1) != " ",
+                "done": m.group(1) != " " or deferred,
                 "parallel": parallel,
                 "story": story.group(1) if story else None,
                 "text": clip(rest, 240),
                 "paths": extract_paths(rest),
                 "reqs": list(dict.fromkeys(re.findall(r"\b(?:FR|SC)-\d{3,}\b", rest, A))),
                 "phase": phase,
+                **({"deferred": True} if deferred else {}),
             }
         )
     return tasks
@@ -408,7 +411,7 @@ def _raw_level(rid: str, snap: dict, ledger: dict) -> str:
     anchored = [a["file"] for a in ledger["anchors"] if local_id(a["id"], snap["featureDir"]) == rid]
     linked = (ledger["requirements"].get(rid) or {}).get("files", [])
     touched = [f for t in own for f in (ledger["tasks"].get(t["id"]) or {}).get("touched", [])]
-    if not any(t["done"] for t in own) or not any(not is_test_file(f) for f in anchored + linked + touched):
+    if not any(t["done"] and not t.get("deferred") for t in own) or not any(not is_test_file(f) for f in anchored + linked + touched):
         return "planned"
     real = set(snap.get("realTests") or [])
     if not any(is_test_file(f) and f in real for f in anchored + linked):

@@ -34,6 +34,7 @@ export type Phase =
   | 'implement'
   | 'repair'
   | 'rework'
+  | 'adjust'
   | 'converge'
   | 'verify'
   | 'accept'
@@ -736,7 +737,7 @@ export function phaseStrip(snap: Snapshot, step: Step, unreviewed = false): stri
     ['plan', ['plan']],
     ...(drawn ? [['design', ['design']] as [string, Phase[]]] : []),
     ['tasks', ['tasks', 'map', 'analyze', 'remediate', 'checklists']],
-    ['impl', ['implement', 'repair', 'rework', 'converge', 'bug']],
+    ['impl', ['implement', 'repair', 'rework', 'adjust', 'converge', 'bug']],
     ['verify', ['verify', 'accept', 'try']],
     ...(polished ? [['polish', ['polish']] as [string, Phase[]]] : []),
     ...(shipping ? [['ship', ['ship', 'release']] as [string, Phase[]]] : []),

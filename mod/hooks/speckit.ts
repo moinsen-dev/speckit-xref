@@ -153,6 +153,9 @@ export function extractPaths(text: string): string[] {
   return [...found]
 }
 
+/** A task put off by the person's decision, in English or German. */
+export const DEFERRED = /\b(deferred|postponed|verschoben|zurückgestellt)\b/i
+
 export function parseTasks(markdown: string): Task[] {
   const tasks: Task[] = []
   let phase = ''
@@ -162,15 +165,18 @@ export function parseTasks(markdown: string): Task[] {
       phase = unbold(heading[1] ?? '')
       continue
     }
-    const m = /^\s*[-*]\s*\[( |x|X)\]\s*(?:\*\*)?(T\d{3,})(?:\*\*)?\s*(.*)$/.exec(line)
+    const m = /^\s*[-*]\s*\[( |x|X|~|-)\]\s*(?:\*\*)?(T\d{3,})(?:\*\*)?\s*(.*)$/.exec(line)
     if (!m) continue
     let rest = m[3] ?? ''
+    // Deferred by the person's decision (0.12.0): `[~]`, `[-]`, or the word in the line. Decided, not open; no proof.
+    const deferred = m[1] === '~' || m[1] === '-' || DEFERRED.test(rest)
     const parallel = /\[P\]/.test(rest)
     const story = /\[(US\d+)\]/.exec(rest)?.[1] ?? null
     rest = rest.replace(/\[(P|US\d+)\]\s*/g, '').trim()
     tasks.push({
       id: m[2] ?? '',
-      done: m[1] !== ' ',
+      done: m[1] !== ' ' || deferred,
+      ...(deferred ? { deferred: true } : {}),
       parallel,
       story,
       text: clip(rest, 240),

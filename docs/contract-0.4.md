@@ -76,7 +76,7 @@ The in-memory ledger keeps the v1 shape (`tasks{touched,linked}`, `requirements{
 
 ## 3. Classification (`classifyCore`)
 
-Input: project-relative path, snapshot (tasks with `id`, `done`, `paths`, `reqs`), ledger, rules (exempt/unclear), optional new file content. First match wins:
+Input: project-relative path, snapshot (tasks with `id`, `done`, `paths`, `reqs`), ledger, rules (exempt/unclear), optional new file content. (0.12.0: a task line `- [~]` or `- [-]`, or one that says deferred, postponed, verschoben or zurückgestellt, parses as `done: true, deferred: true`: closed for planning, never implementation on the ladder.) First match wins:
 
 | # | Verdict | When | Task |
 |---|---|---|---|

@@ -9,8 +9,8 @@ import { DESIGNER, IMPLEMENTER, IMPLEMENTER_PROMPT, MODELS, TESTER, TESTER_PROMP
 import { DESIGNER_PROMPT, parsePolish, polishDoc } from './polish'
 import { GIT_MODES, TEST_MODES, branchName, branches, checkCommandFor, gateWords, prBody, touchesCi } from './gitci'
 import type { GitMode, TestMode } from './gitci'
-import { DEPUTY_PROMPT, MAX_REWORKS, PROFILE, REVIEWED, answerLine, answerRequest, noteLine, parseAnswer, parseVerdict, profileAdditions, requirementsOf, reviewRequest, reworkBrief } from './deputy'
-import type { Verdict } from './deputy'
+import { DEPUTY_PROMPT, MAX_REWORKS, PROFILE, REVIEWED, answerLine, answerRequest, noteLine, parseAnswer, parseSteer, parseVerdict, profileAdditions, requirementsOf, reviewRequest, reworkBrief, steerLine, steerRequest } from './deputy'
+import type { Steer, Verdict } from './deputy'
 import type { Delegate, Models } from './orchestrate'
 import { PRD, PRD_NAME, PRD_REVIEW, ROADMAP, parsePrdReview, parseRoadmap, prdCoverage, prdFingerprint, prdSections, prdSourceOf, roadmapItemOf, roadmapSpecify } from './prd'
 import { NEXT_LABELS, NO_WORK, RUNBOOK, doneAsk, nextKindOf, parsePhaseNotes, parseQuickstart, treeOf, untrackedLine, verifyKey } from './brief'
@@ -1409,6 +1409,43 @@ async function learnProfile($: $, lines: string[]): Promise<void> {
   await $.fs.write(at(PROFILE), `${top.trimEnd()}\n${add.map(l => `- ${l}`).join('\n')}\n`).catch(() => undefined)
 }
 
+/** A step the deputy wrote itself (0.12.0): carried out by the session, under the same rails as every step. */
+const steerStep = (s: { prompt: string; why: string }): Step => ({ phase: 'adjust', command: null, why: s.why, notes: [], needsUser: null, prompt: s.prompt })
+
+/** The deputy weighs the person's words against the plan (0.12.0): null where it gave no answer. */
+async function steerTurn($: $, words: string, answer: string): Promise<Steer | null> {
+  await scan($)
+  const snap = await read($, snapshotA)
+  if (!snap?.featureDir) return null
+  const ledger = await read($, ledgerA)
+  const ap = await read($, autopilotA)
+  const planned = nextStep(snap, ledger, ap.idea, flowOf(ap))
+  const person = await personContext($, snap, ledger)
+  const prompt = steerRequest({
+    feature: snap.featureDir,
+    words,
+    answer,
+    planned: `${planned.phase}: ${planned.why}${planned.needsUser ? ` It waits for the person: ${planned.needsUser}` : ''}`,
+    open: snap.tasks.filter(t => !t.done).map(t => `${t.id} ${t.text.slice(0, 120)}`),
+    deferred: snap.tasks.filter(t => t.deferred).map(t => `${t.id} ${t.text.slice(0, 120)}`),
+    profile: person.profile,
+    decisions: person.decisions,
+  })
+  const text = await callDeputy($, prompt, 90_000, 'speckit-xref · the deputy weighs your words against the plan…')
+  return text ? parseSteer(text) : null
+}
+
+/** Claude pauses the run because the person said so (0.12.0): stopping it altogether stays the person's command. */
+async function pauseByClaude($: $, reason: string): Promise<string> {
+  const ap = await read($, autopilotA)
+  if (!ap.on) return 'The autopilot is not running.'
+  if (ap.paused) return `The autopilot already waits: ${ap.paused}`
+  pendingPrompt = null
+  await update($, autopilotA, a => ({ ...a, delegation: null, steer: null, rework: null, heard: null }))
+  await pauseAutopilot($, `paused at the person's word${reason ? `: ${reason}` : ''}; Resume, or a message from them, goes on`)
+  return 'The autopilot is paused. The person resumes it with Resume in the pane or a message; /xref auto off stops it.'
+}
+
 /** A step the deputy sent back: the same agent again, with its list (0.10.0). */
 function reworkStep(snap: Snapshot, r: { phase: string; items: string[]; report: string }): Step {
   const brief = reworkBrief(snap.featureDir ?? '', r.phase, r.items, r.report)
@@ -1557,8 +1594,8 @@ async function advance($: $): Promise<void> {
   const snap = await read($, snapshotA)
   if (!snap) return
   const ledger = await read($, ledgerA)
-  // A step the deputy sent back goes again first, with its list (0.10.0).
-  const step = ap.rework ? reworkStep(snap, ap.rework) : nextStep(snap, ledger, ap.idea, flowOf(ap))
+  // A step the deputy wrote from the person's words or the work goes first (0.12.0), then a step it sent back (0.10.0).
+  const step = ap.steer ? steerStep(ap.steer) : ap.rework ? reworkStep(snap, ap.rework) : nextStep(snap, ledger, ap.idea, flowOf(ap))
   // An approved release holds for its step only.
   if (ap.lastPhase === 'release') await update($, permitsA, ps => ps.filter(p => !(p.label === 'releasing' && p.many)))
   // After a release: the run ends with what went out.
@@ -1680,6 +1717,7 @@ async function handOver($: $, snap: Snapshot, ledger: Ledger, handed: Step, key:
     ...a,
     deputyNote: null,
     rework: step.phase === 'rework' ? null : a.rework,
+    steer: step.phase === 'adjust' ? null : a.steer,
     reworkPhase: step.phase === 'rework' ? (a.rework?.phase ?? a.reworkPhase ?? null) : null,
     reworks: step.phase === 'rework' ? (a.reworks ?? 0) : 0,
     stepHead: startHead || null,
@@ -2097,6 +2135,33 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
   await update($, askedA, () => null)
   const ap = await read($, autopilotA)
   if (!ap.on) return
+  // The person spoke in this turn (0.12.0): no step of the autopilot's to log, test or review. Their words come before
+  // the plan: the deputy weighs them against it and goes on with the plan, writes the next step itself, or waits.
+  if (ap.heard) {
+    await update($, autopilotA, a => ({ ...a, heard: null, delegation: null }))
+    if (ap.paused) return
+    if (asked) return pauseAutopilot($, asked)
+    const steer = deputyMode !== 'off' ? await steerTurn($, ap.heard.text, e.answer) : null
+    if (steer) {
+      if (steer.action === 'pause') {
+        await logDeputy($, ap.steps, `steered: wait for the person: ${steer.question.slice(0, 160)}`)
+        return pauseAutopilot($, steer.question)
+      }
+      if (steer.action === 'custom') {
+        await logDeputy($, ap.steps, `steered: the person changed course: ${steer.prompt.replace(/\s+/g, ' ').slice(0, 180)}`)
+        await update($, autopilotA, a => ({ ...a, steer: { prompt: `${steerLine(ap.heard!.text)}\n${steer.prompt}`, why: "The person changed course; the deputy wrote this step from their words." } }))
+      } else {
+        await logDeputy($, ap.steps, steer.note ? `steered: the plan stands: ${steer.note.slice(0, 180)}` : 'steered: the plan stands')
+        if (steer.note) await update($, autopilotA, a => ({ ...a, deputyNote: [a.deputyNote, noteLine(steer.note)].filter(Boolean).join('\n') }))
+      }
+      return advance($)
+    }
+    if (endsWithQuestion(e.answer)) {
+      const label = await $.model.classify(e.answer.slice(-1500), [...QUESTION_LABELS]).catch(() => QUESTION_LABELS[0])
+      if (label !== QUESTION_LABELS[1]) return pauseAutopilot($, 'the last answer asks you something')
+    }
+    return advance($)
+  }
   // The person's own turn in the middle of a run: no step of the autopilot's, nothing to log or test.
   if (!wasAuto) {
     if (ap.paused) return
@@ -2184,7 +2249,10 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
         await logDeputy($, ap.steps, `asked the person: ${verdict.question.slice(0, 160)}`)
         return pauseAutopilot($, `${verdict.question}${verdict.recommendation ? ` (the deputy recommends: ${verdict.recommendation})` : ''}`)
       }
-      if (verdict.verdict === 'rework') {
+      if (verdict.verdict === 'redirect') {
+        await logDeputy($, ap.steps, `redirected: ${verdict.prompt.replace(/\s+/g, ' ').slice(0, 180)}`)
+        await update($, autopilotA, a => ({ ...a, steer: { prompt: verdict.prompt, why: 'The last step showed that the plan no longer fits; the deputy wrote this step.' } }))
+      } else if (verdict.verdict === 'rework') {
         if ((ap.reworks ?? 0) >= MAX_REWORKS) {
           await logDeputy($, ap.steps, `sent back ${MAX_REWORKS} times: ${verdict.rework[0]}`)
           return pauseAutopilot($, `the deputy sent the ${ap.lastPhase === 'rework' ? (ap.reworkPhase ?? 'implement') : ap.lastPhase} step back ${MAX_REWORKS} times and it still does not hold: ${verdict.rework.slice(0, 3).join('; ')}`)
@@ -2657,6 +2725,11 @@ export const register: Register = (on, options) => {
         },
       },
       {
+        name: 'pause',
+        description: 'Spec Kit autopilot: pause the run because the person said so in this conversation (stop, wait, I take over). Never to skip or end a step of your own accord. Stopping the autopilot altogether stays the person\'s command (/xref auto off).',
+        inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'The person\'s words, in short' } } },
+      },
+      {
         name: 'link',
         description: 'Spec Kit: tie a file to a task (T###) or a requirement (FR-### / SC-###, optionally <feature>/FR-###), so an edit outside the planned files is no longer drift.',
         inputSchema: {
@@ -2758,6 +2831,14 @@ export const register: Register = (on, options) => {
       const idea = waiting && takesIdea(waiting, snap!) && said && !said.startsWith('/') ? said.slice(0, 600) : ap.idea
       await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea }))
     }
+    // The person's words in the middle of a run come before its plan (0.12.0): the step it handed over is superseded,
+    // nothing of the autopilot's holds the person's turn, and the deputy steers once the turn ends. Words that start a
+    // run (no step handed over yet) are its first step, as before.
+    if (ap.on && ap.steps > 0 && said && !said.startsWith('/') && waiting?.phase !== 'done' && !(waiting && takesIdea(waiting, snap!))) {
+      const busy = !!(await read($, turnA))
+      await update($, autopilotA, a => ({ ...a, heard: { text: said.slice(0, 2000) }, steer: null, rework: null, ...(busy ? {} : { delegation: null }) }))
+      if (!busy) pendingPrompt = null
+    }
     // At a done feature the words are what comes next: the autopilot hands over its step once this turn ends.
     // A question or a remark stays a conversation.
     const work = ap.on && waiting?.phase === 'done' && said && !said.startsWith('/') ? await takeNext($, said) : null
@@ -2845,6 +2926,8 @@ export const register: Register = (on, options) => {
   }).catch(failed)
 
   on('tool.call', { tool: 'mcp__speckit-xref__ask' }, async ($, e) => ({ result: await ask($, e as unknown as Record<string, unknown>) })).catch(failed)
+  // A tool new in 0.12.0: the engine's generated tool types name it only once the mod has loaded with it.
+  on('tool.call', { tool: 'mcp__speckit-xref__pause' } as never, async ($: $, e: unknown) => ({ result: await pauseByClaude($, str((e as { reason?: unknown }).reason)) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__status' }, async $ => ({ result: await workflowStatus($) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__focus' }, async ($, e) => ({ result: await focus($, str((e as unknown as { task?: unknown }).task)) })).catch(failed)
   on('tool.call', { tool: 'mcp__speckit-xref__where' }, async ($, e) => ({ result: await where($, str((e as unknown as { file?: unknown }).file)) })).catch(failed)

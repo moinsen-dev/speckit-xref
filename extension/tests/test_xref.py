@@ -466,5 +466,14 @@ class XrefCli(unittest.TestCase):
         self.assertIn("FR-002", local["verification"])
 
 
+
+class Deferred(unittest.TestCase):
+    """0.12.0: a task the person put off is decided, not open, and proves nothing; the same as the mod reads it."""
+
+    def test_a_deferred_task_is_decided_not_open(self) -> None:
+        tasks = X.parse_tasks("## Phase 1: Setup\n\n- [~] T001 Measure the quota (FR-002)\n- [ ] T002 Retry (verschoben auf Feature 2)\n- [-] T003 Cache\n- [ ] T004 Log\n- [x] T005 Done\n")
+        self.assertEqual([(t["id"], t["done"], t.get("deferred", False)) for t in tasks], [("T001", True, True), ("T002", True, True), ("T003", True, True), ("T004", False, False), ("T005", True, False)])
+
+
 if __name__ == "__main__":
     unittest.main()

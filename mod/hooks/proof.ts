@@ -7,12 +7,12 @@ export const LADDER = ['specified', 'planned', 'implemented', 'tested', 'passing
 export type Rung = (typeof LADDER)[number]
 
 /** What the ladder reads off the snapshot; `realTests` are the test files with real tests in them. */
-export type ProofSnap = { featureDir: string | null; tasks: Pick<Task, 'id' | 'done' | 'reqs'>[]; reqs: Pick<Req, 'id' | 'text'>[]; realTests: string[] }
+export type ProofSnap = { featureDir: string | null; tasks: Pick<Task, 'id' | 'done' | 'reqs' | 'deferred'>[]; reqs: Pick<Req, 'id' | 'text'>[]; realTests: string[] }
 
 export const isActive = (req: Pick<Req, 'text'> & { status?: Req['status'] }) => (req.status ?? reqStatus(req.text).status) === 'active'
 
 /** The tasks that own a requirement: those naming it, and those mapped to it. */
-export function owners(id: string, snap: ProofSnap, ledger: Ledger): Pick<Task, 'id' | 'done' | 'reqs'>[] {
+export function owners(id: string, snap: ProofSnap, ledger: Ledger): Pick<Task, 'id' | 'done' | 'reqs' | 'deferred'>[] {
   const mapped = new Set(ledger.requirements[id]?.tasks ?? [])
   return snap.tasks.filter(t => t.reqs.includes(id) || mapped.has(t.id))
 }
@@ -37,7 +37,7 @@ function rawLevel(id: string, snap: ProofSnap, ledger: Ledger): Rung {
   const linked = ledger.requirements[id]?.files ?? []
   const touched = own.flatMap(t => ledger.tasks[t.id]?.touched ?? [])
   const code = [...ledger.anchors.filter(anchored).map(a => a.file), ...linked, ...touched].some(f => !isTestFile(f))
-  if (!own.some(t => t.done) || !code) return 'planned'
+  if (!own.some(t => t.done && !t.deferred) || !code) return 'planned'
   const real = new Set(snap.realTests)
   const tested = [...ledger.anchors.filter(anchored).map(a => a.file), ...linked].some(f => isTestFile(f) && real.has(f))
   if (!tested) return 'implemented'

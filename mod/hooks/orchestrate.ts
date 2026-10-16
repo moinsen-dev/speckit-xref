@@ -143,7 +143,9 @@ export function writesCode(tool: string, input: Record<string, unknown>, root = 
     return !!file && !RECORD.test(file)
   }
   if (tool !== 'Bash') return false
-  const command = String(input.command ?? '')
+  // A heredoc's body is the program or the text, not the shell's redirects (0.12.0, found live: a Python script that
+  // wrote only spec.md and tasks.md was refused for the `>` in its code). Its first line keeps its own redirect.
+  const command = String(input.command ?? '').replace(/(<<-?\s*(['"]?)(\w+)\2[^\n]*)\n[\s\S]*?\n\s*\3[ \t]*(?=\n|$)/g, '$1')
   const targets = [...command.matchAll(/(?:^|[^\d&<>])>>?\s*([^\s;&|<>]+)/g)].map(m => m[1]!).filter(t => !/^(\/dev\/null|&\d)$/.test(t))
   if (targets.some(t => !RECORD.test(rel(t)))) return true
   return /\btee\b(?!\s+(-a\s+)?(\.\/)?(specs|\.specify)\/)|\b(?:sed|perl)\s+(?:-[a-zA-Z]*\s+)*-i\b/.test(command)

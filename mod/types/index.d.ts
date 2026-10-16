@@ -13,7 +13,10 @@ export type Req = {
 }
 export type Task = {
   id: string
+  /** Checked off, or deferred: either way no longer open work. */
   done: boolean
+  /** Put off by the person's decision (0.12.0): `[~]`, `[-]` or the word deferred/verschoben in its line. */
+  deferred?: boolean
   parallel: boolean
   story: string | null
   text: string
@@ -310,6 +313,10 @@ export type Autopilot = {
   /** The deputy's word for the next step, and a step it sent back with what to fix (0.10.0). */
   deputyNote?: string | null
   rework?: { phase: string; items: string[]; report: string } | null
+  /** What the person said in the middle of the run (0.12.0): their turn comes first, and the deputy steers after it. */
+  heard?: { text: string } | null
+  /** A step the deputy wrote itself because the person or the work changed course (0.12.0). */
+  steer?: { prompt: string; why: string } | null
   /** Send-backs of the current step in a row, and the kind of step a rework redoes. */
   reworks?: number
   reworkPhase?: string | null

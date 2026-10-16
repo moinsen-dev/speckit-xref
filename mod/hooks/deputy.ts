@@ -13,7 +13,9 @@ export const REVIEWED = new Set(['implement', 'repair', 'rework', 'try', 'polish
 export const MAX_REWORKS = 2
 
 export type Verdict = {
-  verdict: 'go' | 'rework' | 'ask'
+  verdict: 'go' | 'rework' | 'ask' | 'redirect'
+  /** The next step the deputy writes itself when the plan no longer fits (redirect, 0.12.0). */
+  prompt: string
   /** For the next step: what to watch, in a line or two; empty when there is nothing to say. */
   note: string
   /** What the step has to fix before it counts (rework). */
@@ -97,9 +99,9 @@ export function reviewRequest(i: ReviewInput): string {
       ...(i.testMode === 'off' ? ['- This project runs without a test suite on purpose (option tests: off): the type check is its gate. A missing test is no reason to send a step back; a test written anyway is work nobody asked for.'] : i.testMode === 'run' ? ['- This project adds no new tests (option tests: run): the existing suite is the gate. A missing new test is no reason to send a step back.'] : []),
       ...(i.boundary ? ['- This step ended a phase or the feature: are we still building the right thing? Does anything the step or a user test found change what should come next, or need the person?'] : []),
       '',
-      'verdict "go": the step holds; "note" is what the next step should keep in mind (empty if nothing). verdict "rework": it does not hold; "rework" lists what to fix, concretely, each with the file or task. verdict "ask": only the person can settle what blocks; "question" asks it in one or two sentences, "recommendation" says what you would choose and why.',
+      'verdict "go": the step holds; "note" is what the next step should keep in mind (empty if nothing). verdict "rework": it does not hold; "rework" lists what to fix, concretely, each with the file or task. verdict "ask": only the person can settle what blocks; "question" asks it in one or two sentences, "recommendation" says what you would choose and why. verdict "redirect": the step holds, but what it found means the plan no longer fits (a task belongs to a later feature, an order that cannot work, a prerequisite missing): "prompt" is the next step written by you for Claude, concrete and complete, and the plan goes on from what it leaves; mark a task put off as deferred in tasks.md with [~] and the reason.',
       '"profile": at most three short lines about how the person works or what they want, only where their own words above show it and the profile does not say it yet; else [].',
-      'Answer: {"verdict": "go|rework|ask", "note": "", "rework": [], "question": "", "recommendation": "", "profile": []}',
+      'Answer: {"verdict": "go|rework|ask|redirect", "note": "", "rework": [], "question": "", "recommendation": "", "prompt": "", "profile": []}',
     ].join('\n'),
   ]
     .filter(Boolean)
@@ -160,9 +162,10 @@ const listOf = (v: unknown, n: number, max = 300) => (Array.isArray(v) ? v.map(x
 /** The review's verdict, or null when the reply is none (the autopilot then goes on as without a deputy). */
 export function parseVerdict(text: string): Verdict | null {
   const j = jsonOf(text)
-  if (!j || !['go', 'rework', 'ask'].includes(String(j.verdict))) return null
+  if (!j || !['go', 'rework', 'ask', 'redirect'].includes(String(j.verdict))) return null
   const v: Verdict = {
     verdict: j.verdict as Verdict['verdict'],
+    prompt: strOf(j.prompt, 3000),
     note: strOf(j.note, 400),
     rework: listOf(j.rework, 8),
     question: strOf(j.question, 400),
@@ -172,8 +175,63 @@ export function parseVerdict(text: string): Verdict | null {
   // A send-back without a list, or a question without one, is no verdict to act on.
   if (v.verdict === 'rework' && !v.rework.length) return { ...v, verdict: 'go' }
   if (v.verdict === 'ask' && !v.question) return { ...v, verdict: 'go' }
+  if (v.verdict === 'redirect' && !v.prompt) return { ...v, verdict: 'go' }
   return v
 }
+
+/** What the deputy reads after the person spoke in the middle of the run (0.12.0). */
+export type SteerInput = {
+  feature: string
+  /** The person's words, and Claude's answer to them. */
+  words: string
+  answer: string
+  /** The step the plan would hand over next: its kind and why, and whether only the person can take it. */
+  planned: string
+  open: string[]
+  deferred: string[]
+  profile: string | null
+  decisions: string[]
+}
+
+export type Steer = { action: 'plan' | 'custom' | 'pause'; note: string; prompt: string; question: string }
+
+/** The steering request: the person's words first, the plan second. */
+export function steerRequest(i: SteerInput): string {
+  return [
+    `Feature ${i.feature}. The person spoke to Claude in the middle of the autopilot's run.`,
+    section("The person's words", i.words.slice(-3000)),
+    section("Claude's answer to them", i.answer.slice(-4000)),
+    section("The autopilot's planned next step", i.planned),
+    section('Tasks still open', i.open.slice(0, 15)),
+    section('Tasks the person put off', i.deferred.slice(0, 15)),
+    section("The person's profile", i.profile),
+    section('Decisions so far', i.decisions.slice(-8)),
+    [
+      "## Decide what comes next, as the person's deputy",
+      'The person\'s words come before the plan. The plan is a means: follow it where the person\'s words leave it standing, change it where they changed course.',
+      '- "plan": the words leave the plan as it is (a remark, a question Claude answered, something Claude already did in its answer). The planned step follows; "note" is what it should keep in mind.',
+      '- "custom": the person changed course and it is not done yet (close or skip something, put tasks off, reorder, a different next feature, do something first). Write the next step yourself in "prompt", concrete and complete, for Claude to carry out what the person asked. Tasks the person put off are marked deferred in tasks.md with [~] and the reason. The plan goes on from the state it leaves.',
+      '- "pause": the person wants to take over, stop, or decide something first; "question" says what the run waits for.',
+      'A step you write never approves the spec, the plan, a design or a release, never deploys or pushes, and never undoes the person\'s work.',
+      'Answer: {"action": "plan|custom|pause", "note": "", "prompt": "", "question": ""}',
+    ].join('\n'),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** The steering answer, or null when the reply is none (the run then goes on as without a deputy). */
+export function parseSteer(text: string): Steer | null {
+  const j = jsonOf(text)
+  if (!j || !['plan', 'custom', 'pause'].includes(String(j.action))) return null
+  const s: Steer = { action: j.action as Steer['action'], note: strOf(j.note, 400), prompt: strOf(j.prompt, 3000), question: strOf(j.question, 400) }
+  if (s.action === 'custom' && !s.prompt) return { ...s, action: 'plan' }
+  if (s.action === 'pause' && !s.question) return { ...s, question: 'the person wants to decide how to go on' }
+  return s
+}
+
+/** The step a person's change of course becomes: the deputy's prompt, with the person's words beside it. */
+export const steerLine = (words: string) => `The person said, mid-run: "${words.replace(/\s+/g, ' ').slice(0, 300)}". Their words come before the plan.`
 
 /** The answer to a question, or null when the reply is none. What only the person decides stays theirs, in code. */
 export function parseAnswer(text: string, question: string): Answer | null {

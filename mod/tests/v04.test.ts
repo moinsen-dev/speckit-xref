@@ -22,7 +22,7 @@ function specOnly(): Record<string, string> {
 test('in a repository without Spec Kit the tools wait behind ToolSearch and nothing polls', async ($, on) => {
   const seen = project(on, { 'README.md': '# app\n', 'src/index.ts': 'export {}\n' })
   await startSession($)
-  expect(seen.deferred).toEqual(['focus', 'where', 'status', 'ask', 'link'])
+  expect(seen.deferred).toEqual(['focus', 'where', 'status', 'ask', 'pause', 'link'])
   const runs = seen.ran.length
   await seen.clock.advance(20_000)
   expect(seen.ran.length).toBe(runs)
