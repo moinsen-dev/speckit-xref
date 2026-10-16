@@ -7,7 +7,8 @@ The autopilot listens: your words in the middle of a run come before its plan, a
 ### Your words first
 
 - **Found live.** In a run you said "Ja, abschließen und Feature 2 anlegen". A user test the autopilot had handed to the tester agent was still pending, so the session's every edit was refused, even in your own turn and even for spec.md and tasks.md. At the end of your turn the autopilot pushed the same user test again; Claude could neither do what you asked nor stop the run, and asked you to type `/xref auto off`.
-- **Your message supersedes the pending step.** A message from you once the run has handed over a step sets the delegated step and the step waiting for the Stop hook aside. Nothing of the autopilot's holds your turn, and the end of your turn does not push the old plan.
+- **Why it happened.** After a restart the run stood at step 0, and the desktop app hosts a session the mod sees as not interactive. So your message took the path of a `-p` run's first prompt: it became the autopilot's first step, the pending user test. That path is now taken only in a real `-p` run, where nothing draws. In the desktop app your first words are heard like any others.
+- **Your message supersedes the pending step.** A message from you sets the delegated step and the step waiting for the Stop hook aside. Nothing of the autopilot's holds your turn, and the end of your turn does not push the old plan. Words typed while a step runs wait for your own turn: that step keeps its log entry, its gate and its review, the run hands over nothing new before your turn, and the deputy then reads Claude's answer to you. Starting or stopping the run clears whatever an earlier run left pending.
 - **The deputy steers after your turn.** It reads your words, Claude's answer, the planned next step, the open and deferred tasks and your earlier decisions, and decides one of three things:
   - **the plan stands**, with a note for the next step;
   - **a step it writes itself** to carry out what you asked and is not done yet (put tasks off, close the feature, start the next one, do something first), after which the plan goes on from the new state;
@@ -19,7 +20,7 @@ The autopilot listens: your words in the middle of a run come before its plan, a
 
 ### Deferred tasks
 
-- A task line `- [~]` or `- [-]`, or one that says deferred, postponed, verschoben or zurückgestellt, is **decided, not open**. The autopilot does not drive it, the phase moves on, and on the ladder its requirements are never implemented by it. The mod and `xref.py` read it the same (contract §3).
+- A task line `- [~]` or `- [-]`, or one that says deferred, postponed, verschoben or zurückgestellt, is **decided, not open**. The autopilot does not drive it, the phase moves on, and on the ladder its requirements are never implemented by it. The mod and `xref.py` read it the same (contract §3, and a parity fixture).
 
 ### The write guard
 

@@ -15,3 +15,5 @@
 - [ ] T6 too short an id
 - [ ] T090 Expo-App anlegen, Plattformen iOS/Android/Web aktivieren in `package.json`, `app.json` (FR-024)
 - [ ] T091 Update README.md and docs/guide.md without backticks
+- [~] T092 Measure the quota on a real device (FR-021)
+- [ ] T093 Retry on timeout in `src/net.ts` (verschoben auf Feature 2)

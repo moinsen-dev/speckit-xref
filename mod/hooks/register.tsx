@@ -1058,7 +1058,7 @@ const flowOf = (ap: Autopilot): Flow => ({ review, lastTest: ap.lastTest, repair
 async function startAutopilot($: $, max?: number, night = false): Promise<void> {
   const cost = await sessionCost($)
   const now = await $.clock.now()
-  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null, verifies: 0 }))
+  await update($, autopilotA, a => ({ ...a, on: true, paused: null, steps: 0, stalls: 0, last: null, lastPhase: null, idea: null, max: max ?? defaultMax, repairs: 0, lastTest: null, startedAt: now, costAtStart: cost, night, scope: null, remediate: false, remediations: 0, testNote: null, verifies: 0, delegation: null, steer: null, rework: null, reworks: 0, heard: null, deputyNote: null }))
   // A release's yes never carries into a new run.
   await update($, permitsA, ps => ps.filter(p => !p.many))
   await update($, seenAtA, () => now)
@@ -1077,7 +1077,7 @@ async function resumeAutopilot($: $): Promise<void> {
 /** Stop: the autopilot goes off, and a turn it is running ends now rather than at its end. */
 async function turnOffAutopilot($: $): Promise<void> {
   const wasOn = (await read($, autopilotA)).on
-  await update($, autopilotA, a => ({ ...a, on: false, paused: null, idea: null }))
+  await update($, autopilotA, a => ({ ...a, on: false, paused: null, idea: null, delegation: null, steer: null, rework: null, heard: null, deputyNote: null }))
   await update($, permitsA, ps => ps.filter(p => !p.many))
   await update($, queueA, q => ({ ...q, auto: false }))
   await retitle($)
@@ -1583,6 +1583,8 @@ async function writeBriefing($: $, why: string): Promise<void> {
 async function advance($: $): Promise<void> {
   const ap = await read($, autopilotA)
   if (!ap.on || ap.paused) return
+  // The person's words wait behind the step that just ran: their turn comes before the next step (0.12.0).
+  if (ap.heard?.busy) return
   // One step at a time: while a turn runs, or a prompt waits for the session, the next step waits for its end.
   const queue = await read($, queueA)
   if (interactive && ((await read($, turnA)) || queue.auto || queue.person)) return
@@ -2137,7 +2139,7 @@ async function afterTurn($: $, e: TurnEnd, files: string[], wasAuto = true): Pro
   if (!ap.on) return
   // The person spoke in this turn (0.12.0): no step of the autopilot's to log, test or review. Their words come before
   // the plan: the deputy weighs them against it and goes on with the plan, writes the next step itself, or waits.
-  if (ap.heard) {
+  if (ap.heard && !ap.heard.busy) {
     await update($, autopilotA, a => ({ ...a, heard: null, delegation: null }))
     if (ap.paused) return
     if (asked) return pauseAutopilot($, asked)
@@ -2791,6 +2793,8 @@ export const register: Register = (on, options) => {
     // Whose turn this is: the autopilot's step, or a message of the person's. Either leaves the queue.
     const auto = e.text.includes('[speckit-xref autopilot')
     await update($, turnA, () => ({ id: e.turnId, startedAt: 0, dirty: [], auto }))
+    // Words the person typed while a step ran become this turn's once it is theirs (0.12.0).
+    if (!auto) await update($, autopilotA, a => (a.heard?.busy ? { ...a, heard: { text: a.heard.text, busy: false } } : a))
     await update($, queueA, q => (auto ? { ...q, auto: false } : { ...q, person: false }))
     if (!root || !(await read($, snapshotA))?.featureDir) return result
     // The commit the turn starts from: a write committed later in the turn is still booked against it (Fund 38).
@@ -2832,11 +2836,13 @@ export const register: Register = (on, options) => {
       await update($, autopilotA, a => ({ ...a, paused: null, stalls: 0, idea }))
     }
     // The person's words in the middle of a run come before its plan (0.12.0): the step it handed over is superseded,
-    // nothing of the autopilot's holds the person's turn, and the deputy steers once the turn ends. Words that start a
-    // run (no step handed over yet) are its first step, as before.
-    if (ap.on && ap.steps > 0 && said && !said.startsWith('/') && waiting?.phase !== 'done' && !(waiting && takesIdea(waiting, snap!))) {
+    // nothing of the autopilot's holds the person's turn, and the deputy steers once their turn ends. Only a real -p run
+    // (nobody at a prompt, nothing drawn) makes its first prompt the first step (found live: in the desktop app the
+    // person's "close it and start feature 2" became a user test step).
+    const headless = !interactive && ap.steps === 0 && !(await $.session.surfaces()).length
+    if (ap.on && !headless && said && !said.startsWith('/') && waiting?.phase !== 'done' && !(waiting && takesIdea(waiting, snap!))) {
       const busy = !!(await read($, turnA))
-      await update($, autopilotA, a => ({ ...a, heard: { text: said.slice(0, 2000) }, steer: null, rework: null, ...(busy ? {} : { delegation: null }) }))
+      await update($, autopilotA, a => ({ ...a, heard: { text: said.slice(0, 2000), busy }, steer: null, rework: null, ...(busy ? {} : { delegation: null }) }))
       if (!busy) pendingPrompt = null
     }
     // At a done feature the words are what comes next: the autopilot hands over its step once this turn ends.
@@ -2876,7 +2882,7 @@ export const register: Register = (on, options) => {
       await update($, ledgerA, l => logIntent(l, text, currentTask(snap, active)?.id ?? null, when))
     }
     // A -p run starts on the person's prompt: that turn is the first step, handed over and logged like any other.
-    if (!interactive && ap.on && ap.steps === 0 && waiting && !waiting.needsUser && snap?.featureDir) {
+    if (!interactive && ap.on && ap.steps === 0 && waiting && !waiting.needsUser && snap?.featureDir && !(await $.session.surfaces()).length) {
       const logged = await read($, ledgerA)
       const step = await handOver($, snap, logged, waiting, `${progressKey(snap, logged)}|${ap.repairs}`, 0)
       if (step) return next({ ...e, context: [...(e.context ?? []), step] })

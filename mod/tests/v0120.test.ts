@@ -110,3 +110,41 @@ test('Claude pauses the run at your word; stopping it altogether stays your comm
   expect(String(paused.result)).toContain('The autopilot is paused')
   expect(seen.toasts.at(-1)).toContain("paused at the person's word: the person takes over")
 })
+
+test('found live: in the desktop app your first words after a restart are heard, not turned into the first step', { options: { autopilot: 'on' } }, async ($, on) => {
+  const seen = project(on, { ...DEMO }, { surfaces: ['desktop'], replies: [JSON.stringify({ action: 'pause', question: 'You close feature 1 yourself first.' })] })
+  await $.session.start({ surface: null, isInteractive: false, cwd: ROOT })
+  await type($, 'Ja, abschließen und Feature 2 anlegen.')
+  // Nothing of a step rides the person's prompt, and no delegation holds their turn.
+  expect(JSON.stringify(seen.submitted.at(-1).context ?? [])).not.toContain('[speckit-xref autopilot')
+  expect((await $.tool.check(WRITE as never)).decision).not.toBe('deny')
+  await $.turn.start({ text: 'Ja, abschließen und Feature 2 anlegen.', turnId: 't1' })
+  const end = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Ich schließe ab.' } as never)
+  expect(end.block).toBeUndefined()
+  expect(seen.toasts.at(-1)).toContain('Autopilot waits for you: You close feature 1 yourself first.')
+})
+
+test('words typed while a step runs wait for your turn: the step keeps its gate and review, and the deputy reads your turn', { options: { orchestrate: 'off' } }, async ($, on) => {
+  const go = JSON.stringify({ verdict: 'go', note: '', rework: [], question: '', recommendation: '', prompt: '', profile: [] })
+  const plan = JSON.stringify({ action: 'plan', note: '' })
+  const seen = project(on, { ...DEMO }, { tests: { exits: [0] }, replies: [go, plan] })
+  await startSession($)
+  await xref($, 'auto on')
+  await seen.clock.advance(0)
+  const step = autopilotPrompts(seen).at(-1)!
+  await $.turn.start({ text: step, turnId: 's1' })
+  await type($, 'Bitte auch an die Fehlermeldungen denken.')
+  seen.write(`${FEATURE}/tasks.md`, seen.files[`${FEATURE}/tasks.md`]!.replace('- [ ] T004', '- [x] T004'))
+  await $.turn.complete({ reason: 'answer', answer: 'T004 done.', durationMs: 1000, isAborted: false, turnId: 's1' })
+  await seen.clock.advance(0)
+  // The step was the autopilot's: logged and reviewed; the next step waits for the person's turn.
+  const log = seen.files[`.specify/xref/local/${FEATURE.slice(6)}.run.jsonl`]!.trim().split('\n').map(l => JSON.parse(l))
+  expect(log.some((r: any) => r.phase === 'implement')).toBe(true)
+  expect(log.some((r: any) => r.phase === 'deputy' && r.outcome.startsWith('go'))).toBe(true)
+  expect(autopilotPrompts(seen).at(-1)).toBe(step)
+  await $.turn.start({ text: 'Bitte auch an die Fehlermeldungen denken.', turnId: 'p1' })
+  await $.turn.complete({ reason: 'answer', answer: 'Mache ich: klare Fehlermeldungen.', durationMs: 1000, isAborted: false, turnId: 'p1' })
+  await seen.clock.advance(0)
+  expect(seen.completes.at(-1)).toContain('Mache ich: klare Fehlermeldungen.')
+  expect(autopilotPrompts(seen).at(-1)).not.toBe(step)
+})

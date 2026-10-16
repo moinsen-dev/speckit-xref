@@ -314,7 +314,7 @@ export type Autopilot = {
   deputyNote?: string | null
   rework?: { phase: string; items: string[]; report: string } | null
   /** What the person said in the middle of the run (0.12.0): their turn comes first, and the deputy steers after it. */
-  heard?: { text: string } | null
+  heard?: { text: string; busy?: boolean } | null
   /** A step the deputy wrote itself because the person or the work changed course (0.12.0). */
   steer?: { prompt: string; why: string } | null
   /** Send-backs of the current step in a row, and the kind of step a rework redoes. */
